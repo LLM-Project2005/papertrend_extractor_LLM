@@ -20,6 +20,8 @@ import {
 import Heatmap from "@/components/Heatmap";
 import { Takeaway } from "@/components/dashboard/DashboardNotes";
 import { TOPIC_PALETTE } from "@/lib/constants";
+import { categoricalColor } from "@/lib/chart-palette";
+import { readableTextOn } from "@/lib/contrast";
 import {
   keywordPaperCounts,
   listOf,
@@ -59,9 +61,10 @@ interface Props {
 }
 
 /**
- * One hue. Colour in the old treemap cycled through a twenty-colour palette by
- * rank, which reads as categories that do not exist; size is the only thing a
- * cell encodes, so size is the only thing that varies.
+ * Each theme its own hue from the eight-colour chart palette (2026-10-09
+ * review: more colour). Every cell is a different theme, so the hue marks a
+ * real difference; size still carries the number, and the label sits in
+ * white or near-black, whichever reads better on the cell.
  */
 const TreemapCell = (props: {
   x: number;
@@ -72,6 +75,8 @@ const TreemapCell = (props: {
   value: number;
   /** 0 for the root, which Recharts also hands to this renderer. */
   depth?: number;
+  /** The cell's position, which Recharts hands to this renderer. */
+  index?: number;
   fill?: string;
   textFill?: string;
   edge?: string;
@@ -79,7 +84,9 @@ const TreemapCell = (props: {
   /** The papers behind the cell, passed through by Recharts from the data row. */
   paperIds?: string[];
 }) => {
-  const { x, y, width, height, name, value, depth, fill = "#3f3f3f", textFill = "#ffffff", edge = "#ffffff", onDrilldown, paperIds } = props;
+  const { x, y, width, height, name, value, depth, index = 0, edge = "#ffffff", onDrilldown, paperIds } = props;
+  const fill = props.fill ?? categoricalColor(index);
+  const textFill = props.textFill ?? readableTextOn(fill, ["#ffffff", "#0a0a0a"]);
   // The root spans the whole chart under the cells, labelled with the sum of
   // every theme - "63 papers" in a 39-paper repository, hidden but in the page.
   if (depth === 0) return null;
@@ -508,8 +515,8 @@ export default function KeywordExplorer({
                     </h3>
                     <ChartCsvButton
                       csv={{
-                        name: `${conceptResult.canonicalConcept || "concept"} by category`,
-                        header: ["Category", "Papers"],
+                        name: `${conceptResult.canonicalConcept || "concept"} by research area`,
+                        header: ["Research area", "Papers"],
                         rows: conceptResult.trackSpread.map((row) => [String(row.track), row.papers]),
                       }}
                     />
@@ -685,7 +692,7 @@ export default function KeywordExplorer({
                 <Bar isAnimationActive={chartAnimationActive()}
                   dataKey="papers"
                   name="Papers"
-                  fill={ct.barFill}
+                  fill={categoricalColor(0)}
                   radius={[0, 6, 6, 0]}
                   onClick={(entry) => {
                     const row = entry as { keyword?: string; paperIds?: string[] };
@@ -738,7 +745,7 @@ export default function KeywordExplorer({
               rows={heatmapData.rows.map((row) => row.theme)}
               cols={axis.years}
               values={heatmapData.rows.map((row) => row.values)}
-              colorScale={ct.heatScale}
+              colorScale={ct.heatScaleAccent}
             />
           </div>
         ) : (
@@ -789,8 +796,6 @@ export default function KeywordExplorer({
                     height={0}
                     name=""
                     value={0}
-                    fill={ct.barFill}
-                    textFill={hydrated && theme === "dark" ? "#0a0a0a" : "#ffffff"}
                     edge={ct.segmentEdge}
                     onDrilldown={onDrilldown}
                   />

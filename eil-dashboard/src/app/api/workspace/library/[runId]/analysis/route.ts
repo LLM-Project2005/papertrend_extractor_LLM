@@ -639,7 +639,7 @@ export async function GET(
               taxonomyName: String(runAnalysisProfile.displayName ?? runAnalysisProfile.taxonomyName ?? "General Research"),
               primaryCategory: "Classification not enabled",
               additionalCategories: [],
-              rationale: "This repository profile extracts research signals without forcing the paper into a category.",
+              rationale: "This repository profile extracts research signals without forcing the paper into a research area.",
               profileVersion: Number(runAnalysisProfile.profileVersion ?? runAnalysisProfile.profile_version ?? runAnalysisProfile.version ?? 2),
               classifiedAt: run.completed_at ? String(run.completed_at) : null,
               classifierModel: "skipped",
@@ -665,7 +665,7 @@ export async function GET(
               taxonomyName: String(currentAnalysisProfile.displayName ?? currentAnalysisProfile.taxonomyName ?? "General Research"),
               primaryCategory: "Classification not enabled",
               additionalCategories: [],
-              rationale: "This repository profile extracts research signals without forcing the paper into a category.",
+              rationale: "This repository profile extracts research signals without forcing the paper into a research area.",
               profileVersion: Number(currentAnalysisProfile.version ?? 2),
               classifiedAt: currentProjectProfile.analysis_profile_updated_at ? String(currentProjectProfile.analysis_profile_updated_at) : null,
               classifierModel: "skipped",
@@ -673,7 +673,7 @@ export async function GET(
             };
           }
           return primary ? {
-            taxonomyName: String(primary.taxonomy_name ?? "Repository categories"),
+            taxonomyName: String(primary.taxonomy_name ?? "Repository research areas"),
             primaryCategory: String(primary.category_label ?? "Other / Unclassified"),
             additionalCategories: rows
               .filter((row) => row.assignment_type === "multi"

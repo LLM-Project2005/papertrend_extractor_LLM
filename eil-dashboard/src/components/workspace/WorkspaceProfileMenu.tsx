@@ -150,7 +150,7 @@ export default function WorkspaceProfileMenu({
               <HomeIcon className="h-4 w-4" />
               <span>Repositories</span>
             </Link>
-            <Link href="/docs" onClick={() => setOpen(false)} className={itemClass}>
+            <Link href="/docs/getting-started" onClick={() => setOpen(false)} className={itemClass}>
               <BookOpenIcon className="h-4 w-4" />
               <span>Documentation</span>
             </Link>

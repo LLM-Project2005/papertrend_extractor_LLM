@@ -94,11 +94,17 @@ const nextConfig = {
   // The framework is not announced in every response.
   poweredByHeader: false,
   async redirects() {
-    return Object.entries(movedDocs).map(([from, to]) => ({
-      source: `/docs/${from}`,
-      destination: `/docs/${to}`,
-      permanent: true,
-    }));
+    return [
+      ...Object.entries(movedDocs).map(([from, to]) => ({
+        source: `/docs/${from}`,
+        destination: `/docs/${to}`,
+        permanent: true,
+      })),
+      // The documentation opens on Getting started; every page is in its sidebar.
+      { source: "/docs", destination: "/docs/getting-started", permanent: false },
+      // The Uploads feature page was retired (2026-10-09); uploading is covered in the docs.
+      { source: "/features/cloud-queue", destination: "/docs/uploading-papers", permanent: false },
+    ];
   },
   async headers() {
     return [

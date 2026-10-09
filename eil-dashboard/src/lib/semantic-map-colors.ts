@@ -13,7 +13,7 @@ export const LABELS_BY_DEFAULT_MAX = 40;
 export const FALLBACK_POINT_COLOR = NEUTRAL_MARK;
 
 export function colorLabelValue(point: Pick<SemanticMapPoint, "categories" | "year" | "track">, mode: ColorMode): string {
-  if (mode === "category") return point.categories[0] ?? "Uncategorized";
+  if (mode === "category") return point.categories[0] ?? "No research area";
   if (mode === "year") return point.year || "Unknown";
   return point.track ?? "Unassigned";
 }

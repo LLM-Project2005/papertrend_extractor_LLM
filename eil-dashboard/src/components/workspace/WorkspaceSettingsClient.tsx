@@ -99,7 +99,7 @@ const SECTIONS: SectionDef[] = [
     id: "analysis",
     group: "Repository",
     label: "Analysis & classification",
-    description: "How the papers in this repository are categorized.",
+    description: "How the papers in this repository are sorted into research areas.",
     icon: EqualizerIcon,
   },
   {
@@ -865,7 +865,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
   const coverage: Array<[string, number, string]> = [
     ["Classified", classificationCoverage.classified, "with the current profile"],
     ["Previous profile", classificationCoverage.previousProfile, "classified before the last change"],
-    ["Unclassified", classificationCoverage.unclassified, "not yet given a category"],
+    ["Unclassified", classificationCoverage.unclassified, "not yet given a research area"],
     ["Failed analyses", classificationCoverage.failed, "cannot be classified until re-analyzed"],
   ];
   const jobPercent = reclassificationJob?.total_items
@@ -876,7 +876,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
     <div className="space-y-6">
       <Section
         title="Analysis & classification"
-        description="This profile belongs to this repository. A change applies to new uploads at once; papers already analyzed keep their category until you reclassify them."
+        description="This profile belongs to this repository. A change applies to new uploads at once; papers already analyzed keep their research area until you reclassify them."
         footer={
           <>
             <div className="min-h-5 text-[13px]">
@@ -938,7 +938,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
 
       <Section
         title="Existing papers"
-        description="Reclassifying reads each analyzed paper again against the saved profile. It does not re-run the full analysis, and the previous categories stay in place until every paper has a new one."
+        description="Reclassifying reads each analyzed paper again against the saved profile. It does not re-run the full analysis, and the previous research areas stay in place until every paper has a new one."
       >
         <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline bg-hairline sm:grid-cols-4">
           {coverage.map(([label, value, hint]) => (
@@ -975,9 +975,9 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
                 {reclassificationJob.status === "succeeded"
                   ? "Published. Every paper now uses the current profile."
                   : reclassificationJob.status === "failed"
-                    ? "Stopped. The previous categories are kept."
+                    ? "Stopped. The previous research areas are kept."
                     : reclassificationJob.status === "canceled"
-                      ? "Canceled. The previous categories are kept."
+                      ? "Canceled. The previous research areas are kept."
                       : "Classifying analyzed papers…"}
               </span>
               <span className="tabular-nums text-mute">

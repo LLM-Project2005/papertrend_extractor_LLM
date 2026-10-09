@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
 import Sidebar from "@/components/Sidebar";
-import Overview from "@/components/tabs/Overview";
 import Modal, { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
 import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
@@ -27,11 +26,9 @@ function TabLoading() {
   return <div aria-hidden="true" className="app-surface min-h-[420px] motion-safe:animate-pulse" />;
 }
 
-// Every tab but the first loads when it is opened: the semantic map's graph
-// library and every tab's charts were part of the dashboard's first load
-// (docs/32, 3.3).
-const TrendAnalysis = dynamic(() => import("@/components/tabs/TrendAnalysis"), { loading: TabLoading });
-const TrackAnalysis = dynamic(() => import("@/components/tabs/TrackAnalysis"), { loading: TabLoading });
+// Every tab loads when it is opened: the semantic map's graph library and
+// every tab's charts were part of the dashboard's first load (docs/32, 3.3).
+const AreaAnalysis = dynamic(() => import("@/components/tabs/AreaAnalysis"), { loading: TabLoading });
 const KeywordExplorer = dynamic(() => import("@/components/tabs/KeywordExplorer"), { loading: TabLoading });
 const InsightsTab = dynamic(() => import("@/components/dashboard/InsightsTab"), { loading: TabLoading });
 const RepositorySemanticMapView = dynamic(() => import("@/components/workspace/RepositorySemanticMap"), {
@@ -63,14 +60,24 @@ function TabPanel({ active, visited, children }: { active: boolean; visited: boo
 import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
 import { runsInProgress } from "@/lib/run-polling";
 
+// The 2026-10-09 review: the semantic map opens the dashboard as its
+// showcase, the Overview went, and Trend and Category Analysis became one
+// Area Analysis tab.
 const TAB_DEFINITIONS = [
-  { key: "overview", label: "Overview" },
-  { key: "trend_analysis", label: "Trend Analysis" },
-  { key: "track_analysis", label: "Category Analysis" },
-  { key: "keyword_explorer", label: "Keyword Explorer" },
   { key: "semantic_map", label: "Semantic Map" },
+  { key: "area_analysis", label: "Area Analysis" },
+  { key: "keyword_explorer", label: "Keyword Explorer" },
   { key: "adaptive", label: "Adaptive" },
 ] as const;
+
+const DEFAULT_TAB = "semantic_map";
+
+/** Links and bookmarks to the tabs that were merged or removed land on their successor. */
+const RETIRED_TABS: Record<string, string> = {
+  overview: DEFAULT_TAB,
+  trend_analysis: "area_analysis",
+  track_analysis: "area_analysis",
+};
 
 const EMPTY_FOLDER_FILTER: string[] = [];
 
@@ -100,7 +107,8 @@ function normalizeTabKey(value: string | null): string | null {
     return null;
   }
 
-  return value.replace(/-/g, "_");
+  const key = value.replace(/-/g, "_");
+  return RETIRED_TABS[key] ?? key;
 }
 
 function normalizeTrackKey(value: string | null | undefined): TrackKey | null {
@@ -161,7 +169,7 @@ function buildDashboardDrilldownTitle(
   // The category is named as the reader knows it ("English Language
   // Instruction"), not by its internal key ("eli").
   const parts = [
-    target.track ? `Category: ${categoryLabel(target.track)}` : "",
+    target.track ? `Research area: ${categoryLabel(target.track)}` : "",
     target.year ? `Year: ${target.year}` : "",
     target.keyword ? `Keyword: ${target.keyword}` : target.topic ? `Topic: ${target.topic}` : "",
   ].filter(Boolean);
@@ -200,7 +208,7 @@ function FilterPanel({
       categoryOptions={categoryOptions}
       useMock={useMock}
       title="Analytics filters"
-      description="Choose years and categories before reading the dashboard."
+      description="Choose years and research areas before reading the dashboard."
       showHeader={showHeader}
       showFolders={false}
       showCategories={showCategories}
@@ -325,7 +333,7 @@ export default function DashboardClient({
     if (tabParam && TAB_DEFINITIONS.some((tab) => tab.key === tabParam)) {
       return tabParam;
     }
-    return "overview";
+    return DEFAULT_TAB;
   }, [searchParams]);
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
@@ -798,8 +806,8 @@ export default function DashboardClient({
             */}
             <span className="rounded-full bg-subtle px-3 py-1.5 text-xs text-body">
               {classificationEnabled
-                ? `${activeCategoryCount} categor${activeCategoryCount === 1 ? "y" : "ies"}`
-                : "Categories off"}
+                ? `${activeCategoryCount} research area${activeCategoryCount === 1 ? "" : "s"}`
+                : "Research areas off"}
             </span>
             <button
               type="button"
@@ -1147,27 +1155,8 @@ export default function DashboardClient({
             </div>
           ) : null}
           {repositoryHasNoPapers && !isSemanticMapTab ? null : <>
-          <TabPanel active={currentTabKey === "overview"} visited={visitedTabs.has("overview")}>
-            <Overview
-              trends={filteredData.trends}
-              tracksSingle={filteredData.tracksSingle}
-              tracksMulti={filteredData.tracksMulti}
-              categoryAssignments={filteredData.categoryAssignments}
-              categoryOptions={categoryOptions}
-              selectedTracks={effectiveSelectedTracks}
-              categoryLabels={categoryLabels}
-              classificationEnabled={classificationEnabled}
-              onDrilldown={openPaperDrilldown}
-            />
-          </TabPanel>
-          <TabPanel active={currentTabKey === "trend_analysis"} visited={visitedTabs.has("trend_analysis")}>
-            <TrendAnalysis
-              trends={filteredData.trends}
-              onDrilldown={openPaperDrilldown}
-            />
-          </TabPanel>
-          <TabPanel active={currentTabKey === "track_analysis"} visited={visitedTabs.has("track_analysis")}>
-            <TrackAnalysis
+          <TabPanel active={currentTabKey === "area_analysis"} visited={visitedTabs.has("area_analysis")}>
+            <AreaAnalysis
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}

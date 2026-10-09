@@ -33,7 +33,7 @@ export interface AskQuery {
 const DIMENSION_PLURAL: Record<AskDimension, string> = {
   theme: "themes",
   method: "methods",
-  category: "categories",
+  category: "research areas",
   contribution: "contributions",
   study_type: "kinds of study",
   aim: "aims",
@@ -46,7 +46,7 @@ const SINGLE_VALUED: ReadonlySet<AskDimension> = new Set(["category", "study_typ
 const DIMENSION_NOUN: Record<AskDimension, string> = {
   theme: "theme",
   method: "method",
-  category: "category",
+  category: "research area",
   contribution: "contribution",
   study_type: "kind of study",
   aim: "aim",

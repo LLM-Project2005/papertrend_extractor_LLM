@@ -33,6 +33,7 @@ import { loadThemeStore } from "@/lib/topic-theme-service";
 import { normalizeTopicKey, type ThemeStore } from "@/lib/topic-themes";
 import { usableAnalysisSql } from "@/lib/usable-analysis";
 import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
+import { MIN_PAPERS } from "@/lib/insights/stats";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
   ANSWER_FORMAT_RULES,
@@ -75,7 +76,7 @@ export interface RepositoryDataChart {
   chartType: "bar" | "line" | "pie" | "table";
   title: string;
   scopeLabel: string;
-  metric: "word_count" | "top_topics" | "topic_trend";
+  metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency";
   xKey: "label";
   yKeys: string[];
   data: Array<Record<string, string | number>>;
@@ -1414,10 +1415,105 @@ function totalWordCountResult(
   };
 }
 
+/** The sections each paper's record keeps, with the characters stored for each (nodes/dataset_builder.py). */
+const STORED_SECTIONS: Array<{ key: "abstract" | "methods" | "results" | "conclusion"; label: string; labelTh: string; cap: number }> = [
+  { key: "abstract", label: "Abstract", labelTh: "บทคัดย่อ", cap: 12_000 },
+  { key: "methods", label: "Methods", labelTh: "วิธีวิจัย", cap: 20_000 },
+  { key: "results", label: "Results", labelTh: "ผลการวิจัย", cap: 20_000 },
+  { key: "conclusion", label: "Conclusion", labelTh: "สรุป", cap: 12_000 },
+];
+
+/**
+ * "Count the words in each section": the reader means the paper's parts, not
+ * the word "section". The planner read such a request as a count of the term
+ * "section" and charted a row of zeros (found in the test account's chat,
+ * 2026-10-09).
+ */
+export function asksForSectionWordCounts(question: string, terms: string[]): boolean {
+  // The planner passed the request's own words as the term ("section word count").
+  const generic = terms.every((term) =>
+    /^(?:(?:sections?|words?|counts?|numbers?|parts?|of|in|per|each|the)\s*)+$|^(?:ส่วน|บท|คำ|จำนวนคำ)$/i.test(term.trim())
+  );
+  const asks =
+    /\b(?:each|every|per|by|all|the)\s+(?:sections?|parts?)\b|\bsections?\b[^.?!]*\bwords?\b|\bwords?\b[^.?!]*\bsections?\b|(?:แต่ละ|ทุก)(?:ส่วน|บท)/i.test(
+      question
+    );
+  return generic && asks;
+}
+
+function sectionWordCountResult(
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan
+): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
+  const thai = answerLanguageIsThai(plan.answerLanguage);
+  const labels = STORED_SECTIONS.map((section) => (thai ? section.labelTh : section.label));
+  const rows = context.papers.map((paper) => ({
+    paper,
+    counts: STORED_SECTIONS.map((section) => buildRepositoryTermCounts(paper[section.key]).totalWords),
+    capped: STORED_SECTIONS.some((section) => paper[section.key].length >= section.cap),
+  }));
+  const header = thai ? `| เอกสาร | ${labels.join(" | ")} | ทั้งฉบับ |` : `| Paper | ${labels.join(" | ")} | Whole paper |`;
+  const divider = `| --- | ${labels.map(() => "---:").join(" | ")} | ---: |`;
+  const tableRows = rows.map(
+    ({ paper, counts }) =>
+      `| ${paper.title.replace(/\|/g, "-")} | ${counts.map((count) => count.toLocaleString()).join(" | ")} | ${paper.totalWords.toLocaleString()} |`
+  );
+  const answer = [
+    thai ? "## จำนวนคำในแต่ละส่วน" : "## Words in each section",
+    thai
+      ? `นับจากส่วนที่การวิเคราะห์ระบุไว้ใน **${context.scopeLabel}**`
+      : `Counted in the sections the analysis marked, across **${context.scopeLabel}**.`,
+    "",
+    header,
+    divider,
+    ...tableRows,
+    "",
+    thai
+      ? "บทนำและการทบทวนวรรณกรรมไม่ได้เก็บแยกไว้ จึงรวมอยู่ในจำนวนคำทั้งฉบับเท่านั้น"
+      : "The introduction and literature review are not stored as separate sections, so they count only toward the whole paper.",
+  ].join("\n");
+  const single = rows.length === 1;
+  const charts: RepositoryChartPayload[] = plan.needsChart || single
+    ? [
+        {
+          chartType: "bar",
+          title: single
+            ? `${thai ? "จำนวนคำในแต่ละส่วน" : "Words in each section"}: ${shortLabel(rows[0].paper.title, 80)}`
+            : thai ? "จำนวนคำในแต่ละส่วน แยกตามเอกสาร" : "Words in each section, by paper",
+          scopeLabel: context.scopeLabel,
+          metric: "word_count",
+          xKey: "label",
+          yKeys: single ? ["words"] : labels,
+          data: single
+            ? labels.map((label, index) => ({ label, words: rows[0].counts[index] }))
+            : rows.map(({ paper, counts }) => ({ label: shortLabel(paper.title), ...Object.fromEntries(labels.map((label, index) => [label, counts[index]])) })),
+          planner: { source: plan.source, reason: "Words counted in each stored section.", confidence: "high", warnings: [] },
+        },
+      ]
+    : [];
+  const limitations: string[] = [];
+  if (rows.some((row) => row.capped)) {
+    limitations.push(
+      thai
+        ? "บางส่วนยาวเกินกว่าที่เก็บไว้ จึงนับได้เพียงส่วนแรกของส่วนนั้น"
+        : "Some sections are longer than the part of them that is stored, so their counts cover only the opening of that section."
+    );
+  }
+  return {
+    answer,
+    citations: rows.map(({ paper, counts }) =>
+      citationForPaper(paper, STORED_SECTIONS.map((section, index) => `${section.label}: ${counts[index].toLocaleString()} words`).join("; "))
+    ),
+    charts,
+    limitations,
+  };
+}
+
 export function wordCountResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan
 ): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
+  if (asksForSectionWordCounts(plan.refinedQuestion, plan.terms)) return sectionWordCountResult(context, plan);
   // No specific term means the reader is asking how long the papers are, not how
   // often a word appears. Answer that directly instead of demanding a term.
   if (plan.terms.length === 0) return totalWordCountResult(context, plan);
@@ -2979,12 +3075,94 @@ const OPERATION_LABELS: Record<RepositoryOperation, string> = {
  * be one of three fixed charts - top raw topics, raw topics by year, or word
  * counts - whatever the question was.
  */
+/**
+ * A chart for one or two papers. The chart engine compares papers (by theme,
+ * method, year), which needs at least MIN_PAPERS, so a chart of one attached
+ * paper used to be refused. With fewer, the chart is drawn from each paper's
+ * own record: its sections' lengths when those are asked for, otherwise how
+ * often its keywords appear (2026-10-09 review).
+ */
+export function smallScopeChartResult(
+  prompt: string,
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan
+): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations"> {
+  const thai = answerLanguageIsThai(plan.answerLanguage);
+  const papers = context.papers;
+  const sectionsAsked = asksForSectionWordCounts(prompt, []) || /sections?|ส่วน/i.test(prompt);
+  const ranked = papers.map((paper) => [...paper.keywords.entries()].filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+  if (sectionsAsked || ranked.every((list) => list.length === 0)) {
+    return { ...sectionWordCountResult(context, { ...plan, needsChart: true }), coverage: completeCoverage(context, papers.length) };
+  }
+  const note = thai
+    ? `แผนภูมิที่เปรียบเทียบงานวิจัยตามหัวข้อ วิธีวิจัย หรือปี ต้องมีงานวิจัยอย่างน้อย ${MIN_PAPERS} ฉบับในขอบเขต เมื่อมีน้อยกว่านั้นจึงแสดงสิ่งที่อยู่ในงานวิจัยแต่ละฉบับแทน ลองถามว่า "จำนวนคำในแต่ละส่วน" เพื่อดูอีกมุมหนึ่ง`
+    : `A chart that compares papers (by theme, method or year) needs at least ${MIN_PAPERS} in scope, so with ${papers.length === 1 ? "one" : "two"} it shows what ${papers.length === 1 ? "the paper itself contains" : "each paper contains"}. Ask for "words in each section" for another view.`;
+  let chart: RepositoryDataChart;
+  let lead: string;
+  if (papers.length === 1) {
+    const top = ranked[0].slice(0, 10);
+    chart = {
+      chartType: "bar",
+      title: `${thai ? "คำสำคัญที่ปรากฏบ่อยที่สุด" : "How often its keywords appear"}: ${shortLabel(papers[0].title, 80)}`,
+      scopeLabel: context.scopeLabel,
+      metric: "keyword_frequency",
+      xKey: "label",
+      yKeys: [thai ? "จำนวนครั้ง" : "times"],
+      data: top.map(([keyword, count]) => ({ label: keyword, [thai ? "จำนวนครั้ง" : "times"]: count })),
+      planner: { source: plan.source, reason: "Keyword counts stored with the paper.", confidence: "high", warnings: [] },
+    };
+    const [first, second, third] = top;
+    lead = thai
+      ? `“${papers[0].title}” ใช้คำว่า “${first[0]}” บ่อยที่สุด (${first[1]} ครั้ง)${second ? ` รองลงมาคือ “${second[0]}” (${second[1]})` : ""}${third ? ` และ “${third[0]}” (${third[1]})` : ""}`
+      : `“${papers[0].title}” uses “${first[0]}” most often (${first[1]} times)${second ? `, then “${second[0]}” (${second[1]})` : ""}${third ? ` and “${third[0]}” (${third[1]})` : ""}.`;
+  } else {
+    const combined = new Map<string, number>();
+    ranked.forEach((list) => list.forEach(([keyword, count]) => combined.set(keyword, (combined.get(keyword) ?? 0) + count)));
+    const keywords = [...combined.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8).map(([keyword]) => keyword);
+    const names = papers.map((paper) => shortLabel(paper.title, 40));
+    chart = {
+      chartType: "bar",
+      title: thai ? "คำสำคัญที่ปรากฏบ่อยที่สุด เทียบสองฉบับ" : "How often their keywords appear, side by side",
+      scopeLabel: context.scopeLabel,
+      metric: "keyword_frequency",
+      xKey: "label",
+      yKeys: names,
+      data: keywords.map((keyword) => ({ label: keyword, ...Object.fromEntries(papers.map((paper, index) => [names[index], paper.keywords.get(keyword) ?? 0])) })),
+      planner: { source: plan.source, reason: "Keyword counts stored with each paper.", confidence: "high", warnings: [] },
+    };
+    const shared = keywords.filter((keyword) => papers.every((paper) => (paper.keywords.get(keyword) ?? 0) > 0));
+    lead = thai
+      ? shared.length > 0
+        ? `ทั้งสองฉบับใช้คำว่า ${shared.slice(0, 3).map((keyword) => `“${keyword}”`).join(", ")}`
+        : "ทั้งสองฉบับไม่มีคำสำคัญที่พบบ่อยร่วมกัน"
+      : shared.length > 0
+        ? `Both papers use ${shared.slice(0, 3).map((keyword) => `“${keyword}”`).join(", ")}; the chart shows how often each does.`
+        : "The two papers share none of their most frequent keywords; the chart shows each paper's own.";
+  }
+  return {
+    answer: `${lead}
+
+${note}`,
+    citations: papers.map((paper) => citationForPaper(paper, "Keyword counts stored with the paper.")),
+    charts: [chart],
+    coverage: completeCoverage(context, papers.length),
+    limitations: [],
+  };
+}
+
 async function visualizeResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
 ): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
   reportChatProgress("charting");
+  if (context.papers.length > 0 && context.papers.length < MIN_PAPERS) {
+    return smallScopeChartResult(input.prompt, context, legacyPlanForExecution(execution, input.prompt));
+  }
+  if (asksForSectionWordCounts(input.prompt, [])) {
+    const plan = legacyPlanForExecution(execution, input.prompt);
+    return { ...sectionWordCountResult(context, { ...plan, needsChart: true }), coverage: completeCoverage(context, context.papers.length) };
+  }
   const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
   const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
   try {

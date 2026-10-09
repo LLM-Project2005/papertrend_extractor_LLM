@@ -17,6 +17,7 @@ const ABOUT_LINKS = [
   { slug: "how-it-works", label: "How it works", href: "/how-it-works" },
   { slug: "team", label: "Team", href: "/team" },
 ];
+const [HOW_IT_WORKS, TEAM] = ABOUT_LINKS;
 
 function navLinkClass(active: boolean) {
   return `rounded-full px-3 py-1.5 text-sm transition-colors duration-150 ${
@@ -34,6 +35,14 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
         </Link>
 
         <nav aria-label="Main" className="hidden min-w-0 items-center gap-0.5 md:flex">
+          {/* How it works leads: the page that explains the rest. */}
+          <Link
+            href={HOW_IT_WORKS.href}
+            aria-current={activeSlug === HOW_IT_WORKS.slug ? "page" : undefined}
+            className={navLinkClass(activeSlug === HOW_IT_WORKS.slug)}
+          >
+            {HOW_IT_WORKS.label}
+          </Link>
           {marketingFeatures.map((feature) => (
             <Link
               key={feature.slug}
@@ -44,20 +53,17 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
               {feature.navLabel}
             </Link>
           ))}
-          <Link href="/docs" aria-current={activeSlug === "docs" ? "page" : undefined} className={navLinkClass(activeSlug === "docs")}>
+          <Link href="/docs/getting-started" aria-current={activeSlug === "docs" ? "page" : undefined} className={navLinkClass(activeSlug === "docs")}>
             Docs
           </Link>
-          {/* Room for these only from a laptop width; below it they are in the footer and the menu. */}
-          {ABOUT_LINKS.map((link) => (
-            <Link
-              key={link.slug}
-              href={link.href}
-              aria-current={activeSlug === link.slug ? "page" : undefined}
-              className={`hidden lg:inline-block ${navLinkClass(activeSlug === link.slug)}`}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {/* Room for this only from a laptop width; below it, it is in the footer and the menu. */}
+          <Link
+            href={TEAM.href}
+            aria-current={activeSlug === TEAM.slug ? "page" : undefined}
+            className={`hidden lg:inline-block ${navLinkClass(activeSlug === TEAM.slug)}`}
+          >
+            {TEAM.label}
+          </Link>
         </nav>
 
         <div className="flex items-center gap-1.5">
@@ -76,21 +82,12 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
               aria-label="Mobile"
               className="absolute right-0 top-11 z-50 w-64 origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
             >
-              {marketingFeatures.map((feature) => (
-                <Link
-                  key={feature.slug}
-                  href={`/features/${feature.slug}`}
-                  className={`block rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    activeSlug === feature.slug ? "bg-subtle font-medium text-ink" : "text-body hover:bg-subtle hover:text-ink"
-                  }`}
-                >
-                  {feature.navLabel}
-                </Link>
-              ))}
-              <Link href="/docs" className="block rounded-lg px-3 py-2.5 text-sm text-body transition-colors hover:bg-subtle hover:text-ink">
-                Docs
-              </Link>
-              {ABOUT_LINKS.map((link) => (
+              {[
+                HOW_IT_WORKS,
+                ...marketingFeatures.map((feature) => ({ slug: feature.slug, label: feature.navLabel, href: `/features/${feature.slug}` })),
+                { slug: "docs", label: "Docs", href: "/docs/getting-started" },
+                TEAM,
+              ].map((link) => (
                 <Link
                   key={link.slug}
                   href={link.href}

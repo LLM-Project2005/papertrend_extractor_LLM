@@ -16,6 +16,8 @@ const RequestSchema = z.object({
   selectedTracks: z.array(z.string().max(80)).max(40).default([]),
   searchQuery: z.string().max(500).default(""),
   question: z.string().trim().min(3).max(300),
+  /** A suggested example's own view (insights/suggestions): run as it is, with no model call. */
+  query: z.unknown().optional(),
 });
 
 /*
@@ -45,6 +47,13 @@ export async function POST(request: Request) {
   }
   if (built.corpus.papers.length < 3) {
     return NextResponse.json({ unanswerable: "Select at least 3 papers to ask about them." });
+  }
+
+  // An example chosen from the suggestions was checked against these papers
+  // when it was offered; it is computed again here, and nothing is spent.
+  const given = body.query === undefined ? null : parseAskQuery(body.query);
+  if (given) {
+    return NextResponse.json(runAskQuery(built.corpus, given), { headers: { "Cache-Control": "no-store" } });
   }
 
   try {

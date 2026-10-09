@@ -48,7 +48,7 @@ export interface ChatChartOutcome {
 }
 
 const WHAT_CAN_BE_CHARTED =
-  "I can chart how these papers divide by theme, method, category, contribution, kind of study, aim or year, and cross any two - for example \"methods by theme\", \"papers per year\" or \"how the themes changed\".";
+  "I can chart how these papers divide by theme, method, research area, contribution, kind of study, aim or year, and cross any two - for example \"methods by theme\", \"papers per year\" or \"how the themes changed\".";
 const WHAT_CAN_BE_CHARTED_TH =
   "แผนภูมิที่ทำได้คือการแบ่งงานวิจัยตามหัวข้อ วิธีวิจัย หมวดหมู่ ประเภทผลงาน ประเภทการศึกษา จุดมุ่งหมาย หรือปี และการไขว้สองมิติเข้าด้วยกัน เช่น \"วิธีวิจัยในแต่ละหัวข้อ\" \"จำนวนงานวิจัยต่อปี\" หรือ \"หัวข้อที่เปลี่ยนไปตามเวลา\"";
 

@@ -279,9 +279,30 @@ function formatSeconds(value: unknown): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "";
   if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
   if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.round(seconds % 60);
   return `${minutes}m ${remaining}s`;
+}
+
+const DAY_SECONDS = 24 * 60 * 60;
+
+/**
+ * How long this round of analysis waited in the queue, or null when that is
+ * not known. The worker counts the wait from the run's first upload, and a
+ * re-analysis reuses the run, so a paper analysed again weeks later showed
+ * "Waited 12345m". The wait is counted here from when the paper was last
+ * queued; one that cannot belong to this round (negative, or longer than the
+ * tray keeps a session) is not shown.
+ */
+export function queueWaitThisRound(run: IngestionRunRow): number | null {
+  const reported = Number(readMetrics(run).queue_wait_seconds);
+  if (!Number.isFinite(reported) || reported < 0) return null;
+  const created = toEpochMs(run.created_at);
+  const requeued = toEpochMs(readPayloadString(run, "reanalysis_requested_at"));
+  const offset = created && requeued > created ? (requeued - created) / 1000 : 0;
+  const wait = reported - offset;
+  return wait >= 0 && wait <= DAY_SECONDS ? wait : null;
 }
 
 function toEpochMs(value?: string | null): number {
@@ -542,7 +563,8 @@ function StepTrack({ states }: { states: StageStatus[] }) {
 
 function RunMetrics({ run }: { run: IngestionRunRow }) {
   const metrics = readMetrics(run);
-  const queueWait = formatSeconds(metrics.queue_wait_seconds);
+  const waited = queueWaitThisRound(run);
+  const queueWait = waited === null ? "" : formatSeconds(waited);
   const graph = formatSeconds(metrics.graph_seconds);
   const total = formatSeconds(metrics.total_worker_seconds);
   const values = [
@@ -959,7 +981,7 @@ export default function AnalysisStatusCard({
     ? summary.failed > 0
       ? "Papers that failed say why below. Once the problem is fixed, use Try again on each one in the Library."
       : "Finished papers are in the Library and on the Dashboard, and Chat can cite them."
-    : "Each paper is read for its title, year, topics, methods and category, usually in a few minutes. This updates by itself, and you can leave the page while it runs.";
+    : "Each paper is read for its title, year, topics, methods and research area, usually in a few minutes. This updates by itself, and you can leave the page while it runs.";
   const percent = Math.round(progress * 100);
 
   return (

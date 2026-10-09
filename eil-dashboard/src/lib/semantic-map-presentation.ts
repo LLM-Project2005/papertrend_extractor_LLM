@@ -217,7 +217,7 @@ export function buildSemanticSelectionInsight(
     : `They span ${neighborhoodLabels.length} semantic neighborhoods, making this a cross-theme comparison.`;
   const signalText = recurringSignals.length
     ? `Recurring evidence signals include ${recurringSignals.slice(0, 4).join(", ")}.`
-    : "No repeated category, topic, keyword, or method label is shared strongly enough to summarize without reading the papers.";
+    : "No repeated research area, topic, keyword, or method label is shared strongly enough to summarize without reading the papers.";
 
   return {
     selectedCount: points.length,

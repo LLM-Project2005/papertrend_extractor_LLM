@@ -12,11 +12,11 @@ import { displayClass, leadClass, secondaryPillClass, sectionTitleClass } from "
  * The research dashboard, told as its questions (facts: DashboardClient,
  * topic-themes.ts, semantic-map-*, insights/*). The page opens on the real
  * screen with notes pinned to it, then explains the one idea that makes its
- * counts honest (themes), the six views, the drilldown into chat, and the
+ * counts honest (themes), the four views, the drilldown into chat, and the
  * rules its numbers keep.
  */
 
-// Places on the Trend Analysis screenshot (2000x1250), as percentages.
+// Places on the Area Analysis screenshot (2000x1250), as percentages.
 const NOTES = [
   {
     x: 30,
@@ -59,9 +59,9 @@ const NOTES = [
 const RULES = [
   ["No year, no point on a timeline", "An undated paper is never drawn as a year. Most charts count such papers in a note instead."],
   ["Trends have to survive", "A theme gains or loses ground only with at least three papers behind it, and only if the lean holds when any one paper is taken away."],
-  ["Copies are named", "A paper uploaded twice is flagged on the Overview, which tells you it is counted twice in each chart."],
+  ["Copies are named", "A paper uploaded twice is flagged in the Library, and the Adaptive patterns count it once."],
   ["Computed, then worded", "Adaptive’s write-up is checked by code: every number must equal a computed one, or the computed wording stands."],
-  ["One search box", "Titles, topics, keywords, years, evidence sentences and categories, all from one place."],
+  ["One search box", "Titles, topics, keywords, years, evidence sentences and research areas, all from one place."],
   ["Take the data", "Every chart downloads its data as CSV, and every view has a link you can share."],
 ];
 
@@ -78,8 +78,8 @@ export default function DashboardFeature() {
             </h1>
             <div className="lg:col-span-5">
               <p className="text-lg leading-8 text-body">
-                Six views over the papers you analysed: themes by year, categories, keywords, a map of related papers, and
-                patterns worth a second look.
+                Four views over the papers you analysed: a map of related papers, how themes and research areas moved, the
+                keywords behind them, and patterns worth a second look.
               </p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <MarketingCTA size="lg" />
@@ -95,7 +95,7 @@ export default function DashboardFeature() {
               name="dashboard-trends"
               still
               priority
-              alt="The Trend Analysis view of a 41-paper sample repository: a sentence on which themes are gaining ground, above themes by year from 2011 to 2025."
+              alt="The Area Analysis view of a 41-paper sample repository: a sentence on which themes are gaining ground, above themes by year from 2011 to 2025."
               sizes="(min-width: 1152px) 1152px, 100vw"
             />
             <div className="pointer-events-none absolute inset-0">
@@ -136,7 +136,7 @@ export default function DashboardFeature() {
       {/* The views */}
       <section className="px-4 py-24 sm:px-6 sm:py-28">
         <div className="mx-auto max-w-6xl">
-          <h2 className={`max-w-2xl ${sectionTitleClass}`}>Six views, six questions.</h2>
+          <h2 className={`max-w-2xl ${sectionTitleClass}`}>Four views, four questions.</h2>
           <p className={`mt-5 max-w-2xl ${leadClass}`}>
             Each view answers one thing a researcher asks of a body of work, and opens with a sentence that answers it.
           </p>
@@ -174,7 +174,7 @@ export default function DashboardFeature() {
             <div className="reveal mt-10">
               <ProductShot
                 name="dashboard"
-                alt="The Overview of the 41-paper sample repository: its summary, a notice naming a paper uploaded twice, four key figures and the top themes."
+                alt="The Semantic Map of the 41-paper sample repository: papers as dots in coloured neighbourhoods, joined to their nearest neighbours."
                 sizes="(min-width: 1024px) 440px, 100vw"
               />
             </div>

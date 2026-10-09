@@ -19,7 +19,7 @@ import { displayClass, leadClass, secondaryPillClass, sectionTitleClass } from "
 
 const INSIDE = [
   ["Steps", "13 per paper. Four run side by side once the sections are found, and two more at the end."],
-  ["Models", "Gemini 3.1 Flash-Lite reads most of the paper; Gemini 2.5 Flash-Lite takes the title, the keyword list and the category. Each stands in for the other if a call fails."],
+  ["Models", "Gemini 3.1 Flash-Lite reads most of the paper; Gemini 2.5 Flash-Lite takes the title, the keyword list and the research area. Each stands in for the other if a call fails."],
   ["Checks", "An answer in the wrong shape is retried once with the problem spelled out. Every fallback is recorded as a note on the paper."],
   ["Calls", "About nine model calls for a typical paper: fewer in a General repository, more for one that needs translating or OCR."],
   ["Time", "Usually one to three minutes per paper, including the wait in the queue. Scanned papers take longer."],
@@ -44,7 +44,7 @@ export default function AnalysisFeature() {
               Every paper, read the same careful way.
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-body">
-              Upload a PDF and Papertrend finds its title, year, methods, topics and category, and keeps the sentence each one
+              Upload a PDF and Papertrend finds its title, year, methods, topics and research area, and keeps the sentence each one
               came from. Like a careful research assistant, with the notes to show for it.
             </p>
             <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
@@ -142,10 +142,10 @@ export default function AnalysisFeature() {
       <section className="border-t border-hairline px-4 py-28 sm:px-6 sm:py-32">
         <div className="mx-auto max-w-6xl">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-end">
-            <h2 className={`lg:col-span-5 ${sectionTitleClass}`}>Your categories, or none.</h2>
+            <h2 className={`lg:col-span-5 ${sectionTitleClass}`}>Your research areas, or none.</h2>
             <p className={`lg:col-span-7 ${leadClass}`}>
               Each repository chooses how its papers are classified. Change your mind later and reclassify the papers already
-              analysed: they are read again from their stored text, and the new categories appear all at once.
+              analysed: they are read again from their stored text, and the new research areas appear all at once.
             </p>
           </div>
           <div className="mt-12">
@@ -167,7 +167,7 @@ export default function AnalysisFeature() {
           <div className="reveal mt-12">
             <ProductShot
               name="paper"
-              alt="The paper viewer for a 2022 sample paper on mangroves and seawalls in Semarang: its category and the reason for it, the line its year was read from, its own keywords, methods and topics."
+              alt="The paper viewer for a 2022 sample paper on mangroves and seawalls in Semarang: its research area and the reason for it, the line its year was read from, its own keywords, methods and topics."
             />
           </div>
           <ul className="mt-12 grid grid-cols-1 gap-x-10 gap-y-6 text-[15px] leading-7 text-body sm:grid-cols-2 lg:grid-cols-4">

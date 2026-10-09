@@ -75,7 +75,7 @@ function LoginPageContent() {
         <div className="mt-12 w-[880px] max-w-none">
           <ProductShot
             name="dashboard-trends"
-            alt="The Trend Analysis view of the dashboard, showing themes by year."
+            alt="The Area Analysis view of the dashboard, showing themes by year."
             sizes="880px"
           />
         </div>

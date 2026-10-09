@@ -1,14 +1,20 @@
 /**
- * Model cost of analysing one paper again, measured on the pipeline
- * evaluation set (scripts/evaluate_pipeline_quality.py). A scanned paper
- * costs more because every page goes through OCR.
+ * Model tokens (prompt and completion) to analyse one paper again: the median
+ * of the analyses recorded since the pipeline update of 2026-09-26 (30,093 over
+ * 9 papers; long or scanned papers reached about 66,000, since every scanned
+ * page goes through OCR). Shown in tokens rather than dollars, the unit of the
+ * daily allowance (2026-10-09 review); analysis does not count against it.
  */
-export const REANALYSIS_COST_PER_PAPER_USD = 0.02;
+export const REANALYSIS_TOKENS_PER_PAPER = 30_000;
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")} million`;
+  return Math.round(tokens).toLocaleString("en-US");
+}
 
 export function formatReanalysisEstimate(paperCount: number): string {
-  const cost = paperCount * REANALYSIS_COST_PER_PAPER_USD;
-  const shown = cost < 0.01 ? "less than $0.01" : `about $${cost.toFixed(2)}`;
-  return `${paperCount} paper${paperCount === 1 ? "" : "s"}, ${shown} of model use`;
+  const tokens = paperCount * REANALYSIS_TOKENS_PER_PAPER;
+  return `${paperCount} paper${paperCount === 1 ? "" : "s"}, about ${formatTokens(tokens)} tokens of model use`;
 }
 
 const YEAR_PATTERN = /^(19|20)\d{2}$/;

@@ -832,8 +832,8 @@ export default function AdminImportClient() {
       return;
     }
     const confirmed = window.confirm(
-      `Analyze again with the current pipeline?\n\n${formatReanalysisEstimate(paperCount)}. ` +
-        "Titles and years you corrected are kept."
+      `Analyze again with the current pipeline?\n\n${formatReanalysisEstimate(paperCount)} ` +
+        "(about 30,000 a paper; this does not count toward your daily chat tokens). Titles and years you corrected are kept."
     );
     if (!confirmed) return;
     const response = await fetch("/api/workspace/library/reanalyze", {
@@ -2026,7 +2026,7 @@ export default function AdminImportClient() {
                     No papers in this repository yet
                   </p>
                   <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
-                    Add PDFs and each one is analyzed for its topics, methods and category.
+                    Add PDFs and each one is analyzed for its topics, methods and research area.
                   </p>
                   <button
                     type="button"
