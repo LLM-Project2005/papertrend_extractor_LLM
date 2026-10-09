@@ -353,14 +353,14 @@ export function categorySignatures(corpus: InsightCorpus): Insight | null {
   return {
     id: "category_signatures",
     family: "composition",
-    question: "What sets each category apart?",
+    question: "What sets each research area apart?",
     view: { measure: "share in vs outside category", rows: "theme", cols: "category" },
-    chart: { kind: "compare", leftLabel: "In the category", rightLabel: "In the other papers", unit: "percent", sequence: "contrast", rows: rows.map(({ label, group, left, right, paperIds }) => ({ label, group, left, right, paperIds })) },
+    chart: { kind: "compare", leftLabel: "In the research area", rightLabel: "In the other papers", unit: "percent", sequence: "contrast", rows: rows.map(({ label, group, left, right, paperIds }) => ({ label, group, left, right, paperIds })) },
     facts,
     takeaway,
     score: 0.35 + 0.4 * clamp01(first.gap / 0.4) + 0.15 * clamp01(first.count / 6),
     paperIds: uniqueIds(rows.flatMap((row) => row.paperIds)),
-    basis: `Themes in at least ${MIN_PAPERS} of a category's papers, and at least 1.5 times as common there as in the other papers, even with one paper removed.`,
+    basis: `Themes in at least ${MIN_PAPERS} of a research area's papers, and at least 1.5 times as common there as in the other papers, even with one paper removed.`,
   };
 }
 
@@ -627,7 +627,7 @@ export function categoryMixShift(corpus: InsightCorpus): Insight | null {
   return shiftInsight(corpus, {
     id: "category_mix_shift",
     family: "change",
-    question: "How has the balance between categories shifted?",
+    question: "How has the balance between research areas shifted?",
     labelsOf: (paper) => (paper.category ? [paper.category] : []),
     view: { measure: "share early vs late", rows: "category" },
   });

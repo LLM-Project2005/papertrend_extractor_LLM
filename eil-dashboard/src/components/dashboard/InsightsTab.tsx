@@ -454,7 +454,7 @@ export default function InsightsTab({
           </span>
           <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">Nothing strong enough to show yet</h3>
           <p className="mt-2 max-w-lg text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
-            A pattern needs at least 3 papers behind it and must hold when any one is removed. Widen the years or categories, or clear the search, to give it more to work with.
+            A pattern needs at least 3 papers behind it and must hold when any one is removed. Widen the years or research areas, or clear the search, to give it more to work with.
           </p>
         </section>
       ) : (
