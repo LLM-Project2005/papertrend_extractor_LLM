@@ -12,6 +12,12 @@ interface MarketingNavProps {
   wide?: boolean;
 }
 
+/** The pages about Papertrend itself, beside the features and the docs. */
+const ABOUT_LINKS = [
+  { slug: "how-it-works", label: "How it works", href: "/how-it-works" },
+  { slug: "team", label: "Team", href: "/team" },
+];
+
 function navLinkClass(active: boolean) {
   return `rounded-full px-3 py-1.5 text-sm transition-colors duration-150 ${
     active ? "bg-subtle font-medium text-ink" : "text-body hover:text-ink"
@@ -41,6 +47,17 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
           <Link href="/docs" aria-current={activeSlug === "docs" ? "page" : undefined} className={navLinkClass(activeSlug === "docs")}>
             Docs
           </Link>
+          {/* Room for these only from a laptop width; below it they are in the footer and the menu. */}
+          {ABOUT_LINKS.map((link) => (
+            <Link
+              key={link.slug}
+              href={link.href}
+              aria-current={activeSlug === link.slug ? "page" : undefined}
+              className={`hidden lg:inline-block ${navLinkClass(activeSlug === link.slug)}`}
+            >
+              {link.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="flex items-center gap-1.5">
@@ -73,6 +90,17 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
               <Link href="/docs" className="block rounded-lg px-3 py-2.5 text-sm text-body transition-colors hover:bg-subtle hover:text-ink">
                 Docs
               </Link>
+              {ABOUT_LINKS.map((link) => (
+                <Link
+                  key={link.slug}
+                  href={link.href}
+                  className={`block rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                    activeSlug === link.slug ? "bg-subtle font-medium text-ink" : "text-body hover:bg-subtle hover:text-ink"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
               <div className="mt-1.5 border-t border-hairline p-1.5 pt-3">
                 <MarketingCTA className="w-full" />
               </div>
@@ -94,6 +122,7 @@ const FOOTER_GROUPS: Array<{ title: string; links: Array<{ label: string; href: 
       { label: "Troubleshooting", href: "/docs/troubleshooting" },
     ],
   },
+  { title: "About", links: ABOUT_LINKS.map(({ label, href }) => ({ label, href })) },
   {
     title: "Account",
     links: [
@@ -125,7 +154,7 @@ export function MarketingFooter() {
           footer read as a row of disabled form controls. A list of links looks
           like a list of links; the padding keeps a generous hit area.
         */}
-        <nav aria-label="Footer" className="grid gap-8 sm:grid-cols-3">
+        <nav aria-label="Footer" className="grid grid-cols-2 gap-8 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
           {FOOTER_GROUPS.map((group) => (
             <div key={group.title}>
               <p className="text-sm font-medium text-ink">{group.title}</p>
