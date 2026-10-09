@@ -19,9 +19,20 @@ export const rise = {
   shown: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE } },
 };
 
-/** True when the reader has not asked for less motion. Server render assumes motion. */
+/**
+ * True when the reader has not asked for less motion.
+ *
+ * The server cannot know the reader's setting, so the first render assumes
+ * motion and the setting applies from the next one. Reading it straight away
+ * drew the finished state in the browser's first render but not the server's,
+ * and React reported a hydration error (#418) for every reader who asked for
+ * less motion.
+ */
 export function useMotionOK(): boolean {
-  return !useReducedMotion();
+  const reduced = useReducedMotion();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return !(mounted && reduced);
 }
 
 /** Whether the element is on screen; `once` keeps it true after the first sighting. */
