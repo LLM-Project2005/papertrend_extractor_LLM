@@ -19,6 +19,27 @@ import type { Insight } from "@/lib/insights/types";
 export interface SuggestedQuestion {
   question: string;
   query: AskQuery;
+  /** Names the view, so the page can ask for ones it has not shown yet. */
+  key: string;
+}
+
+/** A view's identity, whatever it is called: what is counted, against what, among which papers. */
+export function queryKey(query: AskQuery): string {
+  return JSON.stringify([
+    query.measure,
+    query.rows,
+    query.columns ?? null,
+    query.focus ? [query.focus.dimension, [...query.focus.values].sort()] : null,
+  ]);
+}
+
+/** "papers on mangroves", "papers using interviews", "papers in Assessment". */
+function amongPapers(focus: NonNullable<AskQuery["focus"]>): string {
+  const value = focus.values[0];
+  if (focus.dimension === "method") return `papers using ${value}`;
+  if (focus.dimension === "category") return `papers in ${value}`;
+  if (focus.dimension === "study_type") return `${value} papers`;
+  return `papers on ${value}`;
 }
 
 const PLURAL: Record<AskDimension, string> = {
@@ -43,13 +64,14 @@ const NOUN: Record<AskDimension, string> = {
 
 /** The plain wording of a view, used when no model wording can be trusted. */
 export function templateQuestion(query: AskQuery): string {
-  const focus = query.focus?.values[0];
+  const among = query.focus ? amongPapers(query.focus) : null;
   if (query.measure === "change") {
-    return focus ? `How have the ${PLURAL[query.rows]} of papers on ${focus} changed over time?` : `Which ${PLURAL[query.rows]} have grown or faded over time?`;
+    return among ? `How have the ${PLURAL[query.rows]} of ${among} changed over time?` : `Which ${PLURAL[query.rows]} have grown or faded over time?`;
   }
-  if (query.rows === "year") return focus ? `How many papers on ${focus} appeared each year?` : "How many papers were published each year?";
-  if (query.columns) return `Which ${PLURAL[query.rows]} go with which ${NOUN[query.columns]}?`;
-  if (focus) return `Which ${PLURAL[query.rows]} do the papers on ${focus} have?`;
+  if (query.rows === "year") return among ? `How many ${among} appeared each year?` : "How many papers were published each year?";
+  if (query.columns === "year") return `How are the ${PLURAL[query.rows]} spread across the years${among ? ` among ${among}` : ""}?`;
+  if (query.columns) return `Which ${PLURAL[query.rows]} go with which ${NOUN[query.columns]}${among ? ` among ${among}` : ""}?`;
+  if (among) return `Which ${PLURAL[query.rows]} do the ${among} have?`;
   return `Which ${PLURAL[query.rows]} are most common in these papers?`;
 }
 
@@ -70,28 +92,82 @@ function drawsSomething(insight: Insight): boolean {
 }
 
 /**
- * Views these papers can answer, most useful first, each checked by running
- * it. At most `limit`.
+ * Every view worth suggesting for these papers, most useful first, before any
+ * is checked. Built from the values the papers have, so a repository on coastal
+ * flooding is offered its own themes and methods, and long enough that a reader
+ * who keeps asking for new questions gets new ones (2026-10-10: "the question
+ * should regenerate every time ... and it has to be a new one").
  */
-export function answerableQueries(corpus: InsightCorpus, limit = 4): AskQuery[] {
+function candidateQueries(corpus: InsightCorpus): AskQuery[] {
+  const vocabulary = askVocabulary(corpus, 6);
+  const base = { answerable: true, title: "", measure: "papers" as const, columns: null, focus: null };
+  const classified = corpus.classificationEnabled;
+  const view = (rows: AskDimension, more: Partial<AskQuery> = {}): AskQuery => ({ ...base, rows, ...more });
+  const among = (dimension: AskDimension, value: string) => ({ focus: { dimension, values: [value] } });
+  const [firstTheme, secondTheme] = vocabulary.theme;
+
+  const candidates: AskQuery[] = [
+    // The broad views first: what the papers are and how they go together.
+    view("method", { columns: "theme" }),
+    view("theme", { measure: "change" }),
+    ...(firstTheme ? [view("method", among("theme", firstTheme))] : []),
+    view("contribution"),
+    ...(secondTheme ? [view("aim", among("theme", secondTheme))] : []),
+    ...(classified ? [view("category", { columns: "year" })] : []),
+    view("study_type"),
+    view("year"),
+    // Crossings and changes.
+    view("contribution", { columns: "theme" }),
+    view("study_type", { columns: "method" }),
+    view("aim", { columns: "theme" }),
+    view("method", { measure: "change" }),
+    view("theme", { columns: "year" }),
+    view("contribution", { columns: "method" }),
+    view("study_type", { columns: "year" }),
+    view("contribution", { measure: "change" }),
+    ...(classified ? [view("theme", { columns: "category" }), view("method", { columns: "category" }), view("category", { measure: "change" })] : []),
+    view("method"),
+    view("aim"),
+  ];
+  // Then a closer look at each common theme, method and research area.
+  vocabulary.theme.slice(0, 5).forEach((theme) => {
+    candidates.push(
+      view("method", among("theme", theme)),
+      view("year", among("theme", theme)),
+      view("contribution", among("theme", theme)),
+      view("aim", among("theme", theme)),
+      view("study_type", among("theme", theme))
+    );
+  });
+  vocabulary.method.slice(0, 4).forEach((method) => {
+    candidates.push(view("theme", among("method", method)), view("year", among("method", method)), view("contribution", among("method", method)));
+  });
+  if (classified) {
+    vocabulary.category.slice(0, 4).forEach((category) => {
+      candidates.push(view("theme", among("category", category)), view("method", among("category", category)));
+    });
+  }
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = queryKey(candidate);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Views these papers can answer, most useful first, each checked by running
+ * it. At most `limit`, none of those in `exclude` (keys from queryKey).
+ */
+export function answerableQueries(corpus: InsightCorpus, limit = 4, exclude: ReadonlySet<string> = new Set()): AskQuery[] {
   const vocabulary = askVocabulary(corpus, 6);
   const has = (dimension: AskDimension) =>
     dimension === "year" ? corpus.papers.filter((paper) => paper.year !== null).length >= 2 : vocabulary[dimension].length >= 2;
-  const [firstTheme, secondTheme] = vocabulary.theme;
-  const base = { answerable: true, title: "", measure: "papers" as const, columns: null, focus: null };
-  const candidates: AskQuery[] = [
-    { ...base, rows: "method", columns: "theme" },
-    { ...base, measure: "change", rows: "theme" },
-    ...(firstTheme ? [{ ...base, rows: "method" as const, focus: { dimension: "theme" as const, values: [firstTheme] } }] : []),
-    { ...base, rows: "contribution" },
-    ...(secondTheme ? [{ ...base, rows: "aim" as const, focus: { dimension: "theme" as const, values: [secondTheme] } }] : []),
-    ...(corpus.classificationEnabled ? [{ ...base, rows: "category" as const, columns: "year" as const }] : []),
-    { ...base, rows: "study_type" },
-    { ...base, rows: "year" },
-  ];
   const kept: AskQuery[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of candidateQueries(corpus)) {
     if (kept.length >= limit) break;
+    if (exclude.has(queryKey(candidate))) continue;
     if (!has(candidate.rows) || (candidate.columns && !has(candidate.columns))) continue;
     const query = { ...candidate, title: templateQuestion(candidate) };
     const result = runAskQuery(corpus, query);
@@ -129,6 +205,6 @@ export function applyWordings(queries: AskQuery[], raw: unknown): SuggestedQuest
     const worded = typeof items[index] === "string" ? items[index].replace(/\s+/g, " ").trim() : "";
     const keepsValues = (query.focus?.values ?? []).every((value) => worded.toLowerCase().includes(value.toLowerCase()));
     const usable = worded.length >= 8 && worded.length <= 140 && keepsValues && !/\d/.test(worded.replace(/\d{4}/g, ""));
-    return { question: usable ? worded : query.title, query };
+    return { question: usable ? worded : query.title, query, key: queryKey(query) };
   });
 }

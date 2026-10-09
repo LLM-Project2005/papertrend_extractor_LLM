@@ -14,7 +14,7 @@ import { wrapLabel } from "../src/components/chat/ChatChartCard";
 import { queueWaitThisRound } from "../src/components/workspace/AnalysisStatusCard";
 import { buildInsightCorpus } from "../src/lib/insights/corpus";
 import { runAskQuery } from "../src/lib/insights/ask";
-import { answerableQueries, applyWordings, templateQuestion } from "../src/lib/insights/suggestions";
+import { answerableQueries, applyWordings, queryKey, templateQuestion } from "../src/lib/insights/suggestions";
 import { usageShare } from "../src/components/chat/UsageMeter";
 import { utcDayBounds } from "../src/lib/ai-usage-today";
 import type { IngestionRunRow, TrendRow } from "../src/types/database";
@@ -181,6 +181,36 @@ test("every example question offered is one these papers answer", () => {
   assert.equal(kept.question, templateQuestion(focused));
   const [worded] = applyWordings([focused], { questions: [`Which methods do studies of ${focused.focus!.values[0]} rely on?`] });
   assert.match(worded.question, /rely on\?$/);
+});
+
+test("example questions are new each time until every view these papers answer has been shown", () => {
+  // 2026-10-10: "the question should regenerate every time a user click on it too and it has to be new one".
+  const trends: TrendRow[] = [];
+  const themes = ["Mangrove restoration", "Managed retreat", "Flood insurance"];
+  const methods = ["Household surveys", "Interviews", "Remote sensing"];
+  for (let paper = 1; paper <= 18; paper += 1) {
+    const year = String(2014 + (paper % 8));
+    trends.push(trend(String(paper), year, themes[paper % 3]));
+    trends.push(trend(String(paper), year, themes[(paper + 1) % 3]));
+    trends.push(trend(String(paper), year, methods[paper % 3], "method"));
+  }
+  const corpus = buildInsightCorpus({ trends });
+  const shown = new Set<string>();
+  const batches: string[][] = [];
+  for (let round = 0; round < 12; round += 1) {
+    const batch = answerableQueries(corpus, 3, shown);
+    if (batch.length === 0) break;
+    const keys = batch.map(queryKey);
+    keys.forEach((key) => {
+      assert.ok(!shown.has(key), `round ${round} repeats ${key}`);
+      shown.add(key);
+    });
+    batches.push(batch.map((query) => query.title));
+    for (const query of batch) assert.ok("insight" in runAskQuery(corpus, query), `${query.title} answers`);
+  }
+  assert.ok(shown.size >= 9, `only ${shown.size} distinct views for 18 papers`);
+  assert.equal(new Set(batches.flat()).size, batches.flat().length, "no question is worded the same as another");
+  assert.ok(applyWordings(answerableQueries(corpus, 1), null)[0].key, "each example carries its view's key");
 });
 
 /* -------------------------------------------------------------- usage */
