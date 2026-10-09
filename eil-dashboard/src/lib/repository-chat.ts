@@ -37,6 +37,7 @@ import { MIN_PAPERS } from "@/lib/insights/stats";
 import { reportChatProgress } from "@/lib/chat-progress";
 import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey } from "@/lib/paper-sections";
 import { normalizeTitle } from "@/lib/references/citation";
+import { normalizeEffort, type ChatEffort } from "@/lib/chat-effort";
 import {
   ANSWER_FORMAT_RULES,
   formatConstraintInstruction,
@@ -265,6 +266,27 @@ export const STEP_BUDGETS = {
   documentAnalysis: (papers: number) => ({ maxTokens: Math.min(10_000, 3_000 + papers * 550) }),
 };
 
+/** What each thinking effort (chat-effort.ts) changes. Medium is exactly the answer as it was before efforts. */
+export const EFFORT_SETTINGS: Record<
+  ChatEffort,
+  {
+    /** Papers read for a focused question, and candidates ranked to choose them. */
+    focusedSources: number;
+    rerank: number;
+    candidates: number;
+    /** A second search when the first falls short. */
+    widenSearch: boolean;
+    synthesis: { maxTokens: number; reasoningEffort?: "low" | "medium" | "high" };
+    /** Check every claim against the papers, not only answers that look doubtful. */
+    alwaysAudit: boolean;
+  }
+> = {
+  low: { focusedSources: 6, rerank: 12, candidates: 32, widenSearch: false, synthesis: { maxTokens: 4_000, reasoningEffort: "low" }, alwaysAudit: false },
+  medium: { focusedSources: 10, rerank: 24, candidates: 48, widenSearch: true, synthesis: STEP_BUDGETS.synthesis, alwaysAudit: false },
+  // GPT-6 Luna's reasoning counts against max_tokens (STEP_BUDGETS): more of it needs more room.
+  high: { focusedSources: 16, rerank: 32, candidates: 64, widenSearch: true, synthesis: { maxTokens: 12_000, reasoningEffort: "high" }, alwaysAudit: true },
+};
+
 export interface RepositoryChatInput {
   ownerUserId: string;
   threadId?: string | null;
@@ -276,6 +298,8 @@ export interface RepositoryChatInput {
   prompt: string;
   model?: string;
   forceChart?: boolean;
+  /** How hard to think; medium when absent. */
+  effort?: ChatEffort;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   jobCallbackBaseUrl?: string;
   bypassAsyncJob?: boolean;
@@ -2043,8 +2067,10 @@ function candidatePrompt(candidate: RepositoryRetrievalCandidate): string {
 
 function retrievalBudgets(
   mode: RepositoryRetrievalMode,
-  paperCount: number
+  paperCount: number,
+  effort: ChatEffort = "medium"
 ): { candidateLimit: number; rerankLimit: number; sourceLimit: number } {
+  const settings = EFFORT_SETTINGS[effort];
   if (mode === "exhaustive") {
     return {
       candidateLimit: Math.min(Math.max(paperCount, 1), 256),
@@ -2054,15 +2080,15 @@ function retrievalBudgets(
   }
   if (mode === "comparative") {
     return {
-      candidateLimit: Math.min(Math.max(paperCount, 1), 64),
-      rerankLimit: Math.min(Math.max(paperCount, 1), 24),
-      sourceLimit: Math.min(Math.max(paperCount, 1), 12),
+      candidateLimit: Math.min(Math.max(paperCount, 1), Math.max(64, settings.candidates)),
+      rerankLimit: Math.min(Math.max(paperCount, 1), settings.rerank),
+      sourceLimit: Math.min(Math.max(paperCount, 1), settings.focusedSources + 2),
     };
   }
   return {
-    candidateLimit: Math.min(Math.max(paperCount, 1), 48),
-    rerankLimit: Math.min(Math.max(paperCount, 1), 24),
-    sourceLimit: Math.min(Math.max(paperCount, 1), 10),
+    candidateLimit: Math.min(Math.max(paperCount, 1), settings.candidates),
+    rerankLimit: Math.min(Math.max(paperCount, 1), settings.rerank),
+    sourceLimit: Math.min(Math.max(paperCount, 1), settings.focusedSources),
   };
 }
 
@@ -2176,10 +2202,11 @@ export function expansionIsPossible(selectedIds: string[], scopedPaperCount: num
 async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
-  model?: string
+  model?: string,
+  effort: ChatEffort = "medium"
 ): Promise<SelectedEvidence> {
   const queries = [plan.refinedQuestion, ...plan.retrievalQueries, ...plan.evidenceNeeds];
-  const budgets = retrievalBudgets(plan.retrievalMode, context.papers.length);
+  const budgets = retrievalBudgets(plan.retrievalMode, context.papers.length, effort);
   const hybridEnabled =
     getDatabaseProvider() === "cloud-sql" &&
     process.env.REPOSITORY_HYBRID_RETRIEVAL_ENABLED === "true";
@@ -2284,7 +2311,7 @@ async function selectEvidence(
     const selectedCandidates = selectedIds
       .map((paperId) => candidateById.get(paperId))
       .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
-    const canExpand = expansionIsPossible(selectedIds, context.papers.length);
+    const canExpand = EFFORT_SETTINGS[effort].widenSearch && expansionIsPossible(selectedIds, context.papers.length);
     console.info(
       "chat_sufficiency_decision",
       JSON.stringify({ skipped: !canExpand, selected: selectedIds.length, scoped: context.papers.length })
@@ -2686,7 +2713,8 @@ async function repositoryQaResult(
   plan: RepositoryPromptPlan
 ): Promise<RepositoryQaOutput> {
   reportChatProgress("retrieving");
-  const evidence = await selectEvidence(context, plan, input.model);
+  const effort = normalizeEffort(input.effort);
+  const evidence = await selectEvidence(context, plan, input.model, effort);
   reportChatProgress(
     "reading_evidence",
     evidence.papers.length === 1 ? "1 paper" : `${evidence.papers.length} papers`
@@ -2738,7 +2766,7 @@ async function repositoryQaResult(
       0.2,
       input.model,
       "CHAT_SYNTHESIS",
-      STEP_BUDGETS.synthesis
+      EFFORT_SETTINGS[effort].synthesis
     );
     const parsed = GroundedAnswerSchema.safeParse(extractJsonObject(completion?.content ?? ""));
     if (parsed.success) {
@@ -2788,7 +2816,8 @@ async function repositoryQaResult(
   // Recorded so the reason an eight-second audit was needed is visible, rather
   // than having to guess which condition failed.
   console.info("chat_audit_decision", JSON.stringify({ skipped: skipBlocker === null, blocker: skipBlocker }));
-  if (skipBlocker === null) {
+  // High effort has every answer's claims checked, not only doubtful ones.
+  if (skipBlocker === null && !EFFORT_SETTINGS[effort].alwaysAudit) {
     reportChatProgress("formatting");
     const cleanCited = validation.citedPaperIds
       .map((paperId) => paperById.get(paperId))
@@ -3649,7 +3678,8 @@ export function namedPaperContext(
 ): RepositoryContext | null {
   const counting =
     requestsTotalWordCount(prompt) ||
-    Boolean(execution && execution.operations.every((operation) => operation === "analyze_text" || operation === "visualize"));
+    // A queued job's stored plan can lack its operations.
+    Boolean(Array.isArray(execution?.operations) && execution.operations.every((operation) => operation === "analyze_text" || operation === "visualize"));
   if (!counting || context.papers.length < 2) return null;
   const named = papersNamedInQuestion(prompt, context.papers);
   if (named.length === 0 || named.length === context.papers.length) return null;
@@ -4101,6 +4131,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       [...context.selectedRunIds].sort().join(","),
       `model:${input.model ?? ""}`,
       `web:${input.allowWeb ? 1 : 0}`,
+      `effort:${normalizeEffort(input.effort)}`,
     ].join("|"),
     question: input.prompt,
   };
@@ -4231,7 +4262,7 @@ async function runRepositoryChatWithContext(
       ...plan,
       intent: "word_count",
       terms: [],
-      needsChart: plan.needsChart || Boolean(execution?.operations.includes("visualize")) || promptRequestsChart(input.prompt, input.forceChart),
+      needsChart: plan.needsChart || Boolean(execution?.operations?.includes("visualize")) || promptRequestsChart(input.prompt, input.forceChart),
     };
     const result = wordCountResult(context, lengthPlan);
     return {

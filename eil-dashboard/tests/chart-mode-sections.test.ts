@@ -230,5 +230,5 @@ test("Chart mode answers a question that asks for an explanation, then charts", 
 test("the word-count shortcut draws the chart the planner added", () => {
   const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
   const shortcut = source.slice(source.indexOf("if (requestsTotalWordCount(input.prompt) && context.papers.length > 0)"));
-  assert.match(shortcut.slice(0, 900), /needsChart: plan\.needsChart \|\| Boolean\(execution\?\.operations\.includes\("visualize"\)\) \|\| promptRequestsChart\(input\.prompt, input\.forceChart\)/);
+  assert.match(shortcut.slice(0, 900), /needsChart: plan\.needsChart \|\| Boolean\(execution\?\.operations\?\.includes\("visualize"\)\) \|\| promptRequestsChart\(input\.prompt, input\.forceChart\)/);
 });

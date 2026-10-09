@@ -5,6 +5,7 @@ import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { buildThreadTitle } from "@/lib/chat-store";
 import { getChatRepository } from "@/lib/chat-repository";
 import { runRepositoryChat } from "@/lib/repository-chat";
+import { CHAT_EFFORTS, type ChatEffort } from "@/lib/chat-effort";
 import { addWebContext, webStepApplies } from "@/lib/repository-chat-web";
 import { cancelResearch, planResearch, startResearch } from "@/lib/deep-research/actions";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
@@ -115,6 +116,8 @@ interface ChatRequestBody {
   /** Asks for a chart; the repository chat decides which. */
   chartRequest?: Record<string, unknown>;
   webSearchEnabled?: boolean;
+  /** How hard an ordinary answer thinks (low, medium, high); Max is chatMode "deep_research". */
+  effort?: ChatEffort;
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue" | "cancel";
   sessionId?: string;
@@ -182,6 +185,7 @@ const ChatRequestBodySchema = z
     toolMode: z.enum(["auto", "web_search", "chart", "none"]).optional(),
     chartRequest: z.record(z.string(), z.unknown()).optional(),
     webSearchEnabled: z.boolean().optional(),
+    effort: z.enum(CHAT_EFFORTS).optional(),
     researchSourcePolicy: z.record(z.string(), z.unknown()).optional(),
     chatMode: z.enum(["normal", "deep_research"]).optional(),
     action: z.enum(["message", "plan", "continue", "cancel"]).optional(),
@@ -337,6 +341,7 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
       prompt: currentMessage,
       model: selectedModel,
       forceChart: chartRequested,
+      effort: body.effort ?? "medium",
       history: (body.messages ?? []).slice(-12),
       jobCallbackBaseUrl: getPublicRequestOrigin(request),
       sourceMessageId: persistedUserMessage?.id ?? null,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runRepositoryChat } from "@/lib/repository-chat";
+import { normalizeEffort } from "@/lib/chat-effort";
 import {
   claimRepositoryChatJob,
   completeRepositoryChatJob,
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
         model: typeof plan.model === "string" ? plan.model : undefined,
         allowWeb: Boolean(plan.allowWeb),
         forceChart: Boolean(plan.forceChart),
+        effort: normalizeEffort(plan.effort),
         history: Array.isArray(plan.history)
           ? plan.history.filter((item): item is { role: "user" | "assistant"; content: string } =>
               Boolean(item && typeof item === "object" &&

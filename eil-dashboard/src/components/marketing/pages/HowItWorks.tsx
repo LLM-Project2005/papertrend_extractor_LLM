@@ -56,8 +56,8 @@ const MORE = [
   },
   {
     Icon: SearchIcon,
-    title: "Deep thinking",
-    copy: "Choose Deep under the text box: the question is split into two to five parts, shown as its thinking while it reads the papers first and the web only where they cannot answer. Gemini 3.8 Flash, a different model family from the writer, checks every sentence. About 40 seconds; stop it at any time.",
+    title: "Thinking effort",
+    copy: "Slide the effort under the text box from Low to Max. Each step up reads more widely and thinks longer; at Max the question is split into two to five parts, shown as its thinking while it reads the papers first and the web only where they cannot answer, and Gemini 3.8 Flash, a different model family from the writer, checks every sentence. About 40 seconds; stop it at any time.",
   },
   {
     Icon: RefreshIcon,

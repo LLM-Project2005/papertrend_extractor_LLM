@@ -80,6 +80,7 @@ export async function createRepositoryChatJob(input: RepositoryChatInput, plan: 
       model: input.model ?? null,
       allowWeb: Boolean(input.allowWeb),
       forceChart: Boolean(input.forceChart),
+      effort: input.effort ?? "medium",
       history: (input.history ?? []).slice(-12),
       sourceMessageId: input.sourceMessageId ?? null,
       assistantMessageId,

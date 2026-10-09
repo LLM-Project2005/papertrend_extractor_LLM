@@ -112,6 +112,8 @@ import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
 import { mergeLatestMessages, NEAR_BOTTOM_PX } from "@/lib/chat-transcript";
+import ThinkingEffort, { readStoredEffort, storeEffort, type ThinkingEffortLevel } from "@/components/chat/ThinkingEffort";
+import { ThinkingLive, ThoughtSummary, thinkingIsRunning } from "@/components/chat/ThinkingTrace";
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
@@ -841,6 +843,11 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
   );
 }
 
+/** A Max answer, written by the research engine (v2); older reports have no engine. */
+function answerFromEngine(message: { metadata?: Record<string, unknown> | null }): boolean {
+  return Boolean(message.metadata?.engine);
+}
+
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
   chartModeEnabled: boolean,
@@ -849,10 +856,10 @@ function renderLoadingLabel(
 ) {
   if (chartModeEnabled) return "Building chart…";
   if (!deepResearchEnabled) return "Generating answer…";
-  if (starting) return "Starting deep research…";
-  if (activeSession?.status === "planned") return "Planning deep research…";
+  if (starting) return "Starting to think…";
+  if (activeSession?.status === "planned") return "Working out how to answer…";
   if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis…";
-  return "Running deep research…";
+  return "Thinking…";
 }
 
 function buildResearchTitle(
@@ -1268,7 +1275,17 @@ export default function ChatClient() {
     setChatScopeFolderId("all");
   }, [currentProject?.id]);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
-  const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
+  // Thinking effort (ThinkingEffort.tsx): Low to High are ordinary answers;
+  // Max runs the research engine. The choice is remembered on this browser.
+  const [effort, setEffortState] = useState<ThinkingEffortLevel>("medium");
+  useEffect(() => setEffortState(readStoredEffort()), []);
+  const setEffort = useCallback((level: ThinkingEffortLevel) => {
+    setEffortState(level);
+    storeEffort(level);
+  }, []);
+  const deepResearchEnabled = effort === "max";
+  // Chart mode counts rather than researches, so it goes up to High.
+  const requestEffort = effort === "max" ? "high" : effort;
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [chartModeEnabled, setChartModeEnabled] = useState(false);
   const [researchSourcePolicy, setResearchSourcePolicy] =
@@ -1810,10 +1827,10 @@ export default function ChatClient() {
       setThreadMenuId(null);
       setChatListOpen(false);
       setReportFullViewOpen(false);
-      setDeepResearchEnabled(mode === "deep_research");
+      if (mode === "deep_research") setEffort("max");
       setChartModeEnabled(false);
     },
-    [deepResearchEnabled]
+    [deepResearchEnabled, setEffort]
   );
 
   const applyPayload = useCallback((payload: ChatPayload) => {
@@ -1824,7 +1841,6 @@ export default function ChatClient() {
       if (payload.messages) loadedThreadIdRef.current = payload.thread.id;
       setActiveThread(payload.thread);
       setActiveThreadId(payload.thread.id);
-      setDeepResearchEnabled(payload.thread.mode === "deep_research");
       if (payload.thread.mode === "deep_research") {
         setChartModeEnabled(false);
       }
@@ -1934,7 +1950,6 @@ export default function ChatClient() {
           }
         } else {
           setActiveThread(payload.thread);
-          setDeepResearchEnabled(payload.thread.mode === "deep_research");
           setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
           oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? null;
           setMessages(latest);
@@ -2380,8 +2395,9 @@ export default function ChatClient() {
   }
 
   function startEditingUserMessage(message: MessageView) {
-    if (activeThread?.mode === "deep_research") {
-      setDeepResearchEnabled(true);
+    // A question asked at Max is asked again at Max, from the box.
+    if (message.metadata?.chatMode === "deep_research") {
+      setEffort("max");
       focusComposerWithDraft(message.content);
       return;
     }
@@ -2457,7 +2473,8 @@ export default function ChatClient() {
         selectedRunIds: editedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
         webSearchEnabled,
-        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        threadId: activeThread?.id,
+        effort: requestEffort,
         editMessageId: message.id.startsWith("local-") ? undefined : message.id,
         chatMode: "normal",
         action: "message",
@@ -2535,7 +2552,8 @@ export default function ChatClient() {
         selectedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
         webSearchEnabled,
-        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        threadId: activeThread?.id,
+        effort: requestEffort,
         chatMode: "normal",
         action: "message",
       });
@@ -2610,7 +2628,8 @@ export default function ChatClient() {
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: "chart",
-        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        threadId: activeThread?.id,
+        effort: requestEffort,
         chatMode: "normal",
         action: "message",
       });
@@ -2677,9 +2696,8 @@ export default function ChatClient() {
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
-        threadId: activeThread?.mode === "deep_research" ? activeThread.id : undefined,
-        sessionId:
-          activeThread?.mode === "deep_research" ? deepSession?.id : undefined,
+        threadId: activeThread?.id,
+        sessionId: deepSession?.status === "planned" ? deepSession.id : undefined,
         chatMode: "deep_research",
         action: "plan",
         researchSourcePolicy: effectiveResearchSourcePolicy,
@@ -2758,7 +2776,7 @@ export default function ChatClient() {
   }
 
   function handleEditResearchPlan() {
-    setDeepResearchEnabled(true);
+    setEffort("max");
     focusComposerWithDraft(deepSession?.prompt ?? "");
   }
 
@@ -3186,7 +3204,7 @@ export default function ChatClient() {
             </div>
 
             <div className="relative flex items-center gap-2" ref={conversationMenuRef}>
-              {deepSession ? (
+              {deepSession && !researchV2 ? (
                 <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   {sessionLabel(deepSession) ?? "Saved"}
                 </span>
@@ -3370,7 +3388,14 @@ export default function ChatClient() {
                           {/* A stable hook for the layout-shift measurement, which has to
                               tell an answer arriving from the intro disappearing. */}
                           {message.kind === "deep_research_report" ? (
-                            <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
+                            answerFromEngine(message) ? (
+                              <ThoughtSummary
+                                metadata={message.metadata}
+                                steps={deepSession && message.metadata?.sessionId === deepSession.id ? deepSession.steps : undefined}
+                              />
+                            ) : (
+                              <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
+                            )
                           ) : null}
                           <div data-testid="assistant-message">
                             <AssistantAnswer
@@ -3380,7 +3405,7 @@ export default function ChatClient() {
                               unfolded={message.kind === "deep_research_report"}
                             />
                           </div>
-                          {message.kind === "deep_research_report" ? (
+                          {message.kind === "deep_research_report" && !answerFromEngine(message) ? (
                             <ReportActions
                               content={message.content}
                               citations={message.citations.map((citation) => ({ ...citation, paperId: String(citation.paperId) }))}
@@ -3406,7 +3431,7 @@ export default function ChatClient() {
                             )
                           )}
                           <AnswerCaveats metadata={message.metadata} />
-                          {message.kind !== "deep_research_report" && isFinishedAnswer(message) ? (
+                          {(message.kind !== "deep_research_report" || answerFromEngine(message)) && isFinishedAnswer(message) ? (
                             <MarkdownActions
                               markdown={() => answerMarkdown(message.content, message.citations, message.metadata)}
                               fileName={markdownFileName(questionBefore(visibleMessages, messageIndex) || pageTitle, "papertrend-answer")}
@@ -3454,7 +3479,7 @@ export default function ChatClient() {
                   );
                 })}
 
-                {loading ? (
+                {loading && !(researchV2 && thinkingIsRunning(deepSession)) ? (
                   <div className="flex items-start gap-3">
                     <ThinkingOrb
                       size={32}
@@ -3496,9 +3521,27 @@ export default function ChatClient() {
               </div>
             )}
 
-            {/* Research progress and the report sit after the conversation (docs/32, 2.7):
-                above it, the card grew out of sight of a reader at the bottom. */}
-            {deepSession ? (
+            {/* Max effort's thinking, as one line after the question it is
+                answering; once it has answered, the answer is a message and
+                the line above it says how it thought (ThinkingTrace.tsx). A
+                stopped run shows only while its question is the last thing
+                in the conversation. */}
+            {deepSession && researchV2 ? (
+              thinkingIsRunning(deepSession) ||
+              ((deepSession.status === "failed" || deepSession.status === "canceled") && visibleMessages[visibleMessages.length - 1]?.role === "user") ? (
+                <section className="mx-auto mt-6 w-full max-w-[1040px]">
+                  <ThinkingLive
+                    session={deepSession}
+                    busy={loading}
+                    onStop={() => void handleCancelResearch()}
+                    onRetry={() => void handleContinueResearch()}
+                    onEdit={handleEditResearchPlan}
+                  />
+                </section>
+              ) : null
+            ) : /* Research progress and the report sit after the conversation (docs/32, 2.7):
+                above it, the card grew out of sight of a reader at the bottom. Older runs only. */
+            deepSession ? (
               <section className="mx-auto mt-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
@@ -3992,7 +4035,7 @@ export default function ChatClient() {
                         type="button"
                         onClick={() => {
                           setChartModeEnabled(true);
-                          setDeepResearchEnabled(false);
+                          if (effort === "max") setEffort("high");
                         }}
                         className="rounded-full bg-sky-700 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-sky-800 dark:bg-sky-200 dark:text-sky-950 dark:hover:bg-white"
                       >
@@ -4014,9 +4057,9 @@ export default function ChatClient() {
                   <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-mute">
                     <SparkIcon className="mt-0.5 h-3.5 w-3.5 flex-none" />
                     <span>
-                      Deep thinking splits your question into up to 5 parts, reads the full text of every paper in scope,
-                      searches the web only where the papers cannot answer, and checks every claim against its source. You
-                      see it think as it goes; stop it at any time.
+                      Max effort thinks it all through: it splits your question into up to 5 parts, reads every paper in
+                      scope in full, searches the web only where the papers cannot answer, and checks every claim against
+                      its source. About a minute; you can stop it at any time.
                     </span>
                   </p>
                 ) : null}
@@ -4195,7 +4238,7 @@ export default function ChatClient() {
                                     onClick={() => {
                                       if (item.key === "chart") {
                                         setChartModeEnabled(!chartModeEnabled);
-                                        setDeepResearchEnabled(false);
+                                        if (!chartModeEnabled && effort === "max") setEffort("high");
                                       } else {
                                         setWebSearchEnabled(!webSearchEnabled);
                                       }
@@ -4255,53 +4298,17 @@ export default function ChatClient() {
 
                     <UsageMeter requestHeaders={requestHeaders} refreshKey={`${messages.length}:${loading}`} />
 
-                    {/* How hard to think (2026-10-09 review): Standard is the
-                        usual answer; Deep runs the deep research engine, which
-                        splits the question, reads every paper and checks every
-                        claim, and shows that work as it thinks. */}
-                    {!chartModeEnabled ? (
-                      <div
-                        role="radiogroup"
-                        aria-label="Thinking effort"
-                        className="inline-flex h-9 items-center rounded-full border border-slate-200 p-0.5 dark:border-[#2a2a2a]"
-                        onKeyDown={(event) => {
-                          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                          event.preventDefault();
-                          const next = !deepResearchEnabled;
-                          setDeepResearchEnabled(next);
-                          if (next) setChartModeEnabled(false);
-                          const group = event.currentTarget;
-                          window.requestAnimationFrame(() => group.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus());
-                        }}
-                      >
-                        {[
-                          { deep: false, label: "Standard", hint: "An answer in seconds, from the papers that bear on the question." },
-                          { deep: true, label: "Deep", hint: "Thinks it through: up to 5 parts, every paper read, every claim checked. About a minute." },
-                        ].map((option) => {
-                          const on = deepResearchEnabled === option.deep;
-                          return (
-                            <button
-                              key={option.label}
-                              type="button"
-                              role="radio"
-                              aria-checked={on}
-                              tabIndex={on ? 0 : -1}
-                              title={option.hint}
-                              onClick={() => {
-                                setDeepResearchEnabled(option.deep);
-                                if (option.deep) setChartModeEnabled(false);
-                              }}
-                              className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 ${
-                                on ? "bg-slate-900 text-white dark:bg-white dark:text-[#111111]" : "text-slate-600 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:text-white"
-                              }`}
-                            >
-                              {option.deep ? <SparkIcon className="h-3.5 w-3.5" /> : null}
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
+                    {/* How hard to think (2026-10-10): one slider from Low to Max,
+                        shown in every mode. Chart mode counts rather than
+                        researches, so it goes up to High. */}
+                    <ThinkingEffort
+                      value={effort}
+                      onChange={(level) => {
+                        setEffort(level);
+                        if (level === "max") setChartModeEnabled(false);
+                      }}
+                      maxUnavailable={chartModeEnabled ? "Chart mode goes up to High: a chart is counted from the papers, not researched. Turn Chart mode off to use Max." : null}
+                    />
 
                     {chartModeEnabled && !deepResearchEnabled ? (
                       <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]">
