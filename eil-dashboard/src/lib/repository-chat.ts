@@ -293,7 +293,10 @@ export const EFFORT_SETTINGS: Record<
  * whole-repository summary or a per-paper analysis; the pilot sent a High
  * question down the summary path, which the effort did not reach (2026-10-10).
  */
-export function writingBudget<T extends { maxTokens: number; reasoningEffort?: "low" | "medium" | "high" }>(base: T, effort: ChatEffort): T {
+export function writingBudget<T extends { maxTokens: number; reasoningEffort?: "low" | "medium" | "high" }>(
+  base: T,
+  effort: ChatEffort
+): T & { reasoningEffort?: "low" | "medium" | "high" } {
   if (effort === "low") return { ...base, reasoningEffort: "low" };
   if (effort === "high") return { ...base, maxTokens: Math.round(base.maxTokens * 1.5), reasoningEffort: "high" };
   return base;
