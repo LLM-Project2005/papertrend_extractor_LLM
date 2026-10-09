@@ -99,7 +99,9 @@ test("words in each section is read as the paper's parts, not as the word 'secti
   assert.equal(asksForSectionWordCounts("how often does 'feedback' appear?", ["feedback"]), false);
   const result = wordCountResult(context([BRANDING]), plan());
   assert.match(result.answer, /## Words in each section/);
-  assert.match(result.answer, /\| Abstract \| Methods \| Results \| Conclusion \| Whole paper \|/);
+  // This paper has no stored text to read headings from, so the four stored parts are counted, and the answer says so.
+  assert.match(result.answer, /\| Section \| Words \| Share \|/);
+  assert.match(result.answer, /could not be read, so only the parts the analysis stored are counted/);
   const chart = result.charts[0] as RepositoryDataChart;
   assert.deepEqual(chart.data.map((row) => row.label), ["Abstract", "Methods", "Results", "Conclusion"]);
   assert.deepEqual(chart.data.map((row) => row.words), ["abstract", "methods", "results", "conclusion"].map((key) => buildRepositoryTermCounts(BRANDING[key as "abstract"]).totalWords));

@@ -96,9 +96,13 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   const chartData = chart.data ?? [];
   const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
   const primaryKey = yKeys[0] ?? "value";
+  // Stacked parts of a whole (a paper's sections) share one bar per row.
+  const stacked = Boolean(chart.stacked) && yKeys.length > 1;
   const maxValue = Math.max(
     ...chartData.flatMap((row) =>
-      yKeys.map((key) => Number(row[key]) || 0)
+      stacked
+        ? [yKeys.reduce((sum, key) => sum + (Number(row[key]) || 0), 0)]
+        : yKeys.map((key) => Number(row[key]) || 0)
     ),
     0
   );
@@ -108,13 +112,13 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   // drawn over one another (the test account's chat, 2026-10-09). The chart
   // grows with its rows instead of squeezing them into a fixed height.
   const longestLabel = Math.max(0, ...chartData.map((row) => String(row.label ?? "").length));
-  const sideways = chartData.length > 6 || longestLabel > 14;
+  const sideways = stacked || chartData.length > 6 || longestLabel > 14;
   const column = labelColumn(narrow, {
     width: Math.min(240, Math.max(96, Math.min(longestLabel, 34) * 6.6)),
     chars: Math.min(34, Math.max(14, longestLabel)),
   });
   const series = yKeys.length;
-  const rowHeight = series > 1 ? 14 * series + 18 : 38;
+  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : 38;
   const barHeight = sideways ? Math.max(200, Math.min(760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
 
   return (
@@ -236,8 +240,10 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                     isAnimationActive={chartAnimationActive()}
                     key={key}
                     dataKey={key}
+                    stackId={stacked ? "parts" : undefined}
                     fill={TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]}
-                    radius={sideways ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                    // Only the outer end of a stacked bar is rounded.
+                    radius={stacked && keyIndex < yKeys.length - 1 ? 0 : sideways ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                     maxBarSize={sideways ? 28 : 64}
                   >
                     {chartData.map((row, index) => (

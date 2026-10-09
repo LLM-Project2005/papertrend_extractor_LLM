@@ -35,6 +35,8 @@ import { usableAnalysisSql } from "@/lib/usable-analysis";
 import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
 import { MIN_PAPERS } from "@/lib/insights/stats";
 import { reportChatProgress } from "@/lib/chat-progress";
+import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey } from "@/lib/paper-sections";
+import { normalizeTitle } from "@/lib/references/citation";
 import {
   ANSWER_FORMAT_RULES,
   formatConstraintInstruction,
@@ -79,6 +81,8 @@ export interface RepositoryDataChart {
   metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency";
   xKey: "label";
   yKeys: string[];
+  /** Series drawn end to end in one bar per row, when they are parts of a whole. */
+  stacked?: boolean;
   data: Array<Record<string, string | number>>;
   planner: {
     source: "llm" | "fallback";
@@ -1441,56 +1445,142 @@ export function asksForSectionWordCounts(question: string, terms: string[]): boo
   return generic && asks;
 }
 
+interface PaperSectionCounts {
+  paper: RepositoryPaper;
+  parts: Array<{ key: PaperSectionKey; words: number }>;
+  /** "headings": read from the headings printed in the paper; "stored": the four parts the analysis keeps. */
+  source: "headings" | "stored";
+  capped: boolean;
+}
+
+/** Words in each part of one paper: its printed headings when they can be read, else the stored parts. */
+export function paperSectionCounts(paper: RepositoryPaper): PaperSectionCounts {
+  const sections = paper.contentSource === "full_text" ? splitPaperSections(paper.content) : null;
+  if (sections) {
+    return {
+      paper,
+      parts: sections.map((section) => ({ key: section.key, words: buildRepositoryTermCounts(section.text).totalWords })),
+      source: "headings",
+      capped: false,
+    };
+  }
+  return {
+    paper,
+    parts: STORED_SECTIONS.map((section) => ({ key: section.key, words: buildRepositoryTermCounts(paper[section.key]).totalWords })),
+    source: "stored",
+    capped: STORED_SECTIONS.some((section) => paper[section.key].length >= section.cap),
+  };
+}
+
+/** The whole paper's words; the parts' sum when the paper has no word index. */
+function wholePaper(row: PaperSectionCounts): number {
+  return row.paper.totalWords || row.parts.reduce((sum, part) => sum + part.words, 0);
+}
+
+/** One row per paper: a second upload of the same paper is counted once. */
+function distinctPapers(papers: RepositoryPaper[]): RepositoryPaper[] {
+  const seen = new Set<string>();
+  return papers.filter((paper) => {
+    const key = `${normalizeTitle(paper.title)}\u0000${paper.totalWords}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function sectionWordCountResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan
 ): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
   const thai = answerLanguageIsThai(plan.answerLanguage);
-  const labels = STORED_SECTIONS.map((section) => (thai ? section.labelTh : section.label));
-  const rows = context.papers.map((paper) => ({
-    paper,
-    counts: STORED_SECTIONS.map((section) => buildRepositoryTermCounts(paper[section.key]).totalWords),
-    capped: STORED_SECTIONS.some((section) => paper[section.key].length >= section.cap),
-  }));
-  const header = thai ? `| เอกสาร | ${labels.join(" | ")} | ทั้งฉบับ |` : `| Paper | ${labels.join(" | ")} | Whole paper |`;
-  const divider = `| --- | ${labels.map(() => "---:").join(" | ")} | ---: |`;
-  const tableRows = rows.map(
-    ({ paper, counts }) =>
-      `| ${paper.title.replace(/\|/g, "-")} | ${counts.map((count) => count.toLocaleString()).join(" | ")} | ${paper.totalWords.toLocaleString()} |`
-  );
-  const answer = [
-    thai ? "## จำนวนคำในแต่ละส่วน" : "## Words in each section",
-    thai
-      ? `นับจากส่วนที่การวิเคราะห์ระบุไว้ใน **${context.scopeLabel}**`
-      : `Counted in the sections the analysis marked, across **${context.scopeLabel}**.`,
-    "",
-    header,
-    divider,
-    ...tableRows,
-    "",
-    thai
-      ? "บทนำและการทบทวนวรรณกรรมไม่ได้เก็บแยกไว้ จึงรวมอยู่ในจำนวนคำทั้งฉบับเท่านั้น"
-      : "The introduction and literature review are not stored as separate sections, so they count only toward the whole paper.",
-  ].join("\n");
+  const label = (key: PaperSectionKey) => (thai ? SECTION_LABELS[key].th : SECTION_LABELS[key].en);
+  const papers = distinctPapers(context.papers);
+  const repeats = context.papers.length - papers.length;
+  const rows = papers.map(paperSectionCounts);
+  const fallback = rows.filter((row) => row.source === "stored").length;
   const single = rows.length === 1;
-  const charts: RepositoryChartPayload[] = plan.needsChart || single
-    ? [
-        {
+  const lines: string[] = [thai ? "## จำนวนคำในแต่ละส่วน" : "## Words in each section"];
+
+  if (single) {
+    const [{ paper, parts }] = rows;
+    const total = wholePaper(rows[0]);
+    lines.push(
+      thai
+        ? `“${paper.title}” มีทั้งหมด ${total.toLocaleString()} คำ`
+        : `“${paper.title}” has ${total.toLocaleString()} words.`,
+      "",
+      thai ? "| ส่วน | จำนวนคำ | สัดส่วน |" : "| Section | Words | Share |",
+      "| --- | ---: | ---: |",
+      ...parts.map(
+        (part) =>
+          `| ${label(part.key)} | ${part.words.toLocaleString()} | ${total > 0 ? Math.round((part.words / total) * 100) : 0}% |`
+      ),
+      thai ? `| **ทั้งฉบับ** | **${total.toLocaleString()}** | |` : `| **Whole paper** | **${total.toLocaleString()}** | |`
+    );
+  } else {
+    const keys = SECTION_ORDER.filter((key) => rows.some((row) => row.parts.some((part) => part.key === key)));
+    lines.push(
+      thai ? `นับใน **${context.scopeLabel}**` : `Counted across **${context.scopeLabel}**.`,
+      "",
+      `| ${thai ? "เอกสาร" : "Paper"} | ${keys.map(label).join(" | ")} | ${thai ? "ทั้งฉบับ" : "Whole paper"} |`,
+      `| --- | ${keys.map(() => "---:").join(" | ")} | ---: |`,
+      ...rows.map((row) => {
+        const cells = keys.map((key) => {
+          const part = row.parts.find((candidate) => candidate.key === key);
+          return part ? part.words.toLocaleString() : "–";
+        });
+        return `| ${row.paper.title.replace(/\|/g, "-")} | ${cells.join(" | ")} | ${wholePaper(row).toLocaleString()} |`;
+      })
+    );
+  }
+  const notes = [
+    rows.length > fallback
+      ? thai
+        ? "แบ่งส่วนตามหัวข้อที่พิมพ์ไว้ในเอกสาร ส่วน “ชื่อเรื่องและผู้แต่ง” คือข้อความก่อนหัวข้อแรก ไม่นับคำในหัวข้อเอง"
+        : "Sections follow the headings printed in the paper; “Title and authors” is the text before the first heading. The headings' own words are not counted, so the parts add up to slightly less than the whole."
+      : "",
+    fallback > 0
+      ? thai
+        ? `อ่านหัวข้อของเอกสาร ${fallback} ฉบับไม่ได้ จึงนับเฉพาะส่วนที่การวิเคราะห์เก็บไว้ (บทคัดย่อ วิธีวิจัย ผลการวิจัย สรุป)`
+        : `The headings of ${fallback === 1 ? (single ? "this paper" : "one paper") : `${fallback} papers`} could not be read, so only the parts the analysis stored are counted there (abstract, methods, results, conclusion).`
+      : "",
+    repeats > 0
+      ? thai
+        ? `มีเอกสารที่อัปโหลดซ้ำ ${repeats} ฉบับ นับเพียงครั้งเดียว`
+        : `${repeats === 1 ? "One paper was" : `${repeats} papers were`} uploaded twice and ${repeats === 1 ? "is" : "are"} counted once.`
+      : "",
+  ].filter(Boolean);
+  const answer = [...lines, "", ...notes].join("\n");
+
+  const keys = SECTION_ORDER.filter((key) => rows.some((row) => row.parts.some((part) => part.key === key)));
+  // A chart only when asked for, or for one paper, where it is the clearest view.
+  const charts: RepositoryChartPayload[] = !plan.needsChart && !single ? [] : [
+    single
+      ? {
           chartType: "bar",
-          title: single
-            ? `${thai ? "จำนวนคำในแต่ละส่วน" : "Words in each section"}: ${shortLabel(rows[0].paper.title, 80)}`
-            : thai ? "จำนวนคำในแต่ละส่วน แยกตามเอกสาร" : "Words in each section, by paper",
+          title: `${thai ? "จำนวนคำในแต่ละส่วน" : "Words in each section"}: ${shortLabel(rows[0].paper.title, 80)}`,
           scopeLabel: context.scopeLabel,
           metric: "word_count",
           xKey: "label",
-          yKeys: single ? ["words"] : labels,
-          data: single
-            ? labels.map((label, index) => ({ label, words: rows[0].counts[index] }))
-            : rows.map(({ paper, counts }) => ({ label: shortLabel(paper.title), ...Object.fromEntries(labels.map((label, index) => [label, counts[index]])) })),
-          planner: { source: plan.source, reason: "Words counted in each stored section.", confidence: "high", warnings: [] },
+          yKeys: [thai ? "จำนวนคำ" : "words"],
+          data: rows[0].parts.map((part) => ({ label: label(part.key), [thai ? "จำนวนคำ" : "words"]: part.words })),
+          planner: { source: plan.source, reason: "Words counted under each heading of the paper.", confidence: "high", warnings: [] },
+        }
+      : {
+          chartType: "bar",
+          title: thai ? "จำนวนคำในแต่ละส่วน แยกตามเอกสาร" : "Words in each section, by paper",
+          scopeLabel: context.scopeLabel,
+          metric: "word_count",
+          xKey: "label",
+          yKeys: keys.map(label),
+          stacked: true,
+          data: rows.map(({ paper, parts }) => ({
+            label: shortLabel(paper.title),
+            ...Object.fromEntries(keys.map((key) => [label(key), parts.find((part) => part.key === key)?.words ?? 0])),
+          })),
+          planner: { source: plan.source, reason: "Words counted under each heading of each paper.", confidence: "high", warnings: [] },
         },
-      ]
-    : [];
+  ];
   const limitations: string[] = [];
   if (rows.some((row) => row.capped)) {
     limitations.push(
@@ -1501,8 +1591,8 @@ function sectionWordCountResult(
   }
   return {
     answer,
-    citations: rows.map(({ paper, counts }) =>
-      citationForPaper(paper, STORED_SECTIONS.map((section, index) => `${section.label}: ${counts[index].toLocaleString()} words`).join("; "))
+    citations: rows.map(({ paper, parts }) =>
+      citationForPaper(paper, parts.map((part) => `${SECTION_LABELS[part.key].en}: ${part.words.toLocaleString()} words`).join("; "))
     ),
     charts,
     limitations,
@@ -2814,8 +2904,27 @@ export function plainLimitation(reason: string): string {
     .replace(/\bexcerpts?\b/gi, "papers searched");
 }
 
-export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean): RepositoryOperation[] {
-  return operations.includes("analyze_text") && hasTerms ? ["analyze_text", "visualize"] : ["visualize"];
+/**
+ * Whether a message asks to be told something rather than shown a count:
+ * "explain this paper", "what did they find". In Chart mode such a question was
+ * answered with a chart alone, or refused (the test account's chat, 2026-10-09).
+ */
+export function asksForExplanation(prompt: string): boolean {
+  if (promptRequestsChart(prompt) || requestsTotalWordCount(prompt) || asksForSectionWordCounts(prompt, [])) return false;
+  return /\b(?:explain|summari[sz]e|describe|tell me about|discuss|interpret|why|what (?:is|are|does|do|did)|how (?:does|do|did))\b|อธิบาย|สรุป|คืออะไร|ทำไม/i.test(prompt);
+}
+
+/**
+ * The operations Chart mode runs. A chart of counts runs alone; a question that
+ * asks for an explanation is answered first and charted after.
+ */
+export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean, prompt = ""): RepositoryOperation[] {
+  if (operations.includes("analyze_text") && hasTerms) return ["analyze_text", "visualize"];
+  const answer = operations.find(
+    (operation) => operation === "search_evidence" || operation === "analyze_each_document" || operation === "aggregate_corpus"
+  );
+  if (answer && asksForExplanation(prompt)) return [answer, "visualize"];
+  return ["visualize"];
 }
 
 export function fallbackExecutionPlan(
@@ -2861,7 +2970,7 @@ export function fallbackExecutionPlan(
     operations.push("analyze_each_document");
   }
   if (forceChart) {
-    operations = chartModeOperations(operations, quoted.length > 0);
+    operations = chartModeOperations(operations, quoted.length > 0, prompt);
     operation = operations[0];
   }
   return {
@@ -2997,7 +3106,7 @@ export async function planRepositoryExecution(
       operations = operations.filter((operation) => operation !== "converse");
     }
     if (input.forceChart) {
-      operations = chartModeOperations(operations, parsed.data.terms.length > 0);
+      operations = chartModeOperations(operations, parsed.data.terms.length > 0, input.prompt);
     }
     // With web search on, only small talk goes unsearched: live, "what does
     // recent research outside these papers say" was answered as conversation,
@@ -3498,6 +3607,64 @@ export function papersNamedIn(text: string, papers: RepositoryPaper[]): Reposito
 }
 
 /**
+ * Papers a question names by their title: "from this paper, Thailand's Exported
+ * Food Product Brand Naming ... (2012), count the words in each section" was
+ * counted across the whole repository (the test account's chat, 2026-10-09).
+ * Stricter than papersNamedIn: most of a title's distinctive words must appear,
+ * so a question about a subject that shares a few words with a title does not
+ * narrow the scope to that paper.
+ */
+export function papersNamedInQuestion(question: string, papers: RepositoryPaper[]): RepositoryPaper[] {
+  const present = new Set(normalizeTitle(question).split(" ").filter(Boolean));
+  return papers.filter((paper) => {
+    const words = [...new Set(normalizeTitle(paper.title).split(" ").filter((word) => word.length >= 4))];
+    if (words.length < 3) return false;
+    const hits = words.filter((word) => present.has(word)).length;
+    return hits >= 3 && hits / words.length >= 0.7;
+  });
+}
+
+function labelCounts(papers: RepositoryPaper[], pick: (paper: RepositoryPaper) => Map<string, number>) {
+  const counts = new Map<string, { paperCount: number; mentions: number }>();
+  papers.forEach((paper) =>
+    pick(paper).forEach((mentions, label) => {
+      const entry = counts.get(label) ?? { paperCount: 0, mentions: 0 };
+      counts.set(label, { paperCount: entry.paperCount + 1, mentions: entry.mentions + mentions });
+    })
+  );
+  return [...counts.entries()]
+    .map(([label, entry]) => ({ label, ...entry }))
+    .sort((left, right) => right.paperCount - left.paperCount || right.mentions - left.mentions || left.label.localeCompare(right.label));
+}
+
+/**
+ * The scope cut to the papers a counting or charting question names, or null
+ * when it names none (or all) of them. Questions answered from the text keep
+ * their scope: "papers like X" names X to compare against, not to read alone.
+ */
+export function namedPaperContext(
+  prompt: string,
+  execution: RepositoryExecutionPlan | undefined,
+  context: RepositoryContext
+): RepositoryContext | null {
+  const counting =
+    requestsTotalWordCount(prompt) ||
+    Boolean(execution && execution.operations.every((operation) => operation === "analyze_text" || operation === "visualize"));
+  if (!counting || context.papers.length < 2) return null;
+  const named = papersNamedInQuestion(prompt, context.papers);
+  if (named.length === 0 || named.length === context.papers.length) return null;
+  const distinctTitles = new Set(named.map((paper) => normalizeTitle(paper.title))).size;
+  return {
+    ...context,
+    papers: named,
+    scopeLabel: distinctTitles === 1 ? `“${shortLabel(named[0].title, 90)}”` : `the ${distinctTitles} papers named`,
+    topicCounts: labelCounts(named, (paper) => paper.topics),
+    keywordCounts: labelCounts(named, (paper) => paper.keywords),
+    totalWords: named.reduce((sum, paper) => sum + paper.totalWords, 0),
+  };
+}
+
+/**
  * Rewrites a cross-paper overview so its claims name the papers they rest on.
  *
  * The per-paper path forbids database IDs in prose, so its overview carried no
@@ -3992,6 +4159,9 @@ async function runRepositoryChatWithContext(
   // Every request is planned as typed operations (chat v2); the planner before
   // it was removed (docs/32, long-term health).
   const execution = input.executionPlan ?? await planRepositoryExecution(input, context);
+  // A count or chart of a paper named in the question covers that paper alone.
+  const named = namedPaperContext(input.prompt, execution, context);
+  if (named) return runRepositoryChatWithContext({ ...input, executionPlan: execution }, named);
   const plan = legacyPlanForExecution(execution, input.prompt);
   const diagnostics = {
     projectId: context.projectId,
@@ -4054,7 +4224,15 @@ async function runRepositoryChatWithContext(
     }
   }
   if (requestsTotalWordCount(input.prompt) && context.papers.length > 0) {
-    const lengthPlan: RepositoryPromptPlan = { ...plan, intent: "word_count", terms: [] };
+    // This shortcut runs before the planned steps, so it draws the chart the
+    // planner added: "count the words in each section and show in a bar chart"
+    // came back as a table alone (the test account's chat, 2026-10-09).
+    const lengthPlan: RepositoryPromptPlan = {
+      ...plan,
+      intent: "word_count",
+      terms: [],
+      needsChart: plan.needsChart || Boolean(execution?.operations.includes("visualize")) || promptRequestsChart(input.prompt, input.forceChart),
+    };
     const result = wordCountResult(context, lengthPlan);
     return {
       handled: true,

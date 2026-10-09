@@ -158,6 +158,8 @@ export interface ChatChartPayload {
   papers?: Array<{ id: string; title: string; year: string }>;
   xKey: "label";
   yKeys: string[];
+  /** Series drawn end to end in one bar per row, when they are parts of a whole. */
+  stacked?: boolean;
   data: Array<Record<string, string | number>>;
   planner?: {
     source: "llm" | "fallback";
