@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { EFFORT_SETTINGS, STEP_BUDGETS } from "../src/lib/repository-chat";
+import { EFFORT_SETTINGS, STEP_BUDGETS, chartModeOperations, writingBudget } from "../src/lib/repository-chat";
 import { CHAT_EFFORTS, normalizeEffort } from "../src/lib/chat-effort";
 import { EFFORT_LEVELS, isEffortLevel } from "../src/components/chat/ThinkingEffort";
 import { thinkingDuration, thinkingIsRunning, thinkingNow, thoughtLine } from "../src/components/chat/ThinkingTrace";
@@ -88,4 +88,23 @@ test("a Max answer is drawn as an answer, without the research card", () => {
   const writer = source("../src/lib/deep-research/write.ts");
   assert.match(writer, /You answer a researcher's question thoroughly, as a reply in a chat/);
   assert.match(writer, /never call the answer a report/);
+});
+
+test("the effort reaches the summary and per-paper writing steps too", () => {
+  // On the pilot a High question went down the whole-repository summary path, which the effort did not reach.
+  assert.deepEqual(writingBudget(STEP_BUDGETS.corpusReduce, "medium"), STEP_BUDGETS.corpusReduce);
+  assert.deepEqual(writingBudget(STEP_BUDGETS.corpusReduce, "low"), { ...STEP_BUDGETS.corpusReduce, reasoningEffort: "low" });
+  const high = writingBudget(STEP_BUDGETS.documentAnalysis(6), "high");
+  assert.equal(high.reasoningEffort, "high");
+  assert.ok(high.maxTokens > STEP_BUDGETS.documentAnalysis(6).maxTokens);
+  const chat = source("../src/lib/repository-chat.ts");
+  assert.match(chat, /writingBudget\(STEP_BUDGETS\.corpusReduce, normalizeEffort\(input\.effort\)\)/);
+  assert.match(chat, /writingBudget\(STEP_BUDGETS\.documentAnalysis\(papers\.length\), normalizeEffort\(input\.effort\)\)/);
+  assert.match(source("../src/app/api/chat/route.ts"), /effort: body\.effort \?\? "medium",\s+toolResults/, "each answer records its effort");
+});
+
+test("Chart mode answers an explanation even when the planner offers no answering step", () => {
+  assert.deepEqual(chartModeOperations(["visualize"], false, "explain this paper"), ["search_evidence", "visualize"]);
+  assert.deepEqual(chartModeOperations(["analyze_each_document", "visualize"], false, "explain this paper"), ["analyze_each_document", "visualize"]);
+  assert.deepEqual(chartModeOperations(["visualize"], false, "chart this paper"), ["visualize"]);
 });

@@ -178,12 +178,13 @@ export function answerableQueries(corpus: InsightCorpus, limit = 4, exclude: Rea
 
 /** The request that asks a model to word the views; the views, not the model, decide what is asked. */
 export function wordingMessages(queries: AskQuery[], scopeLabel: string) {
+  // Plain names, not field names: "study_type" was worded back as "study_type categories" (pilot, 2026-10-10).
   const views = queries.map((query, index) => ({
     n: index + 1,
     counts: query.measure === "change" ? "how the share of papers changed from earlier to later years" : "papers",
-    by: query.rows,
-    against: query.columns ?? null,
-    only_papers_with: query.focus ? { [query.focus.dimension]: query.focus.values } : null,
+    by: PLURAL[query.rows],
+    against: query.columns ? PLURAL[query.columns] : null,
+    only_papers_with: query.focus ? { [NOUN[query.focus.dimension]]: query.focus.values } : null,
     plain_wording: query.title,
   }));
   return [

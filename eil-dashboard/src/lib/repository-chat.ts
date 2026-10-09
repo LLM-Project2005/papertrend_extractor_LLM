@@ -287,6 +287,18 @@ export const EFFORT_SETTINGS: Record<
   high: { focusedSources: 16, rerank: 32, candidates: 64, widenSearch: true, synthesis: { maxTokens: 12_000, reasoningEffort: "high" }, alwaysAudit: true },
 };
 
+/**
+ * A writing step's budget at an effort: as it is at Medium, reasoning briefly at
+ * Low, and at length - with room for it - at High. For the steps that write a
+ * whole-repository summary or a per-paper analysis; the pilot sent a High
+ * question down the summary path, which the effort did not reach (2026-10-10).
+ */
+export function writingBudget<T extends { maxTokens: number; reasoningEffort?: "low" | "medium" | "high" }>(base: T, effort: ChatEffort): T {
+  if (effort === "low") return { ...base, reasoningEffort: "low" };
+  if (effort === "high") return { ...base, maxTokens: Math.round(base.maxTokens * 1.5), reasoningEffort: "high" };
+  return base;
+}
+
 export interface RepositoryChatInput {
   ownerUserId: string;
   threadId?: string | null;
@@ -2952,7 +2964,8 @@ export function chartModeOperations(operations: RepositoryOperation[], hasTerms:
   const answer = operations.find(
     (operation) => operation === "search_evidence" || operation === "analyze_each_document" || operation === "aggregate_corpus"
   );
-  if (answer && asksForExplanation(prompt)) return [answer, "visualize"];
+  // The planner may offer no answering step for it ("explain this paper" came back as a chart alone on the pilot).
+  if (asksForExplanation(prompt)) return [answer ?? "search_evidence", "visualize"];
   return ["visualize"];
 }
 
@@ -3595,7 +3608,7 @@ async function generateDocumentAnalysisBatch(
         0.15,
         input.model,
         attempt === 0 ? "CHAT_DOCUMENT_ANALYSIS" : "CHAT_DOCUMENT_ANALYSIS_REPAIR",
-        STEP_BUDGETS.documentAnalysis(papers.length)
+        writingBudget(STEP_BUDGETS.documentAnalysis(papers.length), normalizeEffort(input.effort))
       );
       raw = completion?.content?.trim() ?? "";
       const parsed = DocumentAnalysisBatchSchema.safeParse(extractJsonObject(raw));
@@ -3998,7 +4011,7 @@ async function aggregateCorpusResult(
         role: "user",
         content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, countsEvidence, "Use these counts for any claim about how often or how many - prefer the themes, which are what the dashboard shows; the batch findings below are for what the papers say.", ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
-    ], 0.15, input.model, "CHAT_CORPUS_REDUCE", STEP_BUDGETS.corpusReduce);
+    ], 0.15, input.model, "CHAT_CORPUS_REDUCE", writingBudget(STEP_BUDGETS.corpusReduce, normalizeEffort(input.effort)));
     const answer = completion?.content?.trim();
     if (answer) {
       const allowed = context.papers.map((paper) => paper.paperId);

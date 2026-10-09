@@ -214,7 +214,7 @@ export function followUpSuggestions(input: {
   const cited = input.citedPaperCount ?? 0;
   const scoped = input.scopedPaperCount ?? 0;
   if (cited > 0 && scoped > cited) {
-    suggestions.push(`What do the other ${scoped - cited} papers say about this?`);
+    suggestions.push(scoped - cited === 1 ? "What does the other paper say about this?" : `What do the other ${scoped - cited} papers say about this?`);
   }
 
   if ((input.limitations ?? []).some((limit) => /coverage|not exhaustive|relevance search/i.test(limit))) {
