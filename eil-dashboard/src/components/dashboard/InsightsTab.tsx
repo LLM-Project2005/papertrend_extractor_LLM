@@ -8,12 +8,15 @@
  * write-up a model already made for exactly these papers comes from the cache.
  * "Write up with AI" makes one short model call that picks, orders and words
  * the insights; a checker holds every number it writes to the computed facts.
+ * "Generate views" draws views these papers can answer for a reader who does
+ * not know what to ask; neither it nor the example questions repeat a view
+ * already shown (2026-10-10).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import InsightChart, { type OpenPapers } from "@/components/dashboard/InsightChart";
 import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import { insightCsv } from "@/lib/insights/csv";
-import { ChartIcon, CloseIcon, SearchIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
+import { ChartIcon, CloseIcon, RefreshIcon, SearchIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
 import type { Insight, InsightNotice, InsightPlan, InsightReport } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
@@ -112,13 +115,19 @@ interface AskEntry {
   question: string;
   insight?: Insight;
   unanswerable?: string;
+  /** Drawn by "Generate views" rather than asked. */
+  generated?: boolean;
 }
 
 /** An example question these papers can answer, with the view it stands for (insights/suggestions.ts). */
 interface Suggestion {
   question: string;
   query: unknown;
+  key: string;
+  insight?: Insight;
 }
+
+const ANSWERS_KEPT = 6;
 
 function Notices({ notices }: { notices: Array<Pick<InsightNotice, "id" | "text">> }) {
   if (notices.length === 0) return null;
@@ -153,8 +162,13 @@ export default function InsightsTab({
   const [askError, setAskError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<AskEntry[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generateNote, setGenerateNote] = useState<string | null>(null);
   const requestId = useRef(0);
   const askId = useRef(0);
+  // Every view already offered or drawn for this selection, so none comes back.
+  const shownViews = useRef(new Set<string>());
 
   const body = useMemo(
     () => ({ projectId, selectedYears, selectedTracks, searchQuery: searchQuery.trim() }),
@@ -206,7 +220,27 @@ export default function InsightsTab({
   useEffect(() => {
     setAnswers([]);
     setAskError(null);
+    setGenerateNote(null);
+    shownViews.current = new Set();
   }, [body]);
+
+  /** Views these papers can answer that this page has not shown yet; marks them shown. */
+  const fetchViews = useCallback(
+    async (count: number, run = false): Promise<{ views: Suggestion[]; exhausted: boolean }> => {
+      if (!accessToken) return { views: [], exhausted: true };
+      const response = await fetch("/api/workspace/insights/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ ...body, exclude: [...shownViews.current], count, run }),
+      });
+      if (!response.ok) throw new Error("No new questions could be found just now.");
+      const payload = (await response.json()) as { suggestions?: Suggestion[]; exhausted?: boolean };
+      const views = payload.suggestions ?? [];
+      views.forEach((view) => shownViews.current.add(view.key));
+      return { views, exhausted: Boolean(payload.exhausted) };
+    },
+    [accessToken, body]
+  );
 
   async function ask(event?: FormEvent<HTMLFormElement>, text = question, query?: unknown) {
     event?.preventDefault();
@@ -226,7 +260,7 @@ export default function InsightsTab({
         throw new Error(payload.error || "The question could not be answered just now.");
       }
       const id = (askId.current += 1);
-      setAnswers((current) => [{ id, question: trimmed, insight: payload.insight, unanswerable: payload.unanswerable }, ...current].slice(0, 3));
+      setAnswers((current) => [{ id, question: trimmed, insight: payload.insight, unanswerable: payload.unanswerable }, ...current].slice(0, ANSWERS_KEPT));
       setQuestion("");
     } catch (askFailure) {
       setAskError(askFailure instanceof Error ? askFailure.message : "The question could not be answered just now.");
@@ -243,14 +277,10 @@ export default function InsightsTab({
     let current = true;
     setSuggestions(null);
     const timer = window.setTimeout(() => {
-      void fetch("/api/workspace/insights/suggestions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify(body),
-      })
-        .then(async (response) => (response.ok ? ((await response.json()) as { suggestions?: Suggestion[] }) : { suggestions: [] }))
-        .then((payload) => {
-          if (current) setSuggestions(payload.suggestions ?? []);
+      shownViews.current = new Set();
+      void fetchViews(3)
+        .then(({ views }) => {
+          if (current) setSuggestions(views);
         })
         .catch(() => {
           if (current) setSuggestions([]);
@@ -260,7 +290,73 @@ export default function InsightsTab({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [accessToken, body, enoughPapers, projectId, dataVersion]);
+  }, [accessToken, body, enoughPapers, projectId, dataVersion, fetchViews]);
+
+  /** Asks an example, and puts a question not shown before in its place. */
+  function askSuggestion(suggestion: Suggestion) {
+    setQuestion(suggestion.question);
+    void ask(undefined, suggestion.question, suggestion.query);
+    void fetchViews(1)
+      .then(({ views }) =>
+        setSuggestions((current) => {
+          const list = current ?? [];
+          const index = list.findIndex((item) => item.key === suggestion.key);
+          const rest = list.filter((item) => item.key !== suggestion.key);
+          if (views.length === 0) return rest;
+          return index < 0 ? [...rest, ...views] : [...rest.slice(0, index), ...views, ...rest.slice(index)];
+        })
+      )
+      .catch(() => setSuggestions((current) => (current ?? []).filter((item) => item.key !== suggestion.key)));
+  }
+
+  /** Three questions not shown before; once every view has been offered, the list starts again. */
+  async function newSuggestions() {
+    setRefreshing(true);
+    try {
+      let { views } = await fetchViews(3);
+      if (views.length === 0) {
+        shownViews.current = new Set();
+        ({ views } = await fetchViews(3));
+      }
+      setSuggestions(views);
+    } catch {
+      // The current examples stay.
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  /**
+   * "Generate views": draws views these papers can answer, for a reader who does
+   * not yet know what to ask. Each press brings views not shown before.
+   */
+  async function generate() {
+    if (generating) return;
+    setGenerating(true);
+    setGenerateNote(null);
+    try {
+      let { views } = await fetchViews(3, true);
+      let restarted = false;
+      if (views.length === 0) {
+        shownViews.current = new Set();
+        ({ views } = await fetchViews(3, true));
+        restarted = true;
+      }
+      const drawn = views.filter((view) => view.insight);
+      if (drawn.length === 0) {
+        setGenerateNote("These papers have no view to draw yet. Widen the years or research areas, or clear the search.");
+        return;
+      }
+      if (restarted) setGenerateNote("Every view these papers can answer has been shown, so these start the list again.");
+      setAnswers((current) =>
+        [...drawn.map((view) => ({ id: (askId.current += 1), question: view.question, insight: view.insight, generated: true })), ...current].slice(0, ANSWERS_KEPT)
+      );
+    } catch {
+      setGenerateNote("Nothing could be generated just now. Try again in a moment.");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   // New filters or new data: recompute (free), after the filters settle.
   useEffect(() => {
@@ -342,24 +438,46 @@ export default function InsightsTab({
               </ul>
             ) : null}
           </div>
-          {report.insights.length > 0 ? (
+          {report.summary.papers >= 3 || report.insights.length > 0 ? (
             <div className="flex flex-col items-start gap-1.5 sm:items-end">
-              <button
-                type="button"
-                onClick={() => void load("write", written)}
-                disabled={writing || loading}
-                className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
-              >
-                {writing ? <SpinnerIcon className="h-4 w-4" /> : <SparkIcon className="h-4 w-4" />}
-                {writing ? "Writing…" : written ? "Rewrite with AI" : "Write up with AI"}
-              </button>
-              <p className="max-w-[16rem] text-xs leading-5 text-slate-500 dark:text-[#8f8f8f] sm:text-right">
-                One short AI call. It can only use the numbers computed here.
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                {report.summary.papers >= 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => void generate()}
+                    disabled={generating}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
+                  >
+                    {generating ? <SpinnerIcon className="h-4 w-4" /> : <ChartIcon className="h-4 w-4" />}
+                    {generating ? "Generating…" : "Generate views"}
+                  </button>
+                ) : null}
+                {report.insights.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void load("write", written)}
+                    disabled={writing || loading}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:text-[#e5e5e5] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                  >
+                    {writing ? <SpinnerIcon className="h-4 w-4" /> : <SparkIcon className="h-4 w-4" />}
+                    {writing ? "Writing…" : written ? "Rewrite with AI" : "Write up with AI"}
+                  </button>
+                ) : null}
+              </div>
+              <p className="max-w-[20rem] text-xs leading-5 text-slate-500 dark:text-[#8f8f8f] sm:text-right">
+                {report.summary.papers >= 3
+                  ? "Generate draws three views these papers can answer, new each time. AI only words them; the numbers are computed here."
+                  : "One short AI call. It can only use the numbers computed here."}
               </p>
             </div>
           ) : null}
         </div>
         {error ? <p className="mt-3 text-sm font-medium text-red-700 dark:text-red-300">{error}</p> : null}
+        {generateNote ? (
+          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]" role="status">
+            {generateNote}
+          </p>
+        ) : null}
         {notices.length ? (
           <div className="mt-4 border-t border-slate-100 pt-3 dark:border-[#1a1a1a]">
             <Notices notices={notices} />
@@ -400,16 +518,24 @@ export default function InsightsTab({
             <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Finding questions these papers can answer…</p>
           ) : suggestions.length > 0 ? (
             <div className="mt-3">
-              <p className="text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Questions these papers can answer:</p>
-              <ul className="mt-2 flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Questions these papers can answer:</p>
+                <button
+                  type="button"
+                  onClick={() => void newSuggestions()}
+                  disabled={refreshing}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:text-[#b3b3b3] dark:hover:bg-[#141414] dark:hover:text-white"
+                >
+                  {refreshing ? <SpinnerIcon className="h-3.5 w-3.5" /> : <RefreshIcon className="h-3.5 w-3.5" />}
+                  Other questions
+                </button>
+              </div>
+              <ul className="mt-2 flex flex-wrap gap-2" aria-live="polite">
                 {suggestions.map((suggestion) => (
-                  <li key={suggestion.question}>
+                  <li key={suggestion.key}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setQuestion(suggestion.question);
-                        void ask(undefined, suggestion.question, suggestion.query);
-                      }}
+                      onClick={() => askSuggestion(suggestion)}
                       disabled={asking}
                       className="inline-flex min-h-9 items-center rounded-full border border-slate-200 bg-white px-3.5 text-left text-xs font-medium text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:border-[#4a4a4a] dark:hover:text-white"
                     >
@@ -428,7 +554,8 @@ export default function InsightsTab({
         <div key={answer.id} className="relative">
           <p className="mb-2 flex items-center justify-between gap-3 px-1 text-sm text-slate-600 dark:text-[#b3b3b3]">
             <span>
-              You asked: <span className="font-medium text-slate-900 dark:text-white">{answer.question}</span>
+              {answer.generated ? "Generated: " : "You asked: "}
+              <span className="font-medium text-slate-900 dark:text-white">{answer.question}</span>
             </span>
             <button
               type="button"
@@ -456,6 +583,11 @@ export default function InsightsTab({
           <p className="mt-2 max-w-lg text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
             A pattern needs at least 3 papers behind it and must hold when any one is removed. Widen the years or research areas, or clear the search, to give it more to work with.
           </p>
+          {report.summary.papers >= 3 && answers.length === 0 ? (
+            <p className="mt-3 max-w-lg text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
+              Smaller questions still have answers: <strong className="font-semibold text-slate-900 dark:text-white">Generate views</strong> above draws three of them.
+            </p>
+          ) : null}
         </section>
       ) : (
         cards.map((card, index) => (

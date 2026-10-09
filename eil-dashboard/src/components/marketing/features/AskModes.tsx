@@ -9,8 +9,8 @@ import { ChartIcon, ChatIcon, CheckCircleIcon, CircleIcon, GlobeIcon, SearchIcon
 
 /*
  * The three ways to ask, as tabs: a quick answer (with the web when wanted),
- * Deep thinking (deep research: the question split into parts it shows as it
- * works, then a checked report), and Chart mode
+ * Max effort (the top of the thinking effort slider: the question split into
+ * parts it shows as it works, then a checked answer), and Chart mode
  * (a chart computed from the analysed papers). Each panel says what it does
  * and shows it once, small. Facts: repository-chat-web.ts, deep-research/*,
  * chat-chart.ts.
@@ -21,7 +21,7 @@ import { ChartIcon, ChatIcon, CheckCircleIcon, CircleIcon, GlobeIcon, SearchIcon
 
 const MODES = [
   { key: "answer", label: "Quick answer", Icon: ChatIcon },
-  { key: "research", label: "Deep thinking", Icon: SearchIcon },
+  { key: "research", label: "Max effort", Icon: SearchIcon },
   { key: "chart", label: "Chart", Icon: ChartIcon },
 ] as const;
 
@@ -92,7 +92,7 @@ function ResearchVisual({ play }: { play: boolean }) {
               ))}
             </ol>
             <div className="mt-5 flex gap-2 text-[13px]">
-              <span className="rounded-full border border-hairline px-3 py-1 text-body">Stop research</span>
+              <span className="rounded-full border border-hairline px-3 py-1 text-body">Stop</span>
             </div>
           </motion.div>
         ) : (
@@ -102,9 +102,9 @@ function ResearchVisual({ play }: { play: boolean }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: EASE }}
           >
-            <p className="text-[12.5px] text-mute">Deep research report · 22 sources</p>
+            <p className="text-[12.5px] text-mute">Thought for 41s · 3 parts · 22 sources</p>
             <div className="mt-3 space-y-3 text-[14px]">
-              {["Direct answer", "Where each defence works", "What changed in policy", "What the papers searched don’t cover"].map((heading, index) => (
+              {["The answer, in a few sentences", "Where each defence works", "What changed in policy", "What the papers searched don’t cover"].map((heading, index) => (
                 <div key={heading}>
                   <p className="font-medium text-ink">{heading}</p>
                   <span className="mt-1.5 block h-1.5 rounded-full bg-ink/10 dark:bg-white/15" style={{ width: `${92 - index * 9}%` }} />
@@ -225,11 +225,11 @@ export default function AskModes() {
                     </>
                   ) : item.key === "research" ? (
                     <>
-                      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">For the question that needs a report.</h3>
+                      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">For the question that needs thinking through.</h3>
                       <ul className="mt-5 space-y-2">
-                        <Point>Choose Deep under the text box and ask. It splits the question into two to five parts and shows them as its thinking while it works.</Point>
+                        <Point>Slide the thinking effort under the text box from Low to Max. At Max it splits the question into two to five parts and shows them as its thinking while it works.</Point>
                         <Point>It reads the full text of every paper in scope, leaving out reference lists, and goes to the web only where the papers cannot answer.</Point>
-                        <Point>The report opens with a direct answer and ends with what the papers searched do not cover.</Point>
+                        <Point>The answer opens with the answer itself and ends with what the papers searched do not cover.</Point>
                         <Point>Gemini 3.8 Flash, a different model from the writer, checks every sentence; one that fails is revised once or removed.</Point>
                         <Point>About 40 seconds. Stop it at any time; resume it where it stopped.</Point>
                       </ul>

@@ -24,7 +24,7 @@ type Usage = {
 const ROWS: Array<{ key: keyof Pick<Usage, "tokens" | "messages" | "deepResearch" | "webSearches">; label: string }> = [
   { key: "tokens", label: "Chat tokens" },
   { key: "messages", label: "Questions" },
-  { key: "deepResearch", label: "Deep research" },
+  { key: "deepResearch", label: "Max effort answers" },
   { key: "webSearches", label: "Web searches" },
 ];
 

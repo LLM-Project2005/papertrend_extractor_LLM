@@ -1032,3 +1032,131 @@ html:focus-within {
   cursor: default;
   user-select: none;
 }
+
+/* Thinking effort (src/components/chat/ThinkingEffort.tsx). The slider fills up
+   to the chosen level; at Max the fill, the label and the bars carry a moving
+   sheen. The light theme's colours are dark enough to read on white, the dark
+   theme's light enough to read on black; reduced motion keeps them still. */
+:root {
+  --effort-sheen: linear-gradient(90deg, #c2410c, #be185d, #6d28d9, #1d4ed8, #047857, #c2410c);
+}
+.dark {
+  --effort-sheen: linear-gradient(90deg, #fb923c, #f472b6, #a78bfa, #60a5fa, #34d399, #fb923c);
+}
+.effort-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(var(--ink)) var(--effort-fill, 33%), rgb(var(--ink) / 0.14) var(--effort-fill, 33%));
+  cursor: pointer;
+}
+.effort-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgb(var(--ink));
+  border: 3px solid white;
+  box-shadow: 0 0 0 1px rgb(var(--ink) / 0.35), 0 2px 6px rgb(0 0 0 / 0.25);
+}
+.effort-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--ink));
+  border: 3px solid white;
+  box-shadow: 0 0 0 1px rgb(var(--ink) / 0.35), 0 2px 6px rgb(0 0 0 / 0.25);
+}
+.dark .effort-slider::-webkit-slider-thumb {
+  border-color: #0a0a0a;
+}
+.dark .effort-slider::-moz-range-thumb {
+  border-color: #0a0a0a;
+}
+.effort-slider-max {
+  background: var(--effort-sheen);
+  background-size: 200% 100%;
+}
+.effort-slider-max::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgb(167 139 250 / 0.35), 0 0 18px rgb(236 72 153 / 0.45);
+}
+.effort-slider-max::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgb(167 139 250 / 0.35), 0 0 18px rgb(236 72 153 / 0.45);
+}
+.effort-max-text {
+  background: var(--effort-sheen);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.effort-max-bars {
+  color: #6d28d9;
+}
+.dark .effort-max-bars {
+  color: #a78bfa;
+}
+.effort-max-ring {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(rgb(var(--surface, 255 255 255)), rgb(var(--surface, 255 255 255))) padding-box,
+    var(--effort-sheen) border-box;
+  background-size: 100% 100%, 200% 100%;
+}
+.dark .effort-max-ring {
+  background:
+    linear-gradient(#050505, #050505) padding-box,
+    var(--effort-sheen) border-box;
+  background-size: 100% 100%, 200% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .effort-slider-max,
+  .effort-max-text {
+    animation: effort-sheen 2.6s linear infinite;
+  }
+  .effort-max-ring {
+    animation: effort-sheen-ring 2.6s linear infinite;
+  }
+  .effort-max-bars {
+    animation: effort-hue 2.6s linear infinite;
+  }
+  .thinking-shimmer {
+    background: linear-gradient(90deg, currentColor 35%, rgb(var(--ink) / 0.35) 50%, currentColor 65%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: effort-sheen 1.8s linear infinite;
+  }
+}
+@keyframes effort-sheen {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes effort-sheen-ring {
+  from {
+    background-position: 0 0, 0% 0;
+  }
+  to {
+    background-position: 0 0, -200% 0;
+  }
+}
+@keyframes effort-hue {
+  0%,
+  100% {
+    color: #be185d;
+  }
+  33% {
+    color: #6d28d9;
+  }
+  66% {
+    color: #1d4ed8;
+  }
+}
