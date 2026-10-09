@@ -89,6 +89,11 @@ test("the chat page does not load the dashboard's data, and starts on the open r
 /* ------------------------------------------------------------ the dashboard */
 
 test("only the tab the dashboard opens on is drawn; the others wait until they are visited", async () => {
+  // Every tab's code loads when it is opened, so a first static render may show
+  // its placeholder: draw once, let the code arrive, then draw what is checked.
+  await dashboard("area_analysis");
+  await import("../src/components/tabs/AreaAnalysis");
+  await new Promise((resolve) => setTimeout(resolve, 50));
   const area = await dashboard("area_analysis");
   assert.match(visible(area), /Gaining and losing ground/);
   assert.doesNotMatch(area, /<div hidden="">/, "the open tab is shown");

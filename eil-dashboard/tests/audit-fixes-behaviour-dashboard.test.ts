@@ -174,6 +174,10 @@ test("a repository with no analysed paper says so, instead of every tab blaming 
   assert.match(failed, /Dashboard data could not be loaded for this repository\. the database did not answer/);
   assert.doesNotMatch(failed, /No analysed papers yet/, "a failed load is not an empty repository");
   assert.doesNotMatch(await dashboard({}, { search: "tab=semantic_map" }), /No analysed papers yet/, "the map has its own empty state");
+  // Area Analysis loads when opened: draw once, let its code arrive, then check it.
+  await dashboard(ONE_PAPER);
+  await import("../src/components/tabs/AreaAnalysis");
+  await new Promise((resolve) => setTimeout(resolve, 50));
   const withPaper = await dashboard(ONE_PAPER);
   assert.doesNotMatch(withPaper, /No analysed papers yet/);
   assert.match(withPaper, /<h2[^>]*>\s*Trend analysis\s*<\/h2>/);
