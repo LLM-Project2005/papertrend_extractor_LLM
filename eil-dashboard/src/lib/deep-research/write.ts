@@ -145,7 +145,7 @@ export function reportMessages(input: {
         `Write in ${input.plan.language}. Keep paper titles, and the names of themes, methods and instruments, as they are.`,
         "Answer the question asked. Structure, in Markdown:",
         "1. Lead with the answer itself in 2 to 4 sentences, with no heading above it.",
-        `2. Then the detail, under ## headings that follow the parts of the question: ${outline}. Make each heading say what its part is about; never "Direct answer", "Introduction", "Body" or "Report".`,
+        `2. Then the detail, under ## headings that follow the parts of the question: ${outline}. Make each heading say what its part is about; never "Direct answer", "Introduction", "Body", "Report", or a heading about the answer itself such as "Scope", "Basis" or "Method".`,
         "3. When the question compares studies, give one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites - with the points the question asks about and the numbers as printed; then compare them briefly in prose: where they agree, where they differ, and what the differences in design mean for comparing them.",
         "4. For each study you discuss, give its key numbers as the facts give them: how many took part, the design, and the main result with its statistic (means, test value, effect size). Leave out a study that touches the question only in passing.",
         // The broad answer on research gaps went study by study and lost to High's priority list (2026-10-11).
