@@ -4090,9 +4090,9 @@ export default function ChatClient() {
                   <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-mute">
                     <SparkIcon className="mt-0.5 h-3.5 w-3.5 flex-none" />
                     <span>
-                      Max effort thinks it all through: it splits your question into up to 5 parts, reads every paper in
-                      scope in full, searches the web only where the papers cannot answer, and checks every claim against
-                      its source. About a minute; you can stop it at any time.
+                      Max effort reads the papers that bear on your question in full - up to 20 - takes each finding in
+                      the paper&apos;s own words, checks every number against the paper, and searches the web only where
+                      the papers cannot answer. One to three minutes; you can stop it at any time.
                     </span>
                   </p>
                 ) : null}
