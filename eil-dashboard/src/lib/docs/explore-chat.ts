@@ -244,7 +244,7 @@ export const deepResearchPage: DocsPageBase = {
   slug: "deep-research",
   title: "Thinking effort",
   description:
-    "How hard an answer works, from Low to Max. Max reads the full text of every paper in scope, searches the web only where the papers cannot answer, and checks every claim against its source.",
+    "How hard an answer works, from Low to Max. Max chooses the papers that bear on the question, reads each in full, searches the web only where the papers cannot answer, and checks every number against the paper it cites.",
   tags: ["thinking effort", "max", "deep research", "low", "high", "sources"],
   related: ["chat", "dashboard", "troubleshooting"],
   sections: [
@@ -260,7 +260,7 @@ export const deepResearchPage: DocsPageBase = {
           ["Low", "Reads the few papers that matter most and thinks briefly", "A quick fact or a follow-up"],
           ["Medium", "The usual answer: reads the papers that bear on the question", "Most questions"],
           ["High", "Reads more widely, thinks longer, and checks every claim against the papers", "A question that spans several papers"],
-          ["Max", "Splits the question into up to five parts, reads every paper in full for each, and checks every claim. About a minute", "A broad question, such as \"How is dynamic assessment used to support Thai EFL learners, and what do the studies find?\""],
+          ["Max", "Chooses the papers that bear on the question, reads each in full, and checks every number against its paper. About one and a half to two minutes", "A question that compares studies or spans the collection, such as \"Compare the studies of writing interventions: who took part, how was writing measured, and how large were the gains?\""],
         ],
       },
     },
@@ -269,8 +269,8 @@ export const deepResearchPage: DocsPageBase = {
       title: "Max, step by step",
       steps: [
         "Slide the thinking effort to **Max**, then write your question and send it.",
-        "It starts at once: first it splits the question into the parts it will look into, and for each whether it uses your papers, the web, or both.",
-        "While it works, one line under your question says what it is doing and for how long. **Show steps** lists the parts; **Stop** stops it, and **Resume** carries on from where it stopped.",
+        "It starts at once: first it chooses the papers that bear on the question from a card for each study in scope (two uploads of one study are one), and whether the web is needed.",
+        "While it works, one line under your question says what it is doing and for how long. **Show steps** lists the papers it reads; **Stop** stops it, and **Resume** carries on from where it stopped, without reading a paper twice.",
       ],
       body: [],
       callout: {
@@ -283,7 +283,7 @@ export const deepResearchPage: DocsPageBase = {
       id: "while-it-runs",
       title: "While it thinks",
       body: [
-        "Each part shows what it is doing and then what it found, such as `Found 6 passages in 4 papers.` or `Not found in the 39 papers searched.` Then the answer is written, and then every claim is checked.",
+        "Each paper shows what was read and what came of it, such as `Read in full: 11 facts checked against its text.` or `Read in full: not about this question.` Then the answer is written, and then every number and citation in it is checked.",
       ],
       bullets: [
         "It uses the papers that have finished analysis; papers still being analysed are named in the answer's last section rather than waited for.",
@@ -297,17 +297,18 @@ export const deepResearchPage: DocsPageBase = {
       table: {
         columns: ["Step", "What happens"],
         rows: [
-          ["Search", "The full text of every paper in scope, for each part of the question, with reference lists left out"],
-          ["Evidence", "Only passages a finding actually rests on are kept and cited; at most 8 per part"],
-          ["Web", "Only for parts the papers cannot answer, at most 4 searches, each page cited by its address"],
-          ["Numbers", "Every number in the answer must appear in the passage it cites"],
-          ["Claims", "A second model checks each sentence against its source; what the source does not support is corrected or removed"],
+          ["Choose", "A card for every study in scope; the repository's own ranking adds up to three papers the cards may have hidden"],
+          ["Read", "Each chosen paper in full, with its reference list left out; past sixteen papers, their abstract, methods, results and conclusion"],
+          ["Facts", "Each fact is kept only if its quote is in the paper and every number in it is in its quote; a paper's account of another study is marked as such"],
+          ["Web", "Only for what the papers cannot answer, at most 2 searches, each page cited by its address"],
+          ["Numbers", "Every number in the answer must be printed in what it cites; a sentence that fails is corrected or removed"],
+          ["Missing", "A paper is said not to report something only after it was read in full"],
         ],
       },
       bullets: [
         "When the papers do not cover something, the answer says the papers searched do not address it; it does not call it a gap in the literature.",
         "Text inside papers and web pages is treated as evidence, never as instructions.",
-        "The models are chosen for you: GPT-6 Luna plans, reads and writes; Gemini 3.8 Flash checks the claims, so the model that wrote a sentence is not the one that judges it.",
+        "The models are chosen for you: GPT-6 Luna chooses, reads and writes; the quotes and numbers are checked by code, against the papers themselves.",
       ],
     },
     {
@@ -315,7 +316,7 @@ export const deepResearchPage: DocsPageBase = {
       title: "Reading a Max answer",
       body: [
         "The answer appears in the conversation like any other, in the language you asked in, with its citations numbered: a paper opens in place on its evidence, and a web page opens its address.",
-        "A line above it says how long it thought, how many parts and papers it read and how many claims it checked; click it to see the steps. **Copy** and **Download (.md)** give you the text with a numbered source list.",
+        "A line above it says how long it thought, how many papers it read and how many claims it checked; click it to see the steps. **Copy** and **Download (.md)** give you the text with a numbered source list.",
       ],
       callout: {
         tone: "info",
@@ -328,7 +329,7 @@ export const deepResearchPage: DocsPageBase = {
       title: "Limits and good to know",
       bullets: [
         "Every effort counts toward the daily chat token limit; High uses more of it than Medium, and each Max answer also counts toward the 10 a day.",
-        "Each new question at Max gets its own parts and answer; earlier answers stay in the conversation.",
+        "Each new question at Max chooses its own papers; earlier answers stay in the conversation.",
         "Deleting the conversation deletes its answers and their steps.",
       ],
       body: [],

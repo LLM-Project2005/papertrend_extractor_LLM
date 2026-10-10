@@ -112,7 +112,7 @@ function ResearchVisual({ play }: { play: boolean }) {
               ))}
             </div>
             <p className="mt-4 flex items-center gap-1.5 text-[12.5px] text-body">
-              <CheckCircleIcon className="h-3.5 w-3.5" /> Every sentence checked by Gemini 3.8 Flash
+              <CheckCircleIcon className="h-3.5 w-3.5" /> Every number checked against the paper it cites
             </p>
           </motion.div>
         )}
@@ -227,11 +227,11 @@ export default function AskModes() {
                     <>
                       <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">For the question that needs thinking through.</h3>
                       <ul className="mt-5 space-y-2">
-                        <Point>Slide the thinking effort under the text box from Low to Max. At Max it splits the question into two to five parts and shows them as its thinking while it works.</Point>
-                        <Point>It reads the full text of every paper in scope, leaving out reference lists, and goes to the web only where the papers cannot answer.</Point>
+                        <Point>Slide the thinking effort under the text box from Low to Max. At Max it chooses the papers that bear on the question and reads each one, showing them as its thinking while it works.</Point>
+                        <Point>It reads each chosen paper in full, leaving out reference lists, and goes to the web only where the papers cannot answer.</Point>
                         <Point>The answer opens with the answer itself and ends with what the papers searched do not cover.</Point>
-                        <Point>Gemini 3.8 Flash, a different model from the writer, checks every sentence; one that fails is revised once or removed.</Point>
-                        <Point>About 40 seconds. Stop it at any time; resume it where it stopped.</Point>
+                        <Point>Every fact it writes from is quoted from its paper and checked there; every number in the answer must be printed in what it cites, and a sentence that fails is corrected or removed.</Point>
+                        <Point>About one and a half to two minutes, longer for a question about the whole collection. Stop it at any time; resume it where it stopped.</Point>
                       </ul>
                     </>
                   ) : (
