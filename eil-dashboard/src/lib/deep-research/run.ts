@@ -31,7 +31,7 @@ import {
 import { isCurrentEngine, LIMITS, type PaperRecord, type ResearchPlan, type SelectedPaper, type WebSearch } from "@/lib/deep-research/types";
 import { checkAnswer } from "@/lib/deep-research/verify";
 import { searchWeb } from "@/lib/deep-research/web";
-import { buildEvidence, reportMessages, type WebPageRead } from "@/lib/deep-research/write";
+import { answerWords, buildEvidence, condenseMessages, reportMessages, wordLimit, type WebPageRead } from "@/lib/deep-research/write";
 
 export type RunOutcome = "completed" | "skipped" | "canceled" | "retry" | "failed";
 
@@ -117,7 +117,27 @@ export async function writeAnswer(input: {
     // GPT-6 Luna's reasoning counts against max_tokens: high reasoning needs room.
     { maxTokens: 16_000, timeoutMs: 240_000, reasoningEffort: "high" }
   );
-  return { draft: completion?.content?.trim() ?? "", evidence };
+  const draft = completion?.content?.trim() ?? "";
+  return { draft: await condensed(draft, input.plan), evidence };
+}
+
+/** The draft, shortened when it runs more than a tenth past its limit (write.ts condenseMessages). */
+export async function condensed(draft: string, plan: Pick<ResearchPlan, "breadth" | "language">): Promise<string> {
+  const limit = wordLimit(plan);
+  if (!draft || answerWords(draft) <= limit * 1.1) return draft;
+  try {
+    const completion = await createChatCompletionResult(condenseMessages(draft, limit, plan.language), 0.2, undefined, "DEEP_RESEARCH_CONDENSE", {
+      maxTokens: 8_000,
+      timeoutMs: 120_000,
+      reasoningEffort: "low",
+    });
+    const shorter = completion?.content?.trim() ?? "";
+    // A reply that is not shorter, or lost the answer, leaves the draft as it was.
+    return shorter && answerWords(shorter) < answerWords(draft) && answerWords(shorter) >= limit * 0.4 ? shorter : draft;
+  } catch (error) {
+    console.warn("deep_research_condense_failed", { message: error instanceof Error ? error.message : "unknown_error" });
+    return draft;
+  }
 }
 
 export async function runResearchSession(input: {

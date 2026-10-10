@@ -397,6 +397,41 @@ test("a table row is one unit, checked like a sentence and kept a row when rewri
   assert.match(checked!.report, /\|---\|---\|---\|---\|/);
 });
 
+test("an answer past its word limit is shortened once; one within it, or a reply that is not shorter, is left as it was", async () => {
+  const { condensed } = await import("../src/lib/deep-research/run");
+  const { answerWords } = await import("../src/lib/deep-research/write");
+  const sentence = "Scores rose from 12.5 to 18.4 among the learners in the course [E2]. ";
+  const long = `Opening [E2].\n\n## Findings\n\n${sentence.repeat(100)}`;
+  assert.ok(answerWords(long) > 990 && answerWords(long) <= 1_320, "past the focused limit, within the broad one");
+  assert.equal(answerWords("Scores rose [E2, E3]. | 49 | 12.5 |"), 5, "citations and table rules are not words");
+  const short = `Opening [E2].\n\n## Findings\n\n${sentence.repeat(50)}`;
+  let calls = 0;
+  const saved = { fetch: globalThis.fetch, key: process.env.OPENAI_API_KEY, base: process.env.OPENAI_BASE_URL };
+  process.env.OPENAI_API_KEY = "test-key";
+  process.env.OPENAI_BASE_URL = "https://openrouter.ai/api/v1";
+  let reply = short;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return Response.json({ choices: [{ message: { content: reply } }] });
+  }) as typeof fetch;
+  try {
+    assert.equal(await condensed(short, { breadth: "focused", language: "English" }), short, "within the limit: no call");
+    assert.equal(calls, 0);
+    assert.equal(await condensed(long, { breadth: "focused", language: "English" }), short.trim());
+    assert.equal(calls, 1);
+    assert.equal(await condensed(long, { breadth: "broad", language: "English" }), long, "a broad question's limit is higher");
+    const longer = `${long}${sentence.repeat(10)}`;
+    reply = `${longer} And more words besides.`;
+    assert.equal(await condensed(longer, { breadth: "focused", language: "English" }), longer, "a reply that is not shorter is not used");
+  } finally {
+    globalThis.fetch = saved.fetch;
+    for (const [name, value] of [["OPENAI_API_KEY", saved.key], ["OPENAI_BASE_URL", saved.base]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
 test("an answer splits into sentences and rebuilds with some replaced or removed", () => {
   const report = "## Answer\n\nIt helps. Scores rose [E1].\n\n## Evidence\n\n- One point [E1].\n- Another point [E2].\n\n## Empty\n\nGone.";
   const parsed = parseReport(report);
@@ -495,7 +530,7 @@ test("every step of a run has a model by default on OpenRouter, and the Gemini a
   process.env.OPENAI_BASE_URL = "https://openrouter.ai/api/v1";
   try {
     const { getOpenAIConfig } = await import("../src/lib/server-env");
-    for (const task of ["DEEP_RESEARCH_PLAN", "DEEP_RESEARCH_READ", "DEEP_RESEARCH_WEB", "DEEP_RESEARCH_REPORT", "DEEP_RESEARCH_REVISE"]) {
+    for (const task of ["DEEP_RESEARCH_PLAN", "DEEP_RESEARCH_READ", "DEEP_RESEARCH_WEB", "DEEP_RESEARCH_REPORT", "DEEP_RESEARCH_REVISE", "DEEP_RESEARCH_CONDENSE"]) {
       assert.equal(getOpenAIConfig(task)?.model, "openai/gpt-6-luna-20260922", task);
     }
     const engine = ["run", "verify", "read", "plan", "write"].map((name) => read(`src/lib/deep-research/${name}.ts`)).join("\n");

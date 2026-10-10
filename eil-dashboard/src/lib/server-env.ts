@@ -169,6 +169,7 @@ const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   DEEP_RESEARCH_WEB: "openai/gpt-6-luna-20260922",
   DEEP_RESEARCH_REPORT: "openai/gpt-6-luna-20260922",
   DEEP_RESEARCH_REVISE: "openai/gpt-6-luna-20260922",
+  DEEP_RESEARCH_CONDENSE: "openai/gpt-6-luna-20260922",
 };
 
 export function getOpenAIConfig(taskName?: string): {
