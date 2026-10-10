@@ -1,23 +1,23 @@
 /*
- * Runs a deep research session (docs/31, phase 3): gather each sub-question,
- * write the report, check it, and save it to the conversation.
+ * Runs a Max effort answer (the research engine): read each chosen paper,
+ * search the web where the plan asked, write the answer, check it, and save
+ * it to the conversation.
  *
  * Each step's result is saved before the next begins, so a run interrupted by
- * a restart resumes where it stopped. The run holds a lease (store.ts) while
- * it works and gives it up when it fails, so a retry can take it at once.
+ * a restart resumes where it stopped: a paper already read is not read again.
+ * The run holds a lease (store.ts) while it works and gives it up when it
+ * fails, so a retry can take it at once.
  */
 import type { AiTokenUsageTotals } from "@/lib/ai-token-usage";
 import { spendUsd } from "@/lib/answer-cost";
-import { loadChatInsightCorpus } from "@/lib/chat-chart";
-import { buildInsightReport } from "@/lib/insights/engine";
 import { createChatCompletionResult } from "@/lib/openai";
 import { loadRepositoryContext, type RepositoryContext } from "@/lib/repository-chat";
 import type { KnowledgeScope } from "@/lib/knowledge-scope";
 import type { DeepResearchStepRecord } from "@/types/research";
-import { findingsMessages, findingsTool, labelCandidates, parseFindings, type ParsedFindings } from "@/lib/deep-research/findings";
 import { finalizeReport } from "@/lib/deep-research/finalize";
 import { callTool } from "@/lib/deep-research/model";
-import { buildPassageIndex, searchPassages, withAbstracts, type PassageIndex } from "@/lib/deep-research/retrieve";
+import { dedupeStudies, studyOf, type StudyPaper } from "@/lib/deep-research/plan";
+import { checkRecord, readingText, readMessages, readSummary, readTool } from "@/lib/deep-research/read";
 import {
   claimSession,
   completeSession,
@@ -28,26 +28,14 @@ import {
   sessionStatus,
   type ResearchScope,
 } from "@/lib/deep-research/store";
-import { LIMITS, type AuditResult, type Evidence, type GatherResult, type PlannedQuestion, type ResearchPlan } from "@/lib/deep-research/types";
-import {
-  auditMessages,
-  auditTool,
-  citesIn,
-  codeCheck,
-  dropUnknownCitations,
-  emptyAudit,
-  parseAudit,
-  parseReport,
-  parseRevisions,
-  rebuild,
-  reviseMessages,
-  reviseTool,
-  type ReportUnit,
-} from "@/lib/deep-research/verify";
+import { isCurrentEngine, LIMITS, type PaperRecord, type ResearchPlan, type SelectedPaper, type WebSearch } from "@/lib/deep-research/types";
+import { checkAnswer } from "@/lib/deep-research/verify";
 import { searchWeb } from "@/lib/deep-research/web";
-import { reportMessages, type ComputedFact } from "@/lib/deep-research/write";
+import { buildEvidence, reportMessages, type WebPageRead } from "@/lib/deep-research/write";
 
 export type RunOutcome = "completed" | "skipped" | "canceled" | "retry" | "failed";
+
+export const EARLIER_ENGINE_MESSAGE = "This answer was planned by an earlier version of Max. Ask the question again to plan it afresh.";
 
 function isThai(language: string): boolean {
   return /thai|ไทย/i.test(language);
@@ -57,256 +45,27 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/* ------------------------------------------------------------------ gather */
+/* ------------------------------------------------------------------- read */
 
-export async function gatherQuestion(input: {
-  question: PlannedQuestion;
-  readerQuestion: string;
-  index: PassageIndex;
-  language: string;
-}): Promise<GatherResult> {
-  const { question } = input;
-  const hits = withAbstracts(
-    input.index,
-    searchPassages(input.index, [...question.queries, question.question], { limit: LIMITS.candidatesPerQuestion, perPaper: 2 })
-  );
-  let pages: Array<{ url: string; title: string; text: string }> = [];
-  let webFailed = false;
-  const webSearched = question.sources !== "papers";
-  if (webSearched) {
-    const web = await searchWeb(question.queries[0] ?? question.question, question.question, today());
-    pages = web.pages;
-    webFailed = web.failed;
-  }
-  // A web-only sub-question still sees the papers' best few passages.
-  const passages = question.sources === "web" ? hits.slice(0, 6) : hits;
-  const candidates = labelCandidates(passages, pages);
-  const base = {
-    questionId: question.id,
-    question: question.question,
-    searchedPapers: input.index.papers,
-    webSearched,
-    webFailed,
-    shown: candidates.map((candidate, position) => ({
-      label: candidate.label,
-      source: candidate.kind === "web" ? pages[Number(candidate.label.slice(1)) - 1]?.url ?? "" : passages[Number(candidate.label.slice(1)) - 1]?.paperId ?? "",
-      title: candidate.title.slice(0, 120),
-      ...(candidate.section ? { section: candidate.section } : {}),
-      position,
-    })).map(({ position: _position, ...rest }) => rest),
-  };
-  if (candidates.length === 0) {
-    return { ...base, evidence: [], findings: [], coverage: "not_found", missing: "No passage in the papers searched matched this sub-question." };
-  }
+/** Reads one paper for the question; null when the model gives nothing usable. */
+export async function readPaper(input: { question: string; plan: Pick<ResearchPlan, "aspects" | "searchTerms">; paper: StudyPaper; whole: boolean }): Promise<PaperRecord | null> {
+  const reading = readingText(input.paper, input.whole, [input.question, ...input.plan.searchTerms, ...input.plan.aspects]);
   const raw = await callTool(
-    findingsMessages({ readerQuestion: input.readerQuestion, subQuestion: question.question, candidates }),
-    findingsTool(),
-    "DEEP_RESEARCH_FINDINGS",
-    { maxTokens: 4_000, timeoutMs: 75_000, reasoningEffort: "low" }
+    readMessages({ question: input.question, aspects: input.plan.aspects, paper: input.paper, reading }),
+    readTool(),
+    "DEEP_RESEARCH_READ",
+    { maxTokens: 9_000, timeoutMs: 150_000, reasoningEffort: "medium" }
   );
-  const parsed = parseFindings(raw, new Set(candidates.map((candidate) => candidate.label)));
-  if (!parsed) {
-    return { ...base, evidence: [], findings: [], coverage: "not_found", missing: "The passages for this sub-question could not be read just now." };
-  }
-  return { ...base, ...evidenceFromFindings(parsed, question.id, passages, pages) };
+  if (!raw) return null;
+  return checkRecord(raw, input.paper, reading.whole, input.plan.aspects);
 }
 
-/**
- * Keeps only what a finding cites, in the order it is first cited; a finding
- * whose sources were all cut by the per-question limit goes too.
- */
-export function evidenceFromFindings(
-  parsed: ParsedFindings,
-  questionId: string,
-  passages: Array<{ paperId: string; title: string; year: string; section: string; text: string }>,
-  pages: Array<{ url: string; title: string; text: string }>
-): Pick<GatherResult, "evidence" | "findings" | "coverage" | "missing"> {
-  const order: string[] = [];
-  for (const finding of parsed.findings) for (const label of finding.labels) if (!order.includes(label)) order.push(label);
-  const kept = order
-    .filter((label) => (label.startsWith("W") ? pages[Number(label.slice(1)) - 1] : passages[Number(label.slice(1)) - 1]))
-    .slice(0, LIMITS.passagesPerQuestion);
-  const evidence: Evidence[] = kept.map((label) => {
-    const localId = `${questionId}:${label}`;
-    if (label.startsWith("W")) {
-      const page = pages[Number(label.slice(1)) - 1];
-      return { id: localId, kind: "web", sourceId: page.url, url: page.url, title: page.title, year: "Web", text: page.text, questionId };
-    }
-    const hit = passages[Number(label.slice(1)) - 1];
-    return { id: localId, kind: "paper", sourceId: hit.paperId, title: hit.title, year: hit.year, text: hit.text, section: hit.section, questionId };
-  });
-  const keptSet = new Set(kept);
-  const findings = parsed.findings
-    .map((finding) => ({ statement: finding.statement, kind: finding.kind, evidenceIds: finding.labels.filter((label) => keptSet.has(label)).map((label) => `${questionId}:${label}`) }))
-    .filter((finding) => finding.evidenceIds.length > 0);
-  return { evidence, findings, coverage: findings.length ? parsed.coverage : "not_found", missing: parsed.missing };
+/** Runs `work` on each item, `size` at a time. */
+async function inWaves<T>(items: T[], size: number, work: (item: T) => Promise<void>): Promise<void> {
+  for (let start = 0; start < items.length; start += size) await Promise.all(items.slice(start, start + size).map(work));
 }
 
-function gatherSummary(result: GatherResult, thai: boolean): string {
-  const papers = new Set(result.evidence.filter((item) => item.kind === "paper").map((item) => item.sourceId)).size;
-  const pages = result.evidence.filter((item) => item.kind === "web").length;
-  if (result.evidence.length === 0) {
-    return thai ? `ไม่พบในงานวิจัย ${result.searchedPapers} ฉบับที่ค้น` : `Not found in the ${result.searchedPapers} papers searched.`;
-  }
-  if (thai) return `พบหลักฐาน ${result.evidence.length} ตอนจากงานวิจัย ${papers} ฉบับ${pages ? ` และหน้าเว็บ ${pages} หน้า` : ""}`;
-  return `Found ${result.evidence.length} passage${result.evidence.length === 1 ? "" : "s"} in ${papers} paper${papers === 1 ? "" : "s"}${pages ? ` and ${pages} web page${pages === 1 ? "" : "s"}` : ""}.`;
-}
-
-/* --------------------------------------------------------- write and check */
-
-/** Numbers every run's evidence E1, E2... across sub-questions, in plan order. */
-export function numberEvidence(gathered: GatherResult[]): { evidence: Evidence[]; results: GatherResult[] } {
-  const ids = new Map<string, string>();
-  const evidence: Evidence[] = [];
-  for (const result of gathered) {
-    for (const item of result.evidence) {
-      // The same passage found for two sub-questions is one piece of evidence.
-      const duplicate = evidence.find((existing) => existing.kind === item.kind && existing.sourceId === item.sourceId && existing.text === item.text);
-      if (duplicate) {
-        ids.set(item.id, duplicate.id);
-        continue;
-      }
-      const id = `E${evidence.length + 1}`;
-      ids.set(item.id, id);
-      evidence.push({ ...item, id });
-    }
-  }
-  const results = gathered.map((result) => ({
-    ...result,
-    evidence: result.evidence.map((item) => ({ ...item, id: ids.get(item.id) ?? item.id })),
-    findings: result.findings.map((finding) => ({ ...finding, evidenceIds: [...new Set(finding.evidenceIds.map((id) => ids.get(id) ?? id))] })),
-  }));
-  return { evidence, results };
-}
-
-export function asksAboutDistribution(question: string): boolean {
-  return /\b(?:trends?|changed?|changing|over time|over the years|grow(?:n|ing|th)?|decline|most common|how many|how often|proportion|share|distribution|popular|frequen\w*)\b|แนวโน้ม|เปลี่ยน|จำนวน|บ่อย|สัดส่วน/i.test(question);
-}
-
-function wordCount(text: string): number {
-  return /[ก-๛]/.test(text) ? Math.round(text.replace(/\s+/g, "").length / 6) : text.split(/\s+/).filter(Boolean).length;
-}
-
-/** Holds the report to its evidence: code checks, an independent audit, one revision. */
-export interface CheckedSentence {
-  text: string;
-  problem: string;
-  outcome: "rewritten" | "removed";
-  revised?: string;
-}
-
-export async function checkReport(input: {
-  draft: string;
-  evidence: Evidence[];
-  facts: ComputedFact[];
-  question: string;
-  language: string;
-  model?: string;
-}): Promise<{ report: string; audit: AuditResult; auditRan: boolean; changes: CheckedSentence[] }> {
-  const evidence = new Map(input.evidence.map((item) => [item.id, item]));
-  const factText = `${input.facts.map((fact) => fact.text).join(" ")} ${input.question}`;
-  const parsed = parseReport(input.draft);
-  const audit = emptyAudit();
-  const replacements = new Map<string, string>();
-  const changes: CheckedSentence[] = [];
-  const units = parsed.units.filter((unit) => !unit.heading);
-  const lastSection = parsed.sections - 1;
-
-  // Ids that do not exist are removed before anything else looks at the text.
-  const current = new Map<string, ReportUnit>();
-  for (const unit of units) {
-    const unknown = unit.cites.filter((id) => !evidence.has(id));
-    audit.unknownCitations += unknown.length;
-    const text = unknown.length ? dropUnknownCitations(unit.text, evidence) : unit.text;
-    if (text !== unit.text) replacements.set(unit.id, text);
-    current.set(unit.id, { ...unit, text, cites: citesIn(text) });
-  }
-  // The closing limits may state what is missing without citing. Every other
-  // sentence that states something is checked, the opening answer included:
-  // it summarises, and a summary can claim what no source says.
-  const substantive = (unit: ReportUnit) => wordCount(unit.text) >= 4;
-  const toAudit = [...current.values()].filter((unit) => unit.cites.length > 0 || (unit.section < lastSection && substantive(unit)));
-
-  let verdicts = new Map<string, import("@/lib/deep-research/verify").Verdict>();
-  let auditRan = false;
-  if (toAudit.length > 0) {
-    // A verdict per sentence, and the model thinks before it writes them: a
-    // 3,000-token cap ran out on a long report before any verdict, twice.
-    // If the checker still fails, the lighter one checks instead of nobody.
-    const messages = auditMessages(toAudit, input.evidence);
-    const raw =
-      (await callTool(messages, auditTool(), "DEEP_RESEARCH_AUDIT", { maxTokens: 10_000, timeoutMs: 100_000, reasoningEffort: "low", attempts: 1 })) ??
-      (await callTool(messages, auditTool(), "DEEP_RESEARCH_AUDIT", { model: "google/gemini-3.1-flash-lite", maxTokens: 8_000, timeoutMs: 75_000, attempts: 1 }));
-    if (raw) {
-      auditRan = true;
-      verdicts = parseAudit(raw, new Set(toAudit.map((unit) => unit.id)));
-    }
-  }
-
-  const flagged: Array<{ unit: ReportUnit; problem: string; evidenceIds: string[] }> = [];
-  for (const unit of toAudit) {
-    const verdict = verdicts.get(unit.id);
-    const code = codeCheck(unit, evidence, factText);
-    if (verdict) audit.checked += 1;
-    if (code.badNumbers.length) audit.numberMismatches += 1;
-    if (verdict?.verdict === "supported" && unit.cites.length === 0) {
-      const sources = verdict.sources.filter((id) => evidence.has(id));
-      if (sources.length && unit.section > 0) {
-        // Supported but uncited: the audit named its source, so cite it.
-        const cited = unit.text.replace(/([.!?])?$/, (end) => ` [${sources.join(", ")}]${end || "."}`);
-        replacements.set(unit.id, cited);
-        audit.supported += 1;
-        continue;
-      }
-    }
-    const numberProblem = [
-      code.badNumbers.length ? `the number${code.badNumbers.length > 1 ? "s" : ""} ${code.badNumbers.join(", ")} ${code.badNumbers.length > 1 ? "are" : "is"} not in its evidence` : "",
-      code.webAsPapers ? "it credits the reader's papers with what only web pages say; say it comes from outside the collection" : "",
-    ].filter(Boolean).join("; ");
-    if ((verdict && (verdict.verdict === "partly" || verdict.verdict === "unsupported")) || numberProblem) {
-      flagged.push({
-        unit,
-        problem: [verdict && verdict.verdict !== "supported" ? verdict.problem || `judged ${verdict.verdict}` : "", numberProblem, unit.cites.length === 0 ? "it cites no source" : ""].filter(Boolean).join("; "),
-        evidenceIds: [...new Set([...unit.cites, ...(verdict?.sources ?? [])])].filter((id) => evidence.has(id)),
-      });
-    } else if (verdict && (verdict.verdict === "supported" || verdict.verdict === "no_claim")) {
-      audit.supported += 1;
-    }
-  }
-
-  if (flagged.length > 0) {
-    const batch = flagged.slice(0, 30);
-    const raw = await callTool(reviseMessages(batch, evidence, input.language), reviseTool(), "DEEP_RESEARCH_REVISE", {
-      model: input.model,
-      maxTokens: 6_000,
-      timeoutMs: 75_000,
-      reasoningEffort: "low",
-    });
-    const revisions = raw ? parseRevisions(raw, new Set(batch.map((item) => item.unit.id))) : new Map<string, string>();
-    for (const item of flagged) {
-      const revised = revisions.get(item.unit.id);
-      const text = revised ? dropUnknownCitations(revised, evidence) : "";
-      const cites = citesIn(text);
-      const allowed = new Set(item.evidenceIds);
-      const check = codeCheck({ text, cites }, evidence, factText);
-      // Kept only when it now cites evidence it was given, every number is in
-      // it, and web pages are not passed off as the reader's papers.
-      const ok = text && cites.length > 0 && cites.every((id) => allowed.has(id)) && check.badNumbers.length === 0 && !check.webAsPapers;
-      if (ok) {
-        replacements.set(item.unit.id, text);
-        audit.rewritten += 1;
-        changes.push({ text: item.unit.text, problem: item.problem, outcome: "rewritten", revised: text });
-      } else {
-        replacements.set(item.unit.id, "");
-        audit.removed += 1;
-        changes.push({ text: item.unit.text, problem: item.problem, outcome: "removed", ...(revised ? { revised } : {}) });
-      }
-    }
-  }
-  return { report: rebuild(parsed, replacements), audit, auditRan, changes };
-}
-
-/* ----------------------------------------------------------------- the run */
+/* ------------------------------------------------------------------ the run */
 
 function stepOf(steps: DeepResearchStepRecord[], tool: string): DeepResearchStepRecord[] {
   return steps.filter((step) => step.tool_name === tool);
@@ -337,35 +96,28 @@ async function contextFor(ownerUserId: string, scope: ResearchScope, question: s
   });
 }
 
-export function passageIndexFor(context: RepositoryContext): PassageIndex {
-  return buildPassageIndex(
-    context.papers.map((paper) => ({
-      paperId: paper.paperId,
-      title: paper.title,
-      year: paper.year,
-      abstract: paper.abstract,
-      methods: paper.methods,
-      results: paper.results,
-      conclusion: paper.conclusion,
-      content: paper.content,
-      topics: [...paper.topics.keys()],
-      keywords: [...paper.keywords.keys()],
-    }))
+/** Writes the answer from what was read; the draft and the evidence it cites. */
+export async function writeAnswer(input: {
+  question: string;
+  plan: ResearchPlan;
+  records: PaperRecord[];
+  pages: WebPageRead[];
+  unread: Array<{ title: string; year: string }>;
+  scopeLabel: string;
+  studiesInScope: number;
+  pendingPapers: number;
+  model?: string;
+}) {
+  const evidence = buildEvidence(input.records, input.pages);
+  const completion = await createChatCompletionResult(
+    reportMessages({ ...input, evidence, today: today() }),
+    0.3,
+    input.model,
+    "DEEP_RESEARCH_REPORT",
+    // GPT-6 Luna's reasoning counts against max_tokens: high reasoning needs room.
+    { maxTokens: 16_000, timeoutMs: 240_000, reasoningEffort: "high" }
   );
-}
-
-async function computedFacts(ownerUserId: string, context: RepositoryContext): Promise<ComputedFact[]> {
-  try {
-    const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
-    const corpus = await loadChatInsightCorpus(ownerUserId, projectIds, new Set(context.papers.map((paper) => String(paper.paperId))));
-    const report = buildInsightReport(corpus);
-    const facts: ComputedFact[] = [];
-    for (const insight of report.insights.slice(0, 4)) facts.push({ text: insight.takeaway });
-    return facts;
-  } catch (error) {
-    console.warn("deep_research_facts_failed", { message: error instanceof Error ? error.message : "unknown_error" });
-    return [];
-  }
+  return { draft: completion?.content?.trim() ?? "", evidence };
 }
 
 export async function runResearchSession(input: {
@@ -389,6 +141,11 @@ export async function runResearchSession(input: {
   const startedAt = Date.now();
   let webSearches = 0;
   try {
+    // A run deep research v2 planned (sub-questions and passages) cannot be resumed by this engine.
+    if (!isCurrentEngine(session)) {
+      await failSession(ownerUserId, sessionId, EARLIER_ENGINE_MESSAGE);
+      return "failed";
+    }
     const steps = session.steps ?? [];
     const writeStep = stepOf(steps, "dr2_write")[0];
     const checkStep = stepOf(steps, "dr2_check")[0];
@@ -396,89 +153,108 @@ export async function runResearchSession(input: {
     const scope = payload<ResearchScope>(writeStep, "scope");
     const readerQuestion = payload<string>(writeStep, "readerQuestion") ?? session.prompt;
     const model = payload<string | null>(writeStep, "model") ?? undefined;
-    if (!writeStep || !checkStep || !plan || !scope) throw new Error("This research plan is incomplete. Plan it again.");
+    if (!writeStep || !checkStep || !plan || !scope) throw new Error("This plan is incomplete. Ask the question again.");
     const thai = isThai(plan.language);
 
     const context = await contextFor(ownerUserId, scope, readerQuestion);
-    const index = passageIndexFor(context);
+    const studies = dedupeStudies(context.papers.map(studyOf));
+    const byId = new Map(context.papers.map((paper) => [paper.paperId, studyOf(paper)]));
 
-    // 1. Gather, every unfinished sub-question at once.
-    const gatherSteps = stepOf(steps, "dr2_gather");
+    // 1. Read the chosen papers, a few at once.
+    const readSteps = stepOf(steps, "dr2_read");
+    await inWaves(
+      readSteps.filter((step) => step.status !== "completed"),
+      LIMITS.concurrency,
+      async (step) => {
+        const chosen = payload<SelectedPaper & { whole?: boolean }>(step, "paper");
+        const paper = chosen ? byId.get(chosen.paperId) : undefined;
+        await saveStep(ownerUserId, step.id, "processing", { summary: thai ? "กำลังอ่าน" : "Reading." });
+        const record = paper ? await readPaper({ question: readerQuestion, plan, paper, whole: chosen?.whole !== false }) : null;
+        const result = { record, missing: !paper, failed: Boolean(paper) && !record };
+        const summary = paper ? readSummary(record, thai) : thai ? "ไม่อยู่ในคลังนี้แล้ว" : "No longer in this repository.";
+        await saveStep(ownerUserId, step.id, "completed", { ...result, summary });
+        step.status = "completed";
+        (step.output_payload as Record<string, unknown>) = result;
+      }
+    );
+    if (!(await stillRunning())) return "canceled";
+    const reads = readSteps.map((step) => ({ chosen: payload<SelectedPaper>(step, "paper"), record: output<PaperRecord | null>(step, "record") ?? null, failed: output<boolean>(step, "failed") === true }));
+    if (readSteps.length > 0 && reads.every((read) => read.failed)) {
+      // Nothing could be read: try again rather than answer from nothing.
+      for (const step of readSteps) await saveStep(ownerUserId, step.id, "failed", { summary: thai ? "อ่านไม่ได้ในขณะนี้" : "Could not be read just now." });
+      throw new Error("The papers could not be read just now.");
+    }
+
+    // 2. The web, only where the plan asked for it.
+    const webSteps = stepOf(steps, "dr2_web");
     await Promise.all(
-      gatherSteps
+      webSteps
         .filter((step) => step.status !== "completed")
         .map(async (step) => {
-          const question = payload<PlannedQuestion>(step, "question");
-          if (!question) return;
-          await saveStep(ownerUserId, step.id, "processing", {
-            summary: thai ? "กำลังค้นในงานวิจัย" + (question.sources !== "papers" ? "และเว็บ" : "") : `Searching the papers${question.sources !== "papers" ? " and the web" : ""}.`,
-          });
-          const result = await gatherQuestion({ question, readerQuestion, index, language: plan.language });
-          if (result.webSearched) webSearches += 1;
-          await saveStep(ownerUserId, step.id, "completed", { result, summary: gatherSummary(result, thai) });
+          const search = payload<WebSearch>(step, "search");
+          if (!search) return;
+          await saveStep(ownerUserId, step.id, "processing", { summary: thai ? "กำลังค้นเว็บ" : "Searching the web." });
+          const web = await searchWeb(search.query, readerQuestion, today());
+          webSearches += 1;
+          const summary = web.failed
+            ? thai ? "ค้นเว็บไม่สำเร็จ" : "The web search failed; the papers alone are used."
+            : thai ? `พบ ${web.pages.length} หน้า` : `Found ${web.pages.length} page${web.pages.length === 1 ? "" : "s"}.`;
+          await saveStep(ownerUserId, step.id, "completed", { pages: web.pages, failed: web.failed, summary });
           step.status = "completed";
-          (step.output_payload as Record<string, unknown>) = { result };
+          (step.output_payload as Record<string, unknown>) = { pages: web.pages };
         })
     );
     if (!(await stillRunning())) return "canceled";
-    const gathered = gatherSteps.map((step) => output<GatherResult>(step, "result")).filter((result): result is GatherResult => Boolean(result));
+    const pages = webSteps.flatMap((step) => output<WebPageRead[]>(step, "pages") ?? []);
+    const records = reads.map((read) => read.record).filter((record): record is PaperRecord => Boolean(record));
 
-    // 2. Write.
+    // 3. Write.
     let draft = output<string>(writeStep, "draft");
-    let evidence = output<Evidence[]>(writeStep, "evidence");
-    let facts = output<ComputedFact[]>(writeStep, "facts") ?? [];
+    let evidence = output<ReturnType<typeof buildEvidence>>(writeStep, "evidence");
     if (!draft || !evidence) {
       await saveStep(ownerUserId, writeStep.id, "processing", { summary: thai ? "กำลังเขียนคำตอบ" : "Writing the answer." });
-      const numbered = numberEvidence(gathered);
-      evidence = numbered.evidence;
-      // Counts across the collection help only a question about how it divides
-      // or changes; live, a policy question got a paragraph of unrelated trends.
-      facts = plan.analytics && asksAboutDistribution(readerQuestion) ? await computedFacts(ownerUserId, context) : [];
-      const completion = await createChatCompletionResult(
-        reportMessages({
-          question: readerQuestion,
-          plan,
-          gathered: numbered.results,
-          evidence,
-          facts,
-          scopeLabel: context.scopeLabel,
-          // Distinct studies: a duplicate upload is one paper here.
-          paperCount: index.papers,
-          pendingPapers: (context.runStats.queued ?? 0) + (context.runStats.processing ?? 0),
-          today: today(),
-        }),
-        0.3,
+      const written = await writeAnswer({
+        question: readerQuestion,
+        plan,
+        records,
+        pages,
+        unread: reads.filter((read) => read.failed && read.chosen).map((read) => ({ title: read.chosen!.title, year: read.chosen!.year })),
+        scopeLabel: context.scopeLabel,
+        studiesInScope: studies.length,
+        pendingPapers: (context.runStats.queued ?? 0) + (context.runStats.processing ?? 0),
         model,
-        "DEEP_RESEARCH_REPORT",
-        { maxTokens: 8_000, timeoutMs: 150_000, reasoningEffort: "low" }
-      );
-      draft = completion?.content?.trim() ?? "";
-      if (!draft) throw new Error("The report could not be written just now.");
+      });
+      draft = written.draft;
+      evidence = written.evidence;
+      if (!draft) throw new Error("The answer could not be written just now.");
+      const papers = new Set(evidence.filter((item) => item.kind === "paper").map((item) => item.sourceId)).size;
       await saveStep(ownerUserId, writeStep.id, "completed", {
         draft,
         evidence,
-        facts,
-        summary: thai ? `ร่างรายงานโดยอ้างอิงหลักฐาน ${evidence.length} รายการ` : `Drafted, citing ${evidence.length} piece${evidence.length === 1 ? "" : "s"} of evidence.`,
+        summary: thai ? `เขียนจากงานวิจัย ${papers} ฉบับ` : `Written from ${papers} paper${papers === 1 ? "" : "s"}.`,
       });
     }
     if (!(await stillRunning())) return "canceled";
 
-    // 3. Check, and save to the conversation.
-    await saveStep(ownerUserId, checkStep.id, "processing", { summary: thai ? "กำลังตรวจข้ออ้างกับแหล่งที่มา" : "Checking each claim against its source." });
-    const checked = await checkReport({ draft, evidence, facts, question: readerQuestion, language: plan.language, model });
+    // 4. Check, and save to the conversation.
+    await saveStep(ownerUserId, checkStep.id, "processing", { summary: thai ? "กำลังตรวจตัวเลขและการอ้างอิง" : "Checking every number and citation." });
+    const relevant = records.filter((record) => record.relevant);
+    const checked = await checkAnswer({
+      draft,
+      evidence,
+      language: plan.language,
+      counts: [studies.length, context.papers.length, records.length, relevant.length, records.filter((record) => record.whole).length],
+      model,
+    });
     const final = finalizeReport(checked.report, new Map(evidence.map((item) => [item.id, item])));
     const { audit } = checked;
     await saveStep(ownerUserId, checkStep.id, "completed", {
       audit,
       auditRan: checked.auditRan,
       changes: checked.changes.slice(0, 40),
-      summary: checked.auditRan
-        ? thai
-          ? `ตรวจ ${audit.checked} ข้อความ: แก้ ${audit.rewritten} นำออก ${audit.removed}`
-          : `Checked ${audit.checked} sentence${audit.checked === 1 ? "" : "s"}: ${audit.rewritten} corrected, ${audit.removed} removed.`
-        : thai
-          ? "ตรวจตัวเลขและการอ้างอิงแล้ว แต่การตรวจข้ออ้างอัตโนมัติไม่ได้ทำงาน"
-          : "Citations and numbers were checked; the automatic claim check could not run.",
+      summary: thai
+        ? `ตรวจ ${audit.checked} ข้อความ: แก้ ${audit.rewritten} นำออก ${audit.removed}`
+        : `Checked ${audit.checked} sentence${audit.checked === 1 ? "" : "s"}: ${audit.rewritten} corrected, ${audit.removed} removed.`,
     });
     const spend = input.usage ? spendUsd(input.usage, webSearches) : null;
     const saved = await completeSession({
@@ -490,9 +266,10 @@ export async function runResearchSession(input: {
         language: plan.language,
         audit,
         auditRan: checked.auditRan,
-        questions: gathered.map((result) => ({ id: result.questionId, coverage: result.coverage })),
+        papersSearched: records.length,
+        papersRelevant: relevant.length,
+        papersWhole: records.filter((record) => record.whole).length,
         evidence: evidence.length,
-        papersSearched: index.papers,
         durationMs: Date.now() - startedAt,
         ...(spend ? { spendUsd: spend.usd, spendSource: spend.source } : {}),
       },

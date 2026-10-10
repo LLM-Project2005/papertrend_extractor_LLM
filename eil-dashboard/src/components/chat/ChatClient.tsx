@@ -981,22 +981,19 @@ function ResearchChoices({ session }: { session: DeepResearchSessionRecord }) {
 }
 
 /**
- * What a v2 run looks in and how it went (docs/31): the sub-questions are the
- * steps below, so this says only where it searches and, once finished, what
- * the claim check did.
+ * What a research-engine run looks in and how it went: the papers it reads
+ * are the steps below, so this says only where it looks, how many papers and
+ * web searches, and, once finished, what the check did.
  */
 function ResearchV2Summary({ session, scopeLabel }: { session: DeepResearchSessionRecord; scopeLabel: string }) {
-  const gathers = (session.steps ?? []).filter((step) => step.tool_name === "dr2_gather");
-  const web = gathers.filter((step) => {
-    const sources = (step.input_payload as { question?: { sources?: string } } | undefined)?.question?.sources;
-    return sources === "web" || sources === "both";
-  }).length;
+  const reads = (session.steps ?? []).filter((step) => step.tool_name === "dr2_read");
+  const web = (session.steps ?? []).filter((step) => step.tool_name === "dr2_web").length;
   const check = (session.steps ?? []).find((step) => step.tool_name === "dr2_check");
   const audit = (check?.output_payload as { audit?: { checked: number; rewritten: number; removed: number }; auditRan?: boolean } | undefined) ?? {};
   const choices = [
     { label: "Looks in", value: scopeLabel },
-    { label: "Parts", value: `${gathers.length}` },
-    { label: "Web", value: web > 0 ? `For ${web} of ${gathers.length}` : "Not needed" },
+    { label: "Papers", value: `${reads.length}` },
+    { label: "Web", value: web > 0 ? `${web} search${web === 1 ? "" : "es"}` : "Not needed" },
     ...(session.status === "completed" && audit.audit
       ? [{
           label: "Checked",

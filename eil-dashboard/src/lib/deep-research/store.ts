@@ -14,12 +14,53 @@
  */
 import { createHash } from "node:crypto";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
-import { ENGINE, isV2Session, type ResearchPlan } from "@/lib/deep-research/types";
+import { ENGINE, isV2Session, LIMITS, type ResearchPlan } from "@/lib/deep-research/types";
 import type { DeepResearchSessionRecord, DeepResearchStepRecord } from "@/types/research";
 
 export const LEASE_SECONDS = 75;
 
-export type StepTool = "dr2_gather" | "dr2_write" | "dr2_check";
+/** One read per paper, one per web search, then the answer and its check. dr2_gather was deep research v2's. */
+export type StepTool = "dr2_read" | "dr2_web" | "dr2_write" | "dr2_check";
+
+function shortTitle(title: string, max = 70): string {
+  const clean = title.replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
+}
+
+/** The steps a plan is run as, in order; the first papers chosen are read whole. */
+export function planSteps(input: { plan: ResearchPlan; scope: ResearchScope; prompt: string; model: string | null }): Array<{ title: string; description: string; tool: StepTool; input: Record<string, unknown> }> {
+  const { plan } = input;
+  const thai = /thai|ไทย/i.test(plan.language);
+  return [
+    ...plan.papers.map((paper, index) => {
+      const whole = index < LIMITS.wholePapers;
+      return {
+        title: `${thai ? "อ่าน" : "Read"} ${shortTitle(paper.title)}${paper.year ? ` (${paper.year})` : ""}`,
+        description: whole ? (thai ? "อ่านทั้งฉบับ" : "The whole paper.") : thai ? "บทคัดย่อ วิธีวิจัย ผล และบทสรุป" : "Its abstract, methods, results and conclusion.",
+        tool: "dr2_read" as const,
+        input: { engine: ENGINE, paper: { ...paper, whole } },
+      };
+    }),
+    ...plan.web.map((search) => ({
+      title: `${thai ? "ค้นเว็บ:" : "Search the web:"} ${search.query}`,
+      description: search.purpose,
+      tool: "dr2_web" as const,
+      input: { engine: ENGINE, search },
+    })),
+    {
+      title: thai ? "เขียนคำตอบ" : "Write the answer",
+      description: thai ? "เรียบเรียงจากสิ่งที่งานวิจัยรายงาน พร้อมอ้างอิงแหล่งที่มาทุกข้อ" : "From what the papers report, citing a source for every claim.",
+      tool: "dr2_write",
+      input: { engine: ENGINE, plan, scope: input.scope, readerQuestion: input.prompt, model: input.model },
+    },
+    {
+      title: thai ? "ตรวจตัวเลขและการอ้างอิงทุกข้อ" : "Check every number and citation",
+      description: thai ? "ตัวเลขทุกตัวต้องอยู่ในข้อความที่อ้าง ข้อความที่ไม่ผ่านจะถูกแก้หรือนำออก" : "Every number must be printed in what it cites; a sentence that fails is corrected or removed.",
+      tool: "dr2_check",
+      input: { engine: ENGINE },
+    },
+  ];
+}
 
 export interface ResearchScope {
   kind: string;
@@ -126,26 +167,7 @@ export async function savePlan(input: {
       if (!inserted.rows[0]) throw new Error("Chat thread not found.");
       sessionId = inserted.rows[0].id;
     }
-    const steps: Array<{ title: string; description: string; tool: StepTool; input: Record<string, unknown> }> = [
-      ...input.plan.questions.map((question) => ({
-        title: question.question,
-        description: question.purpose,
-        tool: "dr2_gather" as const,
-        input: { engine: ENGINE, question },
-      })),
-      {
-        title: /thai|ไทย/i.test(input.plan.language) ? "เขียนคำตอบ" : "Write the answer",
-        description: /thai|ไทย/i.test(input.plan.language) ? "เรียบเรียงข้อค้นพบพร้อมอ้างอิงแหล่งที่มาทุกข้อ" : "Bring the findings together, citing a source for every claim.",
-        tool: "dr2_write",
-        input: { engine: ENGINE, plan: input.plan, scope: input.scope, readerQuestion: input.prompt, model: input.model },
-      },
-      {
-        title: /thai|ไทย/i.test(input.plan.language) ? "ตรวจทุกข้ออ้างกับแหล่งที่มา" : "Check every claim against its source",
-        description: /thai|ไทย/i.test(input.plan.language) ? "ข้อความที่แหล่งที่มาไม่สนับสนุนจะถูกแก้หรือนำออก" : "A sentence its source does not support is corrected or removed.",
-        tool: "dr2_check",
-        input: { engine: ENGINE },
-      },
-    ];
+    const steps = planSteps(input);
     for (const [index, step] of steps.entries()) {
       await client.query(
         `INSERT INTO public.deep_research_steps (session_id, owner_user_id, position, title, description, tool_name, status, input_payload, output_payload)

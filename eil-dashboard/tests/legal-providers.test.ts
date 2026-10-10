@@ -136,23 +136,22 @@ test("deep research plans with the web available, so a question about current po
     INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES (${paperId}, '${OWNER}', '${FOLDER}', '2021', 'Washback of a National English Test');
     INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id, abstract) VALUES (${paperId}, '${OWNER}', '${FOLDER}', '${RUN}', 'This study examined test washback in Thai schools.');
   `);
-  // The planner asks for the web on the question about current policy, and the papers on the other.
+  // The planner reads the paper for the washback, and asks the web about current policy.
   const plan = {
     title: "Washback and current policy",
     language: "English",
-    analytics: false,
+    papers: [{ id: "S1", reason: "Washback in Thai schools" }],
+    aspects: ["the washback found"],
     outline: [],
-    questions: [
-      { question: "What do current national policies require of English tests?", purpose: "Policy now.", sources: "web", queries: ["English test policy Thailand"] },
-      { question: "What washback did the papers find?", purpose: "The papers.", sources: "papers", queries: ["washback"] },
-    ],
+    searchTerms: ["washback"],
+    web: [{ query: "English test policy Thailand", purpose: "Policy now." }],
   };
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     assert.equal(url, "https://openrouter.ai/api/v1/chat/completions", "only the model is asked");
     const tool = JSON.parse(String(init?.body)).tool_choice?.function?.name;
-    assert.equal(tool, "write_plan");
+    assert.equal(tool, "plan_reading");
     return Response.json({
       model: "fake",
       usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cost: 0.001 },
@@ -173,11 +172,15 @@ test("deep research plans with the web available, so a question about current po
     quiet.mock.restore();
     globalThis.fetch = realFetch;
   }
-  const planned = await harness.db.query<{ question: string; sources: string }>(
-    `SELECT input_payload->'question'->>'question' AS question, input_payload->'question'->>'sources' AS sources
-     FROM deep_research_steps WHERE tool_name = 'dr2_gather' ORDER BY position`
+  const planned = await harness.db.query<{ tool_name: string; query: string | null }>(
+    `SELECT tool_name, input_payload->'search'->>'query' AS query FROM deep_research_steps ORDER BY position`
   );
-  assert.deepEqual(planned.rows.map((row) => row.sources), ["web", "papers"]);
+  assert.deepEqual(planned.rows.map((row) => [row.tool_name, row.query]), [
+    ["dr2_read", null],
+    ["dr2_web", "English test policy Thailand"],
+    ["dr2_write", null],
+    ["dr2_check", null],
+  ]);
 });
 
 test("chat's web search is off until the reader turns it on", async () => {

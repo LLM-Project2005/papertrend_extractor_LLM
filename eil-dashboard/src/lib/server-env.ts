@@ -160,15 +160,15 @@ const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   // needs, and finding one fact in a whole paper, take the answer model.
   CHAT_CHART_PLAN: "openai/gpt-6-luna-20260922",
   CHAT_CHART_EXTRACT: "openai/gpt-6-luna-20260922",
-  // Deep research v2 (docs/31). The steps that read, write and correct run on
-  // Luna; the audit runs on a different model family, so the model that wrote
-  // a sentence is not the one that judges it. MODEL_TASK_<NAME> overrides any.
+  // Max effort's research engine (src/lib/deep-research): every step - the
+  // plan, reading each paper, the answer and its corrections - runs on Luna;
+  // code checks quotes and numbers against the papers, so the second model
+  // family's audit is gone. MODEL_TASK_<NAME> overrides any.
   DEEP_RESEARCH_PLAN: "openai/gpt-6-luna-20260922",
-  DEEP_RESEARCH_FINDINGS: "openai/gpt-6-luna-20260922",
+  DEEP_RESEARCH_READ: "openai/gpt-6-luna-20260922",
   DEEP_RESEARCH_WEB: "openai/gpt-6-luna-20260922",
   DEEP_RESEARCH_REPORT: "openai/gpt-6-luna-20260922",
   DEEP_RESEARCH_REVISE: "openai/gpt-6-luna-20260922",
-  DEEP_RESEARCH_AUDIT: "google/gemini-3.8-flash",
 };
 
 export function getOpenAIConfig(taskName?: string): {

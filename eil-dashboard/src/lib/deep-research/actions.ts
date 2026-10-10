@@ -12,7 +12,7 @@ import { normalizeKnowledgeScope, type KnowledgeScope } from "@/lib/knowledge-sc
 import { assertAndRecordAiUsage } from "@/lib/security-guards";
 import type { ChatThreadDetail, DeepResearchSessionRecord } from "@/types/research";
 import { callTool } from "@/lib/deep-research/model";
-import { fallbackPlan, parsePlan, planMessages, planSummary, planTool } from "@/lib/deep-research/plan";
+import { dedupeStudies, fallbackPlan, mergeSelection, parsePlan, planMessages, planSummary, planTool, rankStudies, studyCards, studyOf } from "@/lib/deep-research/plan";
 import { runResearchSession } from "@/lib/deep-research/run";
 import {
   cancelSession,
@@ -26,6 +26,7 @@ import {
   startSession,
 } from "@/lib/deep-research/store";
 import { enqueueResearchRun, researchQueue } from "@/lib/deep-research/tasks";
+import { isCurrentEngine, LIMITS } from "@/lib/deep-research/types";
 
 export interface ResearchRequest {
   message?: string;
@@ -97,22 +98,27 @@ export async function planResearch(body: ResearchRequest, ownerUserId: string): 
     .filter((message) => (message.role === "user" || message.role === "assistant") && (message.message_kind === "chat" || message.message_kind === "deep_research_report"))
     .slice(-4)
     .map((message) => ({ role: message.role as "user" | "assistant", content: String(message.content ?? "") }));
+  // One card per study (a duplicate upload is one study); the planner chooses what to read.
+  const studies = dedupeStudies(context.papers.map(studyOf));
+  const cards = studyCards(studies, prompt);
   const raw = await callTool(
     planMessages({
       question: prompt,
       scopeLabel: context.scopeLabel,
-      paperCount: context.papers.length,
-      paperTitles: context.papers.map((paper) => paper.title),
-      themes: context.topicCounts.slice(0, 30).map((topic) => topic.label),
+      cards,
+      totalStudies: studies.length,
       webAvailable: true,
       today: new Date().toISOString().slice(0, 10),
       history,
     }),
     planTool(),
     "DEEP_RESEARCH_PLAN",
-    { maxTokens: 3_000, timeoutMs: 40_000, reasoningEffort: "low" }
+    { maxTokens: 6_000, timeoutMs: 60_000, reasoningEffort: "low" }
   );
-  const plan = parsePlan(raw, { question: prompt, webAvailable: true }) ?? fallbackPlan(prompt);
+  const parsed = parsePlan(raw, { question: prompt, cards, webAvailable: true });
+  // The repository's ranking adds what a card may have hidden (plan.ts).
+  const ranked = rankStudies(studies, [prompt, ...(parsed?.searchTerms ?? [])], LIMITS.rankingTop);
+  const plan = parsed ? { ...parsed, papers: mergeSelection(parsed.papers, ranked, studies) } : fallbackPlan(prompt, ranked, studies);
   const planned = await latestPlannedSession(ownerUserId, thread.id);
   await savePlan({
     ownerUserId,
@@ -147,7 +153,8 @@ async function dispatch(ownerUserId: string, sessionId: string, origin: string):
 export async function startResearch(body: ResearchRequest, ownerUserId: string, origin: string): Promise<ChatThreadDetail | null> {
   if (!body.threadId || !body.sessionId) throw new Error("threadId and sessionId are required to start deep research.");
   const session = await loadSession(ownerUserId, body.sessionId);
-  if (!session || !isV2Session(session)) return null;
+  // Planned by the old worker, or by deep research v2's passage search: planned again instead.
+  if (!session || !isCurrentEngine(session)) return null;
   // One unit per run: charged on its first start, including a plan canceled
   // before it ever ran; a retry of a run that already did work is free.
   const neverRan = (session.steps ?? []).every((step) => !(step.output_payload as { engine?: string } | undefined)?.engine);
