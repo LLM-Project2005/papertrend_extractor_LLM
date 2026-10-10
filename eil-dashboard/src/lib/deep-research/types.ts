@@ -108,6 +108,8 @@ export interface PaperRecord {
   notReported: string[];
   /** Facts dropped because their quote or a number is not in the paper. */
   unverified: number;
+  /** The first few dropped, and why: kept on the step so a run can be looked into. */
+  rejected?: Array<{ statement: string; quote: string; reason: string }>;
 }
 
 /** One piece of evidence a sentence can cite: a paper, a fact read from it, or a web page. */

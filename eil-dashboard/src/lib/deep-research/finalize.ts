@@ -14,6 +14,7 @@ import { citationLabel } from "@/lib/answer-citations";
 import { attachCitationPassages } from "@/lib/citation-passages";
 import type { RepositoryCitation } from "@/lib/repository-chat";
 import type { Evidence } from "@/lib/deep-research/types";
+import { expandCitationRanges } from "@/lib/deep-research/verify";
 
 /** Lower-case part names, as deep research v2 filed passages; a paper's own headings pass through. */
 const SECTION_NAMES: Record<string, string> = {
@@ -75,7 +76,7 @@ export function finalizeReport(report: string, evidence: Map<string, Evidence>):
     }
     return labelFor(clean);
   };
-  const text = report.replace(CITE_GROUP, (_whole, inner: string) => {
+  const text = expandCitationRanges(report).replace(CITE_GROUP, (_whole, inner: string) => {
     const labels: string[] = [];
     for (const id of inner.split(/\s*[,;]\s*/)) {
       const item = evidence.get(id);

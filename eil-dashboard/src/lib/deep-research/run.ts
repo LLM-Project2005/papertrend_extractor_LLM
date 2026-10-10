@@ -57,7 +57,7 @@ export async function readPaper(input: { question: string; plan: Pick<ResearchPl
     { maxTokens: 9_000, timeoutMs: 150_000, reasoningEffort: "medium" }
   );
   if (!raw) return null;
-  return checkRecord(raw, input.paper, reading.whole, input.plan.aspects);
+  return checkRecord(raw, input.paper, reading.whole);
 }
 
 /** Runs `work` on each item, `size` at a time. */

@@ -15,7 +15,7 @@ import {
   type StudyPaper,
 } from "../src/lib/deep-research/plan";
 import { checkRecord, digitNumbers, readingText, readMessages } from "../src/lib/deep-research/read";
-import { checkAnswer, codeProblems, numberSupported, parseReport, rebuild, reviseMessages, saysNotReported, dropUnknownCitations, type CheckContext, type ReportUnit } from "../src/lib/deep-research/verify";
+import { checkAnswer, codeProblems, dropUnknownCitations, expandCitationRanges, numberSupported, parseReport, rebuild, reviseMessages, saysNotReported, type CheckContext, type ReportUnit } from "../src/lib/deep-research/verify";
 import { buildEvidence, reportMessages } from "../src/lib/deep-research/write";
 import { finalizeReport } from "../src/lib/deep-research/finalize";
 import { reportFileName, reportMarkdown } from "../src/lib/deep-research/export";
@@ -173,7 +173,7 @@ test("a fact is kept only when its quote is in the paper and every number in it 
     { aspect: "results", kind: "finding", statement: "Learners loved it.", quote: "All learners said they loved dynamic assessment.", section: "Results", own: true },
     { aspect: "earlier work", kind: "context", statement: "Poehner (2008) found mediation revealed learners' potential.", quote: "Poehner (2008) found that mediation revealed learners' potential in a French class.", section: "Literature review", own: false },
   ];
-  const record = checkRecord({ relevant: true, facts, notReported: ["delayed post-test"] }, DA, true, ["results", "participants", "delayed post-test"]);
+  const record = checkRecord({ relevant: true, facts, notReported: ["1. delayed post-test"] }, DA, true);
   assert.deepEqual(record.facts.map((fact) => fact.statement.slice(0, 20)), ["The mean writing sco", "49 students at a pub", "L1 Thai learners imp", "Poehner (2008) found"]);
   assert.equal(record.unverified, 2, "a number not in its quote, and a quote not in the paper, are dropped");
   assert.equal(record.facts[3].own, false, "what a paper says about another study is marked so");
@@ -181,11 +181,43 @@ test("a fact is kept only when its quote is in the paper and every number in it 
   assert.deepEqual(digitNumbers("L1 Thai learners, 49 of them, scored 3.30 (p < .05)"), [49, 3.3, 5], "\"L1\" is a word, not the number 1");
 });
 
+test("a fact may rest on up to three quotes; each number must be printed in one of them", () => {
+  const facts = [
+    {
+      aspect: "results", kind: "finding", own: true, section: "Results",
+      statement: "49 students scored 12.5 before and 18.4 after.",
+      quotes: ["Forty-nine students at a public university in Bangkok took part over 15 weeks.", "The mean writing score rose from 12.5 (SD 2.1) to 18.4 (SD 1.9)", "A sentence the paper does not contain at all."],
+    },
+    { aspect: "results", kind: "finding", own: true, section: "Results", statement: "49 students scored 30.", quotes: ["Forty-nine students at a public university in Bangkok took part over 15 weeks."] },
+  ];
+  const record = checkRecord({ relevant: true, facts, notReported: [] }, DA, true);
+  assert.equal(record.facts.length, 1);
+  assert.equal(record.facts[0].quote, "Forty-nine students at a public university in Bangkok took part over 15 weeks. … The mean writing score rose from 12.5 (SD 2.1) to 18.4 (SD 1.9)", "the quote the paper does not contain is dropped");
+  assert.deepEqual(record.rejected, [{ statement: "49 students scored 30.", quote: "Forty-nine students at a public university in Bangkok took part over 15 weeks.", reason: "not in its quotes: 30" }]);
+});
+
+test("citation ranges are written out, so each id is checked and becomes a citation", async () => {
+  assert.equal(expandCitationRanges("Scores rose [E2–E3, E5]. Both [E1-E2]. Plain [E4]."), "Scores rose [E2, E3, E5]. Both [E1, E2]. Plain [E4].");
+  const final = finalizeReport("Scores rose from 12.5 to 18.4 [E2–E3].", new Map(EVIDENCE.map((item) => [item.id, item])));
+  assert.doesNotMatch(final.text, /\[E/, "no range reaches the reader");
+  const saved = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const draft = "Two studies [E1–E5].\n\n## Comparison\n\n| Study | Participants and what was measured in them | Sources |\n|---|---|---|\n| Dynamic assessment (2021) | 49 | [E2–E3] |\n\n## Limits\n\nNone.";
+    const checked = await checkAnswer({ draft, evidence: EVIDENCE, language: "English", counts: [] });
+    assert.match(checked.report, /\| Dynamic assessment \(2021\) \| 49 \| \[E2, E3\] \|/, "a year names the study; the range is written out");
+    assert.match(checked.report, /\| Study \| Participants and what was measured in them \| Sources \|/, "a table's header is layout, not a claim");
+    assert.equal(checked.audit.removed, 0);
+  } finally {
+    if (saved !== undefined) process.env.OPENAI_API_KEY = saved;
+  }
+});
+
 test("only a paper read whole may be said not to report something", () => {
   const raw = { relevant: true, facts: [{ aspect: "a", kind: "finding", statement: "Graduated prompts helped the learners revise their essays.", quote: "Graduated prompts helped the learners revise their essays.", section: "Conclusion", own: true }], notReported: ["effect size"] };
-  assert.deepEqual(checkRecord(raw, DA, true, ["effect size"]).notReported, ["effect size"]);
-  assert.deepEqual(checkRecord(raw, DA, false, ["effect size"]).notReported, [], "a reading of its main sections cannot say what the paper omits");
-  assert.equal(checkRecord({ relevant: false, facts: [], notReported: [] }, DA, true, ["a"]).relevant, false);
+  assert.deepEqual(checkRecord(raw, DA, true).notReported, ["effect size"]);
+  assert.deepEqual(checkRecord(raw, DA, false).notReported, [], "a reading of its main sections cannot say what the paper omits");
+  assert.equal(checkRecord({ relevant: false, facts: [], notReported: [] }, DA, true).relevant, false);
 });
 
 /* ---------------------------------------------------------------- the check */
@@ -357,7 +389,7 @@ test("the writer sees each paper as read - whole or in part - its checked facts,
   assert.match(messages[1].content, /^\[E6\] Web page: Ministry guidance \(https:\/\/example\.org\/p\)$/m);
   assert.match(messages[1].content, /Could not be read just now: Unread Paper \(2020\)/);
   assert.match(messages[1].content, /36 analysed studies; 1 more still being analysed/);
-  assert.match(messages[0].content, /Say that a paper does not report something only when it is listed under "Not reported"/);
+  assert.match(messages[0].content, /Say that a paper does not report something only when that detail is listed under "Not reported" for that paper - that detail exactly, never something broader/);
   assert.match(messages[0].content, /never present it as that paper's own result/);
   assert.match(messages[0].content, /give a Markdown table with one row per study/);
   assert.match(messages[0].content, /Cite only those ids; never write any other identifier/);
