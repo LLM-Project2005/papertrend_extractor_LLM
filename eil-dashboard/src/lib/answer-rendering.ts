@@ -296,6 +296,20 @@ function openingProse(answer: string): string {
     .replace(/^\s+/, "");
 }
 
+/**
+ * A first line that only labels what follows: "## Direct answer". Told to open
+ * with the direct answer, the answer model often put those words over it as a
+ * heading, so replies began like a form (the test account's chats, 2026-10-09).
+ */
+const OPENING_LABEL =
+  /^\s*#{1,6}\s*(?:direct answer|short answer|the answer|answer|summary|in brief|overview|bottom line|\u0e04\u0e33\u0e15\u0e2d\u0e1a(?:\u0e42\u0e14\u0e22\u0e2a\u0e23\u0e38\u0e1b)?|\u0e2a\u0e23\u0e38\u0e1b)\s*:?\s*\n+/i;
+
+/** The answer without a heading that only labels its opening. */
+export function withoutOpeningLabel(answer: string): string {
+  const stripped = answer.replace(OPENING_LABEL, "");
+  return stripped.trim() ? stripped : answer;
+}
+
 export interface DirectnessResult {
   ok: boolean;
   reason?: "preamble" | "no-substance";

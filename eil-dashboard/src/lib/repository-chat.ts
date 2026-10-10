@@ -27,6 +27,7 @@ export type { UnavailableMetric };
 import {
   renderingInstruction,
   renderingIssues,
+  withoutOpeningLabel,
 } from "@/lib/answer-rendering";
 import { semanticPaperRanking } from "@/lib/repository-memory";
 import { loadThemeStore } from "@/lib/topic-theme-service";
@@ -38,6 +39,7 @@ import { reportChatProgress } from "@/lib/chat-progress";
 import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey } from "@/lib/paper-sections";
 import { normalizeTitle } from "@/lib/references/citation";
 import { normalizeEffort, type ChatEffort } from "@/lib/chat-effort";
+import { READING_BUDGET, readPapers, type PaperReading } from "@/lib/paper-reading";
 import {
   ANSWER_FORMAT_RULES,
   formatConstraintInstruction,
@@ -655,6 +657,7 @@ const REPOSITORY_MEMORY_MAX_PAPERS = 500;
 const REPOSITORY_MEMORY_MAX_CHARS = 18_000;
 const REPOSITORY_PAPER_BRIEF_MAX_CHARS = 360;
 const DOCUMENT_ANALYSIS_BATCH_SIZE = 6;
+const DOCUMENT_ANALYSIS_CONCURRENCY = 3;
 
 /**
  * Whether the reader asked for a chart.
@@ -2379,23 +2382,19 @@ async function selectEvidence(
     }
   }
 
-  const candidateById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
   const paperById = new Map(context.papers.map((paper) => [paper.paperId, paper]));
-  const selectedCandidates = selectedIds
-    .map((paperId) => candidateById.get(paperId))
-    .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
   const papers = selectedIds
     .map((paperId) => paperById.get(paperId))
     .filter((paper): paper is RepositoryPaper => Boolean(paper));
-  const detailedText = selectedCandidates
-    .map((candidate) => {
-      const paper = paperById.get(candidate.paperId);
-      return [
-        `[Paper ${candidate.paperId}] ${candidate.title} (${paper?.year ?? "Unknown"})`,
-        `Topics: ${paper ? [...paper.topics.keys()].slice(0, 8).join(", ") || "Not available" : "Not available"}`,
-        `Evidence excerpt: ${candidate.excerpt || "No extracted excerpt available."}`,
-      ].join("\n");
-    })
+  // Each chosen paper is read whole when the papers fit the effort's budget,
+  // and otherwise as its abstract plus the passages that answer the question.
+  const readings = readPapers(papers, queries, READING_BUDGET[effort]);
+  const detailedText = papers
+    .map((paper, index) => [
+      `[Paper ${paper.paperId}] ${paper.title} (${paper.year || "Unknown"}) - ${readings[index].whole ? "the whole paper" : "the parts that bear on the question"}`,
+      `Topics: ${[...paper.topics.keys()].slice(0, 8).join(", ") || "Not available"}`,
+      readings[index].text || "No text available.",
+    ].join("\n"))
     .join("\n\n");
   const text = [
     plan.retrievalMode === "focused" ? "" : corpusCoverageMap(context),
@@ -2403,7 +2402,7 @@ async function selectEvidence(
     detailedText,
   ].filter(Boolean).join("\n\n");
   return {
-    text: text.slice(0, plan.retrievalMode === "focused" ? 18_000 : 32_000),
+    text,
     papers,
     candidateCount: candidates.length,
     repositoryCoverageCount: context.papers.length,
@@ -2456,9 +2455,11 @@ function deterministicEvidenceFallback(
  * characters, draft first, so for a repository-wide answer most of the batch
  * findings never reached the auditor and every claim about the rest looked
  * unsupported (found on the pilot). Evidence now has its own budget - the
- * synthesis's own for an exhaustive answer - and a cut is stated.
+ * synthesis's own for an exhaustive answer - and a cut is stated. Answers now
+ * read whole papers (paper-reading.ts, up to 140,000 characters at High), so
+ * the audit reads all of what the answer read.
  */
-export const AUDIT_EVIDENCE_CHARS = { focused: 16_000, exhaustive: 56_000 } as const;
+export const AUDIT_EVIDENCE_CHARS = { focused: 150_000, exhaustive: 200_000 } as const;
 
 export function auditEvidence(evidenceText: string, scopeMode: "focused" | "comparative" | "exhaustive"): string {
   const budget = scopeMode === "exhaustive" ? AUDIT_EVIDENCE_CHARS.exhaustive : AUDIT_EVIDENCE_CHARS.focused;
@@ -3201,24 +3202,26 @@ function completeCoverage(context: RepositoryContext, returned: number): Reposit
  * when there is more than one section to tell apart, and when the answer does
  * not already introduce itself.
  */
-export function composeAnswerSection(label: string, answer: string, sectionCount: number): string {
+export function composeAnswerSection(label: string, answer: string, sectionCount: number, position = 1): string {
   const body = answer.trim();
-  if (sectionCount <= 1) return body;
+  // The first part is the answer itself and reads best without a label.
+  if (sectionCount <= 1 || position === 0) return body;
   if (/^\s*#{1,6}\s+\S/.test(body)) return body;
   return `## ${label}
 
 ${body}`;
 }
 
+/** A later part's heading, in the reader's words rather than the step's name. */
 const OPERATION_LABELS: Record<RepositoryOperation, string> = {
-  converse: "Conversation",
-  inspect_scope: "Repository scope",
-  list_documents: "Documents",
-  analyze_each_document: "Document analysis",
-  aggregate_corpus: "Corpus synthesis",
-  search_evidence: "Evidence answer",
-  analyze_text: "Text analysis",
-  visualize: "Visualization",
+  converse: "In short",
+  inspect_scope: "What is in scope",
+  list_documents: "The papers",
+  analyze_each_document: "Paper by paper",
+  aggregate_corpus: "Across the papers",
+  search_evidence: "What the papers say",
+  analyze_text: "Word counts",
+  visualize: "The chart",
 };
 
 /**
@@ -3414,7 +3417,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     }
 
     sections.push(
-      composeAnswerSection(OPERATION_LABELS[operation], result.answer, execution.operations.length)
+      composeAnswerSection(OPERATION_LABELS[operation], result.answer, execution.operations.length, sections.length)
     );
     result.citations.forEach((citation) => citations.set(`${citation.paperId}:${citation.href}`, citation));
     charts.push(...result.charts);
@@ -3536,15 +3539,19 @@ export function buildDocumentAnalysisFallbackAnswer(
   ].join("\n\n");
 }
 
-function documentAnalysisEvidence(paper: RepositoryPaper) {
+/**
+ * One paper as a per-paper explanation reads it: the whole paper when the
+ * batch fits the effort's reading budget (paper-reading.ts), else its abstract
+ * and the passages that bear on the request. It used to be the first 900-1,200
+ * characters of four stored parts.
+ */
+function documentAnalysisEvidence(paper: RepositoryPaper, reading: PaperReading) {
   return {
     paperId: paper.paperId,
     title: paper.title,
     year: paper.year,
-    abstract: paper.abstract.slice(0, 1_200),
-    methods: paper.methods.slice(0, 900),
-    results: paper.results.slice(0, 1_100),
-    conclusion: paper.conclusion.slice(0, 900),
+    read: reading.whole ? "the whole paper" : "excerpts; […] marks text left out",
+    text: reading.text,
     topics: [...paper.topics.keys()].slice(0, 10),
     keywords: [...paper.keywords.keys()].slice(0, 12),
   };
@@ -3571,13 +3578,21 @@ async function generateDocumentAnalysisBatch(
   execution: RepositoryExecutionPlan,
   papers: RepositoryPaper[]
 ): Promise<z.infer<typeof DocumentAnalysisBatchSchema> | null> {
-  const evidence = papers.map(documentAnalysisEvidence);
+  const effort = normalizeEffort(input.effort);
+  const readings = readPapers(
+    papers,
+    [execution.refinedQuestion, ...execution.retrievalQueries, ...execution.evidenceNeeds, ...execution.requestedFields],
+    READING_BUDGET[effort]
+  );
+  const evidence = papers.map((paper, index) => documentAnalysisEvidence(paper, readings[index]));
   const system = buildPapertrendSystemPrompt("grounded_answer", [
     "Analyze every supplied paper exactly once and directly satisfy the user's requested dimensions. " +
       "The overview must answer the cross-paper intent, including meaningful similarities and differences when comparison is requested. " +
       "Every claim in the overview about what a paper did or found must name that paper in the sentence, so a reader can check it; " +
       "a claim that holds across several papers must name them or say how many of them it covers. " +
       "Each item must give a substantive, evidence-bounded explanation of that paper, and must state plainly which requested dimensions its evidence does not cover. " +
+      "Each paper's text says whether it is the whole paper or excerpts. From excerpts, say a detail is not in the parts read, never that the paper does not report it. " +
+      "Be specific: name the participants and their number, the instruments, the analysis, and the figures the paper reports, as the paper states them. " +
       `${ANSWER_FORMAT_RULES} ` +
       "Do not expose database IDs in prose; name papers by title. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
       "Return JSON only: {overview, items:[{paperId, analysis}]}. Preserve each supplied paperId only in its JSON paperId field, include every supplied ID exactly once, and write overview and every analysis in the required answer language.",
@@ -3611,7 +3626,7 @@ async function generateDocumentAnalysisBatch(
         0.15,
         input.model,
         attempt === 0 ? "CHAT_DOCUMENT_ANALYSIS" : "CHAT_DOCUMENT_ANALYSIS_REPAIR",
-        writingBudget(STEP_BUDGETS.documentAnalysis(papers.length), normalizeEffort(input.effort))
+        writingBudget(STEP_BUDGETS.documentAnalysis(papers.length), effort)
       );
       raw = completion?.content?.trim() ?? "";
       const parsed = DocumentAnalysisBatchSchema.safeParse(extractJsonObject(raw));
@@ -3772,9 +3787,12 @@ async function analyzeEachDocumentResult(
   for (let index = 0; index < papers.length; index += DOCUMENT_ANALYSIS_BATCH_SIZE) {
     batches.push(papers.slice(index, index + DOCUMENT_ANALYSIS_BATCH_SIZE));
   }
+  // Three batches at a time: one after another, a 39-paper request waited for seven calls in a row.
   const generated = [] as Array<{ papers: RepositoryPaper[]; result: z.infer<typeof DocumentAnalysisBatchSchema> | null }>;
-  for (const batch of batches) {
-    generated.push({ papers: batch, result: await generateDocumentAnalysisBatch(input, execution, batch) });
+  for (let start = 0; start < batches.length; start += DOCUMENT_ANALYSIS_CONCURRENCY) {
+    const wave = batches.slice(start, start + DOCUMENT_ANALYSIS_CONCURRENCY);
+    const results = await Promise.all(wave.map((batch) => generateDocumentAnalysisBatch(input, execution, batch)));
+    wave.forEach((batch, index) => generated.push({ papers: batch, result: results[index] }));
   }
   const providerFallbackCount = generated.filter((batch) => !batch.result).reduce((total, batch) => total + batch.papers.length, 0);
   const rawOverviewParts = generated
@@ -3791,21 +3809,24 @@ async function analyzeEachDocumentResult(
     });
   });
   const thai = answerLanguageIsThai(execution.answerLanguage);
-  const answer = [
-    thai ? "## \u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e42\u0e14\u0e22\u0e2a\u0e23\u0e38\u0e1b" : "## Direct answer",
-    overviewParts.length > 0
-      ? overviewParts.map((overview) => formatPaperReferencesForReaders(overview, papers)).join("\n\n")
-      : thai
-        ? `\u0e23\u0e30\u0e1a\u0e1a\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e15\u0e32\u0e21\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15\u0e17\u0e35\u0e48\u0e40\u0e25\u0e37\u0e2d\u0e01 \u0e41\u0e25\u0e30\u0e41\u0e2a\u0e14\u0e07\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e17\u0e35\u0e48\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e44\u0e14\u0e49\u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07`
-        : `All ${papers.length} selected papers were processed. The complete evidence-bounded detail is organized by paper below.`,
-    "",
-    thai ? "## \u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21" : "## Paper-by-paper detail",
-    thai
-      ? `\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a **${papers.length} \u0e08\u0e32\u0e01 ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23** \u0e17\u0e35\u0e48\u0e2d\u0e22\u0e39\u0e48\u0e43\u0e19\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15`
-      : `Processed **${papers.length} of ${papers.length} eligible papers**.`,
-    "",
-    ...detailSections,
-  ].join("\n\n");
+  // One paper is one explanation: its overview, then the detail, without a
+  // paper-by-paper scaffold around a single paper.
+  const single = papers.length === 1 && overviewParts.length > 0 && Boolean(generated[0]?.result?.items[0]);
+  const answer = single
+    ? [
+        formatPaperReferencesForReaders(overviewParts[0], papers),
+        formatPaperReferencesForReaders(generated[0].result!.items[0].analysis.trim(), papers),
+      ].join("\n\n")
+    : [
+        overviewParts.length > 0
+          ? overviewParts.map((overview) => formatPaperReferencesForReaders(overview, papers)).join("\n\n")
+          : thai
+            ? `\u0e23\u0e30\u0e1a\u0e1a\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e15\u0e32\u0e21\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15\u0e17\u0e35\u0e48\u0e40\u0e25\u0e37\u0e2d\u0e01 \u0e41\u0e25\u0e30\u0e41\u0e2a\u0e14\u0e07\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e17\u0e35\u0e48\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e44\u0e14\u0e49\u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07`
+            : `All ${papers.length} selected papers were processed. The complete evidence-bounded detail is organized by paper below.`,
+        "",
+        thai ? "## \u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21" : "## Paper by paper",
+        ...detailSections,
+      ].join("\n\n");
   const limitations: string[] = [];
   if (missingExtraction > 0) {
     limitations.push(thai
@@ -4182,6 +4203,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   }
 
   const result = await runRepositoryChatWithContext(input, context);
+  result.answer = withoutOpeningLabel(result.answer);
   // Only a clean answer is kept: one with a limitation - a fallback, a check
   // that did not run, a gap - would be served again after the cause was gone.
   const clean = (result.limitations ?? []).length === 0;

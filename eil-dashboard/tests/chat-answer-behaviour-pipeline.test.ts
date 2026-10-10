@@ -182,12 +182,12 @@ test("an answer in several parts never stacks a heading on a heading", async () 
   assert.deepEqual(emptySections(headed.answer), [], headed.answer);
   assert.match(headed.answer, /^## Papers in Language learning repository/);
   assert.match(headed.answer, /\n## Direct answer\n\nPeer feedback improved revision quality/);
-  assert.doesNotMatch(headed.answer, /## Evidence answer/);
+  assert.doesNotMatch(headed.answer, /## What the papers say/);
 
   // A part without one is labelled, so the two parts can be told apart.
   answerWith(`Peer feedback improved revision quality [Paper ${peerFeedback}].`);
   const unheaded = await ask(`${QUESTION} `, { executionPlan: twoParts });
-  assert.match(unheaded.answer, /\n## Evidence answer\n\nPeer feedback improved revision quality/);
+  assert.match(unheaded.answer, /\n## What the papers say\n\nPeer feedback improved revision quality/);
   assert.deepEqual(emptySections(unheaded.answer), []);
 });
 
