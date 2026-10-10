@@ -16,7 +16,7 @@ import {
 } from "../src/lib/deep-research/plan";
 import { checkRecord, digitNumbers, readingText, readMessages } from "../src/lib/deep-research/read";
 import { checkAnswer, codeProblems, dropUnknownCitations, expandCitationRanges, numberSupported, parseReport, rebuild, reviseMessages, saysNotReported, type CheckContext, type ReportUnit } from "../src/lib/deep-research/verify";
-import { buildEvidence, reportMessages } from "../src/lib/deep-research/write";
+import { buildEvidence, coverageNote, reportMessages } from "../src/lib/deep-research/write";
 import { finalizeReport } from "../src/lib/deep-research/finalize";
 import { reportFileName, reportMarkdown } from "../src/lib/deep-research/export";
 import { ENGINE, isCurrentEngine, isV2Session, LIMITS, type Evidence, type PaperRecord } from "../src/lib/deep-research/types";
@@ -495,7 +495,16 @@ test("the writer sees each paper as read - whole or in part - its checked facts,
   const broad = reportMessages({ question: "q", plan: { ...plan, breadth: "broad", considered: 26 }, records: RECORDS, evidence: EVIDENCE, unread: [], scopeLabel: "A", studiesInScope: 36, pendingPapers: 0, today: "2026-10-10" });
   assert.match(broad[0].content, /Length: at most 1,000 words/);
   assert.match(broad[0].content, /organise the detail by the points the question asks about, not study by study/);
-  assert.match(broad[0].content, /how many of the studies that bear on the question were read/);
+  // How many were read is said in code after the check, never by the writer:
+  // written, its count went through the number check and came back as a list of citations.
+  assert.doesNotMatch(broad[0].content, /how many of the studies that bear on the question were read/);
+  assert.match(broad[0].content, /never write a section or sentence on this answer's scope/);
+  assert.equal(
+    coverageNote({ considered: 26, read: 20, whole: 16, thai: false }),
+    "_Read the 20 most relevant of the 26 studies that bear on this question, 16 of them in full._"
+  );
+  assert.match(coverageNote({ considered: 26, read: 20, whole: 16, thai: true }), /อ่านงานวิจัยที่เกี่ยวข้องที่สุด 20 ฉบับ จาก 26 ฉบับ/);
+  assert.equal(coverageNote({ considered: 5, read: 5, whole: 5, thai: false }), "", "nothing left unread, nothing to say");
   assert.match(broad[1].content, /26 bear on the question; the 2 most relevant were read/);
   assert.match(messages[0].content, /Cite only those ids; never write any other identifier/);
   const databaseId = "4600876543210987";

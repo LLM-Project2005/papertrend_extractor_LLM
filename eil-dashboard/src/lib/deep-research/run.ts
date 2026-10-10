@@ -31,7 +31,7 @@ import {
 import { isCurrentEngine, LIMITS, type PaperRecord, type ResearchPlan, type SelectedPaper, type WebSearch } from "@/lib/deep-research/types";
 import { checkAnswer } from "@/lib/deep-research/verify";
 import { searchWeb } from "@/lib/deep-research/web";
-import { answerWords, buildEvidence, condenseMessages, reportMessages, wordLimit, type WebPageRead } from "@/lib/deep-research/write";
+import { answerWords, buildEvidence, condenseMessages, coverageNote, reportMessages, wordLimit, type WebPageRead } from "@/lib/deep-research/write";
 
 export type RunOutcome = "completed" | "skipped" | "canceled" | "retry" | "failed";
 
@@ -277,10 +277,16 @@ export async function runResearchSession(input: {
         : `Checked ${audit.checked} sentence${audit.checked === 1 ? "" : "s"}: ${audit.rewritten} corrected, ${audit.removed} removed.`,
     });
     const spend = input.usage ? spendUsd(input.usage, webSearches) : null;
+    const note = coverageNote({
+      considered: plan.considered ?? records.length,
+      read: records.length,
+      whole: records.filter((record) => record.whole).length,
+      thai,
+    });
     const saved = await completeSession({
       ownerUserId,
       sessionId,
-      report: final.text,
+      report: note ? `${final.text}\n\n${note}` : final.text,
       citations: final.citations,
       metadata: {
         language: plan.language,
