@@ -33,7 +33,10 @@ import { semanticPaperRanking } from "@/lib/repository-memory";
 import { loadThemeStore } from "@/lib/topic-theme-service";
 import { normalizeTopicKey, type ThemeStore } from "@/lib/topic-themes";
 import { usableAnalysisSql } from "@/lib/usable-analysis";
-import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
+import { BLANK_CHART_REQUEST, chatChartResult, inThai, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
+import { FIGURE_PAPERS, planChart, readFigures, readValues, valueChart, type ChartSource, type ReadChart, type ReadPlan } from "@/lib/chart-reading";
+import { askVocabulary, type AskQuery } from "@/lib/insights/ask";
+import type { InsightCorpus } from "@/lib/insights/corpus";
 import { MIN_PAPERS } from "@/lib/insights/stats";
 import { reportChatProgress } from "@/lib/chat-progress";
 import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey } from "@/lib/paper-sections";
@@ -76,17 +79,19 @@ export interface RepositoryCitation {
   sourceType: "paper" | "web";
 }
 
-/** A chart of stored values (word counts); drawn with the chat's own chart. */
+/** A chart of counted or read values (word counts, what the papers report); drawn with the chat's own chart. */
 export interface RepositoryDataChart {
   chartType: "bar" | "line" | "pie" | "table";
   title: string;
   scopeLabel: string;
-  metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency";
+  metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency" | "reported_value" | "paper_figures";
   xKey: "label";
   yKeys: string[];
   /** Series drawn end to end in one bar per row, when they are parts of a whole. */
   stacked?: boolean;
   data: Array<Record<string, string | number>>;
+  /** Where each value read from the papers comes from, in the papers' own words. */
+  sources?: ChartSource[];
   planner: {
     source: "llm" | "fallback";
     reason: string;
@@ -3307,51 +3312,171 @@ ${note}`,
   };
 }
 
+type ChartStepResult = Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
+
+/** A view of the papers as the dashboard groups them - by theme, method, year - for three papers or more. */
+async function corpusChartResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan,
+  corpus: InsightCorpus,
+  query: AskQuery | null
+): Promise<ChartStepResult> {
+  const outcome = await chatChartResult({
+    corpus,
+    question: input.prompt,
+    restated: execution.refinedQuestion,
+    scopeLabel: context.scopeLabel,
+    answerLanguage: execution.answerLanguage,
+    query,
+  });
+  const limitations: string[] = [];
+  if (corpus.duplicates.length > 0) {
+    limitations.push(`${corpus.duplicates.length === 1 ? "One paper looks like" : `${corpus.duplicates.length} papers look like`} a second upload of another and ${corpus.duplicates.length === 1 ? "is" : "are"} counted once in the chart.`);
+  }
+  return {
+    answer: outcome.answer,
+    citations: [],
+    charts: outcome.chart ? [outcome.chart] : [],
+    coverage: completeCoverage(context, corpus.papers.length),
+    limitations,
+  };
+}
+
+/**
+ * A chart read from the papers' text (chart-reading.ts): a value each paper
+ * reports, a paper's own figures, or their length, sections and wording.
+ * Null when the dashboard's view answers it better.
+ */
+async function readChartResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan,
+  read: ReadPlan
+): Promise<ChartStepResult | null> {
+  const legacy = legacyPlanForExecution(execution, input.prompt);
+  const covered = completeCoverage(context, context.papers.length);
+  const barOrTable = read.chart === "table" ? "table" : "bar";
+  if (read.kind === "sections") return { ...sectionWordCountResult(context, { ...legacy, needsChart: true }), coverage: covered };
+  if (read.kind === "length") return { ...wordCountResult(context, { ...legacy, intent: "word_count", terms: [], needsChart: true, chartType: barOrTable }), coverage: covered };
+  if (read.kind === "terms") return { ...wordCountResult(context, { ...legacy, intent: "word_count", terms: read.terms, needsChart: true, chartType: barOrTable }), coverage: covered };
+  if (read.kind === "keywords") return context.papers.length < MIN_PAPERS ? smallScopeChartResult(input.prompt, context, legacy) : null;
+
+  const thai = answerLanguageIsThai(execution.answerLanguage);
+  const effort = normalizeEffort(input.effort);
+  // Two uploads of one paper are one study to count, even when the files differ
+  // (the test repository has five such pairs, a few hundred words apart).
+  const seen = new Set<string>();
+  const papers = context.papers.filter((paper) => {
+    const key = `${normalizeTitle(paper.title)}\u0000${paper.year}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const copies = context.papers.length - papers.length;
+  if (read.kind === "paper_table" && papers.length > FIGURE_PAPERS) {
+    const answer = `A paper's own figures are read from its tables and results, for up to ${FIGURE_PAPERS} papers at a time, and ${papers.length} are in scope. Name the paper in the question, by its title, or attach it, and ask again.`;
+    return { answer: thai ? (await inThai([answer]))[0] : answer, citations: [], charts: [], coverage: completeCoverage(context, 0), limitations: [] };
+  }
+  reportChatProgress("reading_evidence");
+  const outcome: ReadChart =
+    read.kind === "values"
+      ? valueChart(await readValues({ papers, plan: read, question: input.prompt, effort, model: input.model }), read)
+      : await readFigures({ papers, plan: read, question: input.prompt, effort, model: input.model });
+  reportChatProgress("charting");
+
+  let [lead, title] = [outcome.lead, outcome.chart?.title ?? ""];
+  let limitations = [
+    ...outcome.limitations,
+    ...(copies > 0 ? [`${copies === 1 ? "One paper is a second copy" : `${copies} papers are second copies`} of another, with the same title and year, and ${copies === 1 ? "was" : "were"} read once.`] : []),
+  ];
+  if (thai) {
+    const translated = await inThai([lead, title, ...limitations]);
+    [lead, title] = translated;
+    limitations = translated.slice(2);
+  }
+  const byId = new Map(papers.map((paper) => [paper.paperId, paper]));
+  const quotes = new Map(outcome.sources.filter((source) => source.quote).map((source) => [source.paperId, source.quote]));
+  return {
+    answer: lead,
+    citations: outcome.citedPaperIds
+      .map((id) => byId.get(id))
+      .filter((paper): paper is RepositoryPaper => Boolean(paper))
+      .map((paper) => citationForPaper(paper, quotes.has(paper.paperId) ? `“${quotes.get(paper.paperId)}”` : `Read for ${read.field}.`)),
+    charts: outcome.chart
+      ? [
+          {
+            chartType: outcome.chart.chartType,
+            title,
+            scopeLabel: context.scopeLabel,
+            metric: read.kind === "values" ? "reported_value" : "paper_figures",
+            xKey: "label",
+            yKeys: outcome.chart.yKeys,
+            data: outcome.chart.data,
+            sources: outcome.sources,
+            planner: { source: "llm", reason: `Read from the papers' text: ${read.field}.`, confidence: "high", warnings: [] },
+          },
+        ]
+      : [],
+    coverage: completeCoverage(context, outcome.citedPaperIds.length),
+    limitations,
+  };
+}
+
+/**
+ * Chart mode's chart. One planning call (chart-reading.ts) chooses between the
+ * dashboard's views of the papers and reading the papers for what they
+ * report; without a plan, the dashboard's view as before. Words in each
+ * section need no plan.
+ */
 async function visualizeResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
-): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+): Promise<ChartStepResult> {
   reportChatProgress("charting");
-  if (context.papers.length > 0 && context.papers.length < MIN_PAPERS) {
-    return smallScopeChartResult(input.prompt, context, legacyPlanForExecution(execution, input.prompt));
-  }
+  const legacy = legacyPlanForExecution(execution, input.prompt);
   if (asksForSectionWordCounts(input.prompt, [])) {
-    const plan = legacyPlanForExecution(execution, input.prompt);
-    return { ...sectionWordCountResult(context, { ...plan, needsChart: true }), coverage: completeCoverage(context, context.papers.length) };
+    return { ...sectionWordCountResult(context, { ...legacy, needsChart: true }), coverage: completeCoverage(context, context.papers.length) };
   }
-  const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
-  const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
-  try {
-    const corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, paperIds);
-    const outcome = await chatChartResult({
-      corpus,
-      question: input.prompt,
-      restated: execution.refinedQuestion,
-      scopeLabel: context.scopeLabel,
-      answerLanguage: execution.answerLanguage,
-    });
-    const limitations: string[] = [];
-    if (corpus.duplicates.length > 0) {
-      limitations.push(`${corpus.duplicates.length === 1 ? "One paper looks like" : `${corpus.duplicates.length} papers look like`} a second upload of another and ${corpus.duplicates.length === 1 ? "is" : "are"} counted once in the chart.`);
+  const small = context.papers.length > 0 && context.papers.length < MIN_PAPERS;
+  let corpus: InsightCorpus | null = null;
+  if (!small) {
+    const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
+    const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
+    try {
+      corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, paperIds);
+    } catch (error) {
+      console.warn("chat_chart_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     }
-    return {
-      answer: outcome.answer,
-      citations: [],
-      charts: outcome.chart ? [outcome.chart] : [],
-      coverage: completeCoverage(context, corpus.papers.length),
-      limitations,
-    };
-  } catch (error) {
-    console.warn("chat_chart_failed", { message: error instanceof Error ? error.message : "unknown_error" });
-    return {
-      answer: "The chart could not be drawn just now: the papers' themes could not be read. Try again in a moment.",
-      citations: [],
-      charts: [],
-      coverage: completeCoverage(context, 0),
-      limitations: ["The chart step failed before drawing anything."],
-    };
   }
+
+  const prompt = input.prompt.trim();
+  if (context.papers.length > 0 && prompt && prompt !== BLANK_CHART_REQUEST) {
+    const restated = execution.refinedQuestion?.trim();
+    const plan = await planChart({
+      question: restated && restated !== prompt ? `${prompt}\n(Restated with the conversation: ${restated})` : prompt,
+      scopeLabel: context.scopeLabel,
+      papers: context.papers,
+      vocabulary: corpus && corpus.papers.length >= MIN_PAPERS ? askVocabulary(corpus) : null,
+    });
+    if (plan?.tool === "read_papers") {
+      const read = await readChartResult(input, context, execution, plan.read);
+      if (read) return read;
+    } else if (plan?.tool === "build_view" && corpus) {
+      return corpusChartResult(input, context, execution, corpus, plan.query);
+    }
+  }
+
+  if (small) return smallScopeChartResult(input.prompt, context, legacy);
+  if (corpus) return corpusChartResult(input, context, execution, corpus, null);
+  return {
+    answer: "The chart could not be drawn just now: the papers' themes could not be read. Try again in a moment.",
+    citations: [],
+    charts: [],
+    coverage: completeCoverage(context, 0),
+    limitations: ["The chart step failed before drawing anything."],
+  };
 }
 
 async function runMultiCapabilityPlan(input: RepositoryChatInput, context: RepositoryContext, execution: RepositoryExecutionPlan) {

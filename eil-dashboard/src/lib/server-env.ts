@@ -155,6 +155,11 @@ const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   // Chat's chart step (docs/31) uses the same engine and the same small call:
   // it picks a view from a fixed menu and code draws it.
   CHAT_CHART_QUERY: "google/gemini-3.1-flash-lite",
+  // Chart mode's planner, which chooses between those views and reading the
+  // papers, and the reading itself (chart-reading.ts): judging what a question
+  // needs, and finding one fact in a whole paper, take the answer model.
+  CHAT_CHART_PLAN: "openai/gpt-6-luna-20260922",
+  CHAT_CHART_EXTRACT: "openai/gpt-6-luna-20260922",
   // Deep research v2 (docs/31). The steps that read, write and correct run on
   // Luna; the audit runs on a different model family, so the model that wrote
   // a sentence is not the one that judges it. MODEL_TASK_<NAME> overrides any.

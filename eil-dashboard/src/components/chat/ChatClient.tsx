@@ -148,7 +148,10 @@ type ChartMetric =
   | "track_distribution"
   | "topic_trend"
   | "keyword_trend"
-  | "track_trend";
+  | "track_trend"
+  | "keyword_frequency"
+  | "reported_value"
+  | "paper_figures";
 
 export interface ChatChartPayload {
   /** "insight": a computed view drawn by the Adaptive tab's renderer (docs/31). */
@@ -163,6 +166,8 @@ export interface ChatChartPayload {
   /** Series drawn end to end in one bar per row, when they are parts of a whole. */
   stacked?: boolean;
   data: Array<Record<string, string | number>>;
+  /** Where each value read from the papers comes from (chart-reading.ts). */
+  sources?: Array<{ paperId: string; title: string; year: string; value: string; quote: string; note?: string }>;
   planner?: {
     source: "llm" | "fallback";
     reason?: string;
