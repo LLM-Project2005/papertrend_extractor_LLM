@@ -116,7 +116,11 @@ function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sour
               <span className="font-semibold">{source.value}</span>
               {source.note ? <span className="text-slate-600 dark:text-[#a3a3a3]"> ({source.note})</span> : null}
               <span className="text-slate-500 dark:text-[#8f8f8f]"> · </span>
-              <PaperLink paper={{ paperId: source.paperId }} className="text-slate-700 underline-offset-2 hover:underline dark:text-[#d8d8d8]">
+              {/* With its sentence, the paper opens on its PDF with that sentence marked, as a citation does. */}
+              <PaperLink
+                paper={source.quote ? { paperId: source.paperId, tab: "preview", quote: source.quote } : { paperId: source.paperId }}
+                className="text-slate-700 underline-offset-2 hover:underline dark:text-[#d8d8d8]"
+              >
                 {source.title}
               </PaperLink>
               {source.year && source.year !== "Unknown" ? <span className="text-slate-500 dark:text-[#8f8f8f]"> · {source.year}</span> : null}

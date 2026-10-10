@@ -470,6 +470,32 @@ interface TermIndexRow {
   term_counts: Record<string, number> | null;
 }
 
+/**
+ * Free text from a model, cut to `max` characters rather than refused. GPT-6
+ * Luna explains itself at length: the reranker's reason ran to 1,000-1,700
+ * characters against a 500 limit, so every reply was thrown away and every
+ * answer read the sixteen papers the keyword ranking put first, three
+ * relevant among them (the test repository, 2026-10-10).
+ */
+function clippedText(max: number) {
+  return z.preprocess((value) => (value === undefined || value === null ? undefined : String(value).slice(0, max)), z.string());
+}
+
+/** A list from a model: at most `max` non-empty strings of at most `chars` each, cut rather than refused. */
+function clippedList(max: number, chars: number) {
+  return z.preprocess(
+    (value) =>
+      Array.isArray(value)
+        ? value
+            .map((item) => (item === null || item === undefined ? "" : String(item).trim()))
+            .filter(Boolean)
+            .map((item) => item.slice(0, chars))
+            .slice(0, max)
+        : value,
+    z.array(z.string())
+  );
+}
+
 const ExecutionPlanSchema = z.object({
   operation: z.enum([
     "converse",
@@ -481,7 +507,7 @@ const ExecutionPlanSchema = z.object({
     "analyze_text",
     "visualize",
   ]),
-  operations: z.array(z.enum([
+  operations: z.preprocess((value) => (Array.isArray(value) ? value.slice(0, 4) : value), z.array(z.enum([
     "converse",
     "inspect_scope",
     "list_documents",
@@ -490,17 +516,17 @@ const ExecutionPlanSchema = z.object({
     "search_evidence",
     "analyze_text",
     "visualize",
-  ])).min(1).max(4).optional(),
+  ])).min(1)).optional(),
   scopeMode: z.enum(["complete", "focused"]),
-  refinedQuestion: z.string().min(1).max(1_000),
-  terms: z.array(z.string().min(1).max(100)).max(12).default([]),
-  retrievalQueries: z.array(z.string().min(1).max(240)).max(8).default([]),
-  evidenceNeeds: z.array(z.string().min(1).max(240)).max(8).default([]),
-  requestedFields: z.array(z.string().min(1).max(80)).max(12).default([]),
-  answerLanguage: z.string().min(1).max(80).default("same as user"),
+  refinedQuestion: clippedText(1_000).pipe(z.string().min(1)),
+  terms: clippedList(12, 100).default([]),
+  retrievalQueries: clippedList(8, 240).default([]),
+  evidenceNeeds: clippedList(8, 240).default([]),
+  requestedFields: clippedList(12, 80).default([]),
+  answerLanguage: clippedText(80).pipe(z.string().min(1)).default("same as user"),
   outputFormat: z.enum(["prose", "list", "table", "report"]).default("prose"),
   chartType: z.enum(["bar", "line", "pie", "table"]).default("bar"),
-  reason: z.string().max(500).default(""),
+  reason: clippedText(500).default(""),
   confidence: z.enum(["high", "medium", "low"]).default("medium"),
 });
 
@@ -554,19 +580,6 @@ function normalizeExecutionPlanCandidate(value: Record<string, unknown> | null):
     confidence,
   };
 }
-
-const RerankSchema = z.object({
-  paperIds: z.array(z.string().min(1)).max(20),
-  reason: z.string().max(500).default(""),
-  confidence: z.number().min(0).max(1).default(0.5),
-});
-
-const EvidenceSufficiencySchema = z.object({
-  sufficient: z.boolean(),
-  missingEvidenceNeeds: z.array(z.string().min(1).max(240)).max(6).default([]),
-  expansionQueries: z.array(z.string().min(1).max(240)).max(4).default([]),
-  confidence: z.number().min(0).max(1).default(0.5),
-});
 
 const CONFIDENCE_WORDS: Record<string, number> = {
   "very high": 0.95,
@@ -623,6 +636,19 @@ const stringListValue = z.preprocess((value) => {
         : [];
   return items.slice(0, 12);
 }, z.array(z.string()).max(12));
+
+const RerankSchema = z.object({
+  paperIds: clippedList(20, 40),
+  reason: clippedText(500).default(""),
+  confidence: confidenceValue.default(0.5),
+});
+
+const EvidenceSufficiencySchema = z.object({
+  sufficient: booleanValue,
+  missingEvidenceNeeds: clippedList(6, 240).default([]),
+  expansionQueries: clippedList(4, 240).default([]),
+  confidence: confidenceValue.default(0.5),
+});
 
 export const GroundedAnswerSchema = z.object({
   answer: z.string().min(1),
@@ -1531,6 +1557,34 @@ function wholePaper(row: PaperSectionCounts): number {
 }
 
 /** One row per paper: a second upload of the same paper is counted once. */
+/**
+ * One copy of each study. Two uploads of one paper - the same title and year,
+ * even when the files differ by a few hundred words - are one study to count,
+ * read and cite; the test repository has five such pairs, and answers cited
+ * both copies of each (2026-10-10).
+ */
+export function oneCopyEach<T extends { title: string; year: string }>(papers: T[]): T[] {
+  const seen = new Set<string>();
+  return papers.filter((paper) => {
+    const key = `${normalizeTitle(paper.title)}\u0000${paper.year}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** The context cut to some of its papers, with its counts recomputed for them. */
+function contextFor(context: RepositoryContext, papers: RepositoryPaper[], scopeLabel: string): RepositoryContext {
+  return {
+    ...context,
+    papers,
+    scopeLabel,
+    topicCounts: labelCounts(papers, (paper) => paper.topics),
+    keywordCounts: labelCounts(papers, (paper) => paper.keywords),
+    totalWords: papers.reduce((sum, paper) => sum + paper.totalWords, 0),
+  };
+}
+
 function distinctPapers(papers: RepositoryPaper[]): RepositoryPaper[] {
   const seen = new Set<string>();
   return papers.filter((paper) => {
@@ -1804,7 +1858,7 @@ function topicResult(
   };
 }
 
-interface SelectedEvidence {
+export interface SelectedEvidence {
   text: string;
   papers: RepositoryPaper[];
   /** What the answer is given of each paper, which its citations quote from. */
@@ -2230,7 +2284,8 @@ export function expansionIsPossible(selectedIds: string[], scopedPaperCount: num
   return new Set(selectedIds).size < scopedPaperCount;
 }
 
-async function selectEvidence(
+/** The papers an answer reads, chosen as High chooses them; Max starts from the same choice. */
+export async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
   model?: string,
@@ -2278,6 +2333,10 @@ async function selectEvidence(
     // in-memory ranking stands as it is.
     candidates = (semantic ? fuseSemanticRanks(candidates, semantic) : candidates).slice(0, budgets.candidateLimit);
   }
+  // The better-ranked copy of a paper uploaded twice stands for both.
+  const yearOf = new Map(context.papers.map((paper) => [paper.paperId, paper.year]));
+  const kept = new Set(oneCopyEach(candidates.map((candidate) => ({ ...candidate, year: yearOf.get(candidate.paperId) ?? "" }))).map((candidate) => candidate.paperId));
+  candidates = candidates.filter((candidate) => kept.has(candidate.paperId));
   let selectedIds = candidates.slice(0, budgets.sourceLimit).map((candidate) => candidate.paperId);
   let rerankerSource: SelectedEvidence["rerankerSource"] = "fallback";
   let rerankerConfidence = 0.45;
@@ -2379,10 +2438,17 @@ async function selectEvidence(
           sufficiency.expansionQueries,
           Math.min(context.papers.length, budgets.candidateLimit)
         );
-        selectedIds = [...new Set([
-          ...selectedIds,
-          ...expanded.map((candidate) => candidate.paperId),
-        ])].slice(0, expandedLimit);
+        // What the first choice missed, not a refill: the second search used to
+        // fill up to twenty papers from the keyword ranking, which, once the
+        // reranker worked, buried its four chosen papers among sixteen it had
+        // passed over and read each in slices (2026-10-10).
+        const yearOfPaper = new Map(context.papers.map((paper) => [paper.paperId, paper.year]));
+        const added = oneCopyEach(
+          expanded
+            .filter((candidate) => !selectedIds.includes(candidate.paperId))
+            .map((candidate) => ({ ...candidate, year: yearOfPaper.get(candidate.paperId) ?? "" }))
+        ).slice(0, EXPANSION_PAPERS);
+        selectedIds = [...selectedIds, ...added.map((candidate) => candidate.paperId)].slice(0, expandedLimit);
         const mergedById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
         expanded.forEach((candidate) => mergedById.set(candidate.paperId, candidate));
         candidates = [...mergedById.values()];
@@ -2470,10 +2536,16 @@ function deterministicEvidenceFallback(
  * findings never reached the auditor and every claim about the rest looked
  * unsupported (found on the pilot). Evidence now has its own budget - the
  * synthesis's own for an exhaustive answer - and a cut is stated. Answers now
- * read whole papers (paper-reading.ts, up to 140,000 characters at High), so
+ * read whole papers (paper-reading.ts, up to 240,000 characters at High), so
  * the audit reads all of what the answer read.
  */
-export const AUDIT_EVIDENCE_CHARS = { focused: 150_000, exhaustive: 200_000 } as const;
+export const AUDIT_EVIDENCE_CHARS = { focused: 250_000, exhaustive: 250_000 } as const;
+
+/** Papers a second search may add to the reranker's choice. */
+export const EXPANSION_PAPERS = 4;
+
+/** How much of the previous answer a follow-up's writer reads. */
+export const FOLLOW_UP_ANSWER_CHARS = 8_000;
 
 export function auditEvidence(evidenceText: string, scopeMode: "focused" | "comparative" | "exhaustive"): string {
   const budget = scopeMode === "exhaustive" ? AUDIT_EVIDENCE_CHARS.exhaustive : AUDIT_EVIDENCE_CHARS.focused;
@@ -2754,9 +2826,14 @@ async function repositoryQaResult(
   const passageSources: PassageSources = {
     readings: new Map(evidence.readings.map((reading) => [reading.paperId, reading.text])),
   };
-  const history = (input.history ?? []).slice(-8).map((message) => ({
+  // The answer a follow-up asks about ("the second study", "those two") is
+  // read as it was written, up to 8,000 characters; the turns before it stay
+  // short. Every turn was cut to 1,200, a fifth of a typical answer.
+  const recent = (input.history ?? []).slice(-8);
+  const lastAnswer = recent.map((message) => message.role).lastIndexOf("assistant");
+  const history = recent.map((message, index) => ({
     role: message.role,
-    content: message.content.slice(0, 1_200),
+    content: message.content.slice(0, index === lastAnswer ? FOLLOW_UP_ANSWER_CHARS : 1_200),
   }));
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
@@ -3103,6 +3180,7 @@ export async function planRepositoryExecution(
         "Use converse for clearly unrelated conversation that does not require repository evidence. Even in converse mode, remember that you are Papertrend, a research-paper knowledge assistant. " +
         "Use inspect_scope for repository metadata/count/status/year questions, including asking what is in the selected repository or folder; " +
         "list_documents for complete title or metadata listings; analyze_each_document when the reader wants something back about each document separately - one explanation, classification or summary per paper; " +
+        "analyze_each_document covers every paper in scope, so a question about some of the papers ('the intervention studies on writing: what did each do?') is search_evidence alone, which compares the papers that answer it. " +
         "aggregate_corpus for repository-wide topics, methods, trends, gaps or synthesis, including a request to summarise the repository as a whole. " +
         "A request to summarise the collection is one summary of the corpus, not one summary per paper: it is aggregate_corpus. Per-paper summaries are only what is wanted when the reader asks about each, every or per paper. " +
         "search_evidence for a focused evidence question; " +
@@ -3378,15 +3456,7 @@ async function readChartResult(
 
   const thai = answerLanguageIsThai(execution.answerLanguage);
   const effort = normalizeEffort(input.effort);
-  // Two uploads of one paper are one study to count, even when the files differ
-  // (the test repository has five such pairs, a few hundred words apart).
-  const seen = new Set<string>();
-  const papers = context.papers.filter((paper) => {
-    const key = `${normalizeTitle(paper.title)}\u0000${paper.year}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const papers = oneCopyEach(context.papers);
   const copies = context.papers.length - papers.length;
   if (read.kind === "paper_table" && papers.length > FIGURE_PAPERS) {
     const answer = `A paper's own figures are read from its tables and results, for up to ${FIGURE_PAPERS} papers at a time, and ${papers.length} are in scope. Name the paper in the question, by its title, or attach it, and ask again.`;
@@ -3501,8 +3571,19 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
   const coverages: RepositoryCoverage[] = [];
   const quality: Partial<RepositoryQaOutput["quality"]> = {};
   const passageSources: PassageSources = { readings: new Map(), claims: new Map() };
+  // An evidence answer with a per-paper analysis: the answer goes first, and
+  // the per-paper part covers the papers it draws on. Asked to compare "the
+  // intervention studies that tried to improve writing: what did each do",
+  // the per-paper part analysed all 41 papers in scope after the answer -
+  // seven more calls, two more minutes and 42,000 characters, most about
+  // papers the question was not about (the test repository, 2026-10-10).
+  const paired = execution.operations.includes("search_evidence") && execution.operations.includes("analyze_each_document");
+  const operations: RepositoryOperation[] = paired
+    ? ["search_evidence", ...execution.operations.filter((operation) => operation !== "search_evidence")]
+    : execution.operations;
+  let answered: RepositoryPaper[] = [];
 
-  for (const operation of execution.operations) {
+  for (const operation of operations) {
     const stepExecution: RepositoryExecutionPlan = {
       ...execution,
       operation,
@@ -3513,7 +3594,12 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
 
     if (operation === "converse") result = await converseResult(input, context, stepExecution);
     else if (operation === "list_documents") result = listDocumentsResult(context);
-    else if (operation === "analyze_each_document") result = await analyzeEachDocumentResult(input, context, stepExecution);
+    else if (operation === "analyze_each_document") {
+      const relevant = paired && answered.length > 0
+        ? contextFor(context, answered, `the ${answered.length === 1 ? "paper" : `${answered.length} papers`} the answer draws on`)
+        : context;
+      result = await analyzeEachDocumentResult(input, relevant, stepExecution);
+    }
     else if (operation === "aggregate_corpus") result = await aggregateCorpusResult(input, context, stepExecution);
     else if (operation === "inspect_scope") result = {
       ...repositoryStatisticsResult(context, stepPlan, input.prompt),
@@ -3539,6 +3625,8 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     else {
       const qa = await repositoryQaResult(input, context, stepPlan);
       Object.assign(quality, qa.quality);
+      const cited = new Set(qa.citations.filter((citation) => citation.sourceType === "paper").map((citation) => citation.paperId));
+      answered = oneCopyEach(context.papers.filter((paper) => cited.has(paper.paperId)));
       result = {
         answer: qa.answer,
         citations: qa.citations,
@@ -3558,7 +3646,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     }
 
     sections.push(
-      composeAnswerSection(OPERATION_LABELS[operation], result.answer, execution.operations.length, sections.length)
+      composeAnswerSection(OPERATION_LABELS[operation], result.answer, operations.length, sections.length)
     );
     result.citations.forEach((citation) => citations.set(`${citation.paperId}:${citation.href}`, citation));
     charts.push(...result.charts);
@@ -3874,14 +3962,7 @@ export function namedPaperContext(
   const named = papersNamedInQuestion(prompt, context.papers);
   if (named.length === 0 || named.length === context.papers.length) return null;
   const distinctTitles = new Set(named.map((paper) => normalizeTitle(paper.title))).size;
-  return {
-    ...context,
-    papers: named,
-    scopeLabel: distinctTitles === 1 ? `“${shortLabel(named[0].title, 90)}”` : `the ${distinctTitles} papers named`,
-    topicCounts: labelCounts(named, (paper) => paper.topics),
-    keywordCounts: labelCounts(named, (paper) => paper.keywords),
-    totalWords: named.reduce((sum, paper) => sum + paper.totalWords, 0),
-  };
+  return contextFor(context, named, distinctTitles === 1 ? `“${shortLabel(named[0].title, 90)}”` : `the ${distinctTitles} papers named`);
 }
 
 /**
@@ -3940,7 +4021,7 @@ async function analyzeEachDocumentResult(
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
 ): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations" | "passageSources">> {
-  const papers = [...context.papers].sort((left, right) => left.title.localeCompare(right.title));
+  const papers = oneCopyEach(context.papers).sort((left, right) => left.title.localeCompare(right.title));
   const missingExtraction = papers.filter((paper) => !paper.abstract && !paper.methods && !paper.results && !paper.conclusion).length;
   const batches: RepositoryPaper[][] = [];
   for (let index = 0; index < papers.length; index += DOCUMENT_ANALYSIS_BATCH_SIZE) {
@@ -4157,9 +4238,11 @@ async function themeStoreFor(context: RepositoryContext): Promise<ThemeStore | n
 
 async function aggregateCorpusResult(
   input: RepositoryChatInput,
-  context: RepositoryContext,
+  scope: RepositoryContext,
   execution: RepositoryExecutionPlan
 ): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+  // One copy of each study: a summary cited both uploads of a paper as two sources.
+  const context = contextFor(scope, oneCopyEach(scope.papers), scope.scopeLabel);
   const batches: RepositoryPaper[][] = [];
   for (let index = 0; index < context.papers.length; index += 10) {
     batches.push(context.papers.slice(index, index + 10));

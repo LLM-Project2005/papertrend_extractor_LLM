@@ -46,13 +46,16 @@ export interface PaperReading {
 
 /**
  * Characters of paper text one answer reads at each effort: at Medium about
- * one whole paper, or a few thousand characters from each of ten; at High
- * about three whole papers.
+ * one whole paper, or six thousand characters from each of ten; at High about
+ * four whole papers. High read sixteen papers in slices of 9,000 characters
+ * while its reranker failed, and wrote that papers did not report what they
+ * did (2026-10-10); with the reranker choosing a few papers, it reads them
+ * whole.
  */
 export const READING_BUDGET: Record<ChatEffort, number> = {
   low: 16_000,
-  medium: 48_000,
-  high: 140_000,
+  medium: 64_000,
+  high: 240_000,
 };
 
 /** An abstract states the result, so it is read first and whole up to this length. */

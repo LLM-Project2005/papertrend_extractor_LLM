@@ -99,9 +99,9 @@ test("the effort reaches the summary and per-paper writing steps too", () => {
   assert.ok(high.maxTokens > STEP_BUDGETS.documentAnalysis(6).maxTokens);
   const chat = source("../src/lib/repository-chat.ts");
   assert.match(chat, /writingBudget\(STEP_BUDGETS\.corpusReduce, normalizeEffort\(input\.effort\)\)/);
-  // The per-paper step reads the effort once, for how much it reads and how it writes.
-  assert.match(chat, /const effort = normalizeEffort\(input\.effort\);\s+const readings = readPapers\(/);
-  assert.match(chat, /writingBudget\(STEP_BUDGETS\.documentAnalysis\(papers\.length\), effort\)/);
+  // The per-paper step's effort sets both how much it reads and how it writes.
+  assert.match(chat, /READING_BUDGET\[normalizeEffort\(input\.effort\)\]/);
+  assert.match(chat, /const effort = normalizeEffort\(input\.effort\);[\s\S]{0,4000}writingBudget\(STEP_BUDGETS\.documentAnalysis\(papers\.length\), effort\)/);
   assert.match(source("../src/app/api/chat/route.ts"), /effort: body\.effort \?\? "medium",\s+toolResults/, "each answer records its effort");
 });
 
