@@ -428,8 +428,8 @@ test("an answer past its word limit is shortened once; one within it, or a reply
   const { condensed } = await import("../src/lib/deep-research/run");
   const { answerWords } = await import("../src/lib/deep-research/write");
   const sentence = "Scores rose from 12.5 to 18.4 among the learners in the course [E2]. ";
-  const long = `Opening [E2].\n\n## Findings\n\n${sentence.repeat(100)}`;
-  assert.ok(answerWords(long) > 990 && answerWords(long) <= 1_320, "past the focused limit, within the broad one");
+  const long = `Opening [E2].\n\n## Findings\n\n${sentence.repeat(80)}`;
+  assert.ok(answerWords(long) > 825 && answerWords(long) <= 1_100, "past the focused limit, within the broad one");
   assert.equal(answerWords("Scores rose [E2, E3]. | 49 | 12.5 |"), 5, "citations and table rules are not words");
   const short = `Opening [E2].\n\n## Findings\n\n${sentence.repeat(50)}`;
   let calls = 0;
@@ -486,13 +486,15 @@ test("the writer sees each paper as read - whole or in part - its checked facts,
   assert.match(messages[0].content, /never present it as that paper's own result/);
   assert.match(messages[0].content, /one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites/);
   assert.match(messages[0].content, /how many took part, the design, and the main result with its statistic/);
-  assert.match(messages[0].content, /Length: 450 to 900 words - never more than 900/, "a focused question gets an answer High's length");
+  assert.match(messages[0].content, /Length: 350 to 750 words - never more than 750/, "a focused question gets an answer about High's length");
+  assert.doesNotMatch(messages[0].content, /not study by study/, "a focused question may go study by study");
   assert.match(messages[0].content, /when there is a table, the prose does not repeat its numbers; each ## section is one or two short paragraphs; at most four ## sections/);
   assert.match(messages[0].content, /the 2 or 3 most important things the question asks that the papers read do not report\b[^.]*\. Never a list of every missing detail/);
   assert.doesNotMatch(messages[0].content, /how many of the studies that bear on the question were read/, "nothing was left unread, so no coverage count");
   // A broad question past the cap: a longer answer, and it says how many were read of how many.
   const broad = reportMessages({ question: "q", plan: { ...plan, breadth: "broad", considered: 26 }, records: RECORDS, evidence: EVIDENCE, unread: [], scopeLabel: "A", studiesInScope: 36, pendingPapers: 0, today: "2026-10-10" });
-  assert.match(broad[0].content, /Length: at most 1,200 words/);
+  assert.match(broad[0].content, /Length: at most 1,000 words/);
+  assert.match(broad[0].content, /organise the detail by the points the question asks about, not study by study/);
   assert.match(broad[0].content, /how many of the studies that bear on the question were read/);
   assert.match(broad[1].content, /26 bear on the question; the 2 most relevant were read/);
   assert.match(messages[0].content, /Cite only those ids; never write any other identifier/);

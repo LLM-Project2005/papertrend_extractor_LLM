@@ -66,9 +66,13 @@ function paperBlock(record: PaperRecord, evidence: Evidence[]): string {
   ].filter(Boolean).join("\n");
 }
 
-/** The answer's word limit: High's length for a focused question, a little more for a broad one. */
+/**
+ * The answer's word limit. Measured against High (2026-10-11), Max's answers
+ * ran 790-1,100 words to High's 450-690 and lost on readability at equal or
+ * better accuracy, so the limit sits just above High's length.
+ */
 export function wordLimit(plan: Pick<ResearchPlan, "breadth">): number {
-  return plan.breadth === "broad" ? 1_200 : 900;
+  return plan.breadth === "broad" ? 1_000 : 750;
 }
 
 /** Words in an answer, its citations left out; Thai, without spaces, as characters over six. */
@@ -116,7 +120,8 @@ export function reportMessages(input: {
   const wholeCount = input.records.filter((record) => record.whole).length;
   // Measured against High on the test repository (2026-10-10): 8-15k-character
   // answers lost on readability to High's 4-6k at the same accuracy.
-  const length = input.plan.breadth === "broad" ? "at most 1,200 words" : "450 to 900 words - never more than 900";
+  const limit = wordLimit(input.plan);
+  const length = input.plan.breadth === "broad" ? `at most ${limit.toLocaleString("en-US")} words` : `350 to ${limit} words - never more than ${limit}`;
   const capped = input.plan.considered > input.records.length;
   return [
     {
@@ -130,6 +135,10 @@ export function reportMessages(input: {
         `2. Then the detail, under ## headings that follow the parts of the question: ${outline}. Make each heading say what its part is about; never "Direct answer", "Introduction", "Body" or "Report".`,
         "3. When the question compares studies, give one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites - with the points the question asks about and the numbers as printed; then compare them briefly in prose: where they agree, where they differ, and what the differences in design mean for comparing them.",
         "4. For each study you discuss, give its key numbers as the facts give them: how many took part, the design, and the main result with its statistic (means, test value, effect size). Leave out a study that touches the question only in passing.",
+        // The broad answer on research gaps went study by study and lost to High's priority list (2026-10-11).
+        ...(input.plan.breadth === "broad"
+          ? ["For this broad question, organise the detail by the points the question asks about, not study by study: for gaps, priorities or recommendations, one point per item, the most important first, each naming the studies behind it and what they found."]
+          : []),
         `5. End with one short closing paragraph under a ## heading, at most 3 sentences: ${capped ? "how many of the studies that bear on the question were read (the scope line gives both numbers), and " : ""}the 2 or 3 most important things the question asks that the papers read do not report${input.pendingPapers > 0 ? ", and the papers still being analysed" : ""}. Never a list of every missing detail.`,
         "Rules:",
         "- Use only the facts and pages given. Add no outside knowledge, no general claims about the field, and no examples of your own.",
