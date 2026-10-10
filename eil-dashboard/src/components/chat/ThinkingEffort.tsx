@@ -6,8 +6,9 @@
  * Chart mode and read as two different products. Low, Medium and High are
  * ordinary answers that read more widely and reason longer as the effort rises
  * (EFFORT_SETTINGS in repository-chat.ts); Max is the research engine - it
- * splits the question, reads every paper in full and checks every claim - and
- * shows its work in the conversation as thinking, not as a report.
+ * reads the papers that bear on the question in full, takes each finding in
+ * the paper's own words and checks every number (docs/35) - and shows its work
+ * in the conversation as thinking, not as a report.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
@@ -20,7 +21,7 @@ export const EFFORT_LEVELS: ReadonlyArray<{ value: ThinkingEffortLevel; label: s
   {
     value: "max",
     label: "Max",
-    hint: "Thinks it all through: splits the question into parts, reads every paper in full and checks every claim. About a minute; 10 a day.",
+    hint: "The most thorough: reads the papers that matter in full, quotes them, and checks every number against the paper. One to three minutes; 10 a day.",
   },
 ];
 

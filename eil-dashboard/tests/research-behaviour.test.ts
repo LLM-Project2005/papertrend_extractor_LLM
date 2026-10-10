@@ -1,5 +1,5 @@
 /*
- * Deep research v2 run rather than read (docs/32, long-term health): planned,
+ * Max effort's research engine run rather than read (docs/32, long-term health): planned,
  * started, retried, re-queued and called back through its routes, against
  * PGlite under the app's role (tests/support/route-harness.ts). The model,
  * Cloud Tasks and Google's token keys are fakes behind fetch; nothing leaves
@@ -58,18 +58,22 @@ const world = {
 const PLAN = {
   title: "Dynamic assessment with Thai EFL learners",
   language: "English",
-  analytics: false,
+  papers: [{ id: "S1", reason: "Dynamic assessment with Thai EFL learners" }],
+  aspects: ["how dynamic assessment was used", "results with their numbers"],
   outline: ["What the papers found", "How it was done"],
-  questions: [{ question: QUESTION, purpose: "The question as asked.", sources: "papers", queries: ["dynamic assessment Thai EFL", "graduated prompts writing"] }],
+  searchTerms: ["dynamic assessment Thai EFL", "graduated prompts writing"],
+  web: [],
 };
+const QUOTE = "the teacher offered graduated prompts during writing tasks, and learners' scores rose from 12 to 18 across the semester.";
+// E1 is the paper itself; E2 the fact read from it.
 const REPORT = [
   "## Answer",
   "",
-  "In one Thai classroom, graduated prompts raised learners' writing scores [E1].",
+  "In one Thai classroom, graduated prompts raised learners' writing scores [E2].",
   "",
   "## What the papers found",
   "",
-  "Scores rose from 12 to 18 across the semester [E1].",
+  "Scores rose from 12 to 18 across the semester [E2].",
   "",
   "## Limits",
   "",
@@ -85,27 +89,36 @@ function completion(content: string | null, tool?: { name: string; args: unknown
   });
 }
 
-/** The label of the source block that contains `needle`, in a findings prompt. */
-function labelWith(text: string, needle: string): string | null {
-  const marks = [...text.matchAll(/\[([PW]\d+)\] /g)];
-  for (const [index, mark] of marks.entries()) {
-    if (text.slice(mark.index, marks[index + 1]?.index ?? text.length).includes(needle)) return mark[1];
-  }
+/** High's own steps, which Max's plan runs to read what High would: named for what they are. */
+function highStep(system: string): string | null {
+  if (system.includes("Interpret the request semantically")) return "execution_plan";
+  if (system.includes("Select at most")) return "rerank";
+  if (system.includes("Decide whether the selected excerpts are sufficient")) return "sufficiency";
   return null;
 }
 
 function fakeModel(body: { model: string; messages: Array<{ role: string; content: string }>; tool_choice?: { function?: { name?: string } } }) {
-  const tool = body.tool_choice?.function?.name ?? "report";
+  const system = body.messages[0]?.content ?? "";
+  const tool = body.tool_choice?.function?.name ?? highStep(system) ?? "report";
   const user = body.messages[body.messages.length - 1]?.content ?? "";
-  world.calls.push({ tool, model: body.model, system: body.messages[0]?.content ?? "", user });
-  const ids = [...user.matchAll(SENTENCE)].map((match) => match[1]);
-  if (tool === "write_plan") return completion(null, { name: tool, args: PLAN });
-  if (tool === "record_findings") {
-    const label = labelWith(user, "12 to 18");
-    const findings = label ? [{ statement: "Graduated prompts raised Thai EFL learners' writing scores from 12 to 18.", sources: [label], kind: "finding" }] : [];
-    return completion(null, { name: tool, args: { findings, missing: "", coverage: label ? "answered" : "not_found" } });
+  world.calls.push({ tool, model: body.model, system, user });
+  if (tool === "execution_plan") {
+    return completion(JSON.stringify({
+      operation: "search_evidence", operations: ["search_evidence"], scopeMode: "focused", refinedQuestion: QUESTION, terms: [],
+      retrievalQueries: [QUESTION], evidenceNeeds: [], requestedFields: [], answerLanguage: "English", outputFormat: "prose",
+      chartType: "bar", reason: "A focused question.", confidence: "high",
+    }));
   }
-  if (tool === "check_claims") return completion(null, { name: tool, args: { verdicts: ids.map((id) => ({ id, verdict: "supported" })) } });
+  // The reranker keeps every paper it is shown; the sufficiency check is satisfied.
+  if (tool === "rerank") return completion(JSON.stringify({ paperIds: [...user.matchAll(/\[Paper (\d+)\]/g)].map((match) => match[1]), reason: "Both bear on it.", confidence: 0.9 }));
+  if (tool === "sufficiency") return completion(JSON.stringify({ sufficient: true, missingEvidenceNeeds: [], expansionQueries: [], confidence: 0.9 }));
+  const ids = [...user.matchAll(SENTENCE)].map((match) => match[1]);
+  if (tool === "plan_reading") return completion(null, { name: tool, args: PLAN });
+  if (tool === "record_paper") {
+    const found = user.includes("12 to 18");
+    const facts = found ? [{ aspect: "results with their numbers", kind: "finding", statement: "Learners' writing scores rose from 12 to 18 across the semester.", quote: QUOTE, section: "Text", own: true }] : [];
+    return completion(null, { name: tool, args: { relevant: found, facts, notReported: [] } });
+  }
   if (tool === "revise_sentences") return completion(null, { name: tool, args: { revisions: ids.map((id) => ({ id, text: "" })) } });
   return completion(world.failReport ? "" : REPORT);
 }
@@ -211,7 +224,8 @@ test("a run goes from planned to processing to completed, never through the stat
   assert.equal(planned.status, 200);
   const session = planned.body.deepResearchSession;
   assert.equal(session.status, "planned");
-  assert.deepEqual(session.steps.map((step: { tool_name: string }) => step.tool_name), ["dr2_gather", "dr2_write", "dr2_check"]);
+  assert.deepEqual(session.steps.map((step: { tool_name: string }) => step.tool_name), ["dr2_read", "dr2_write", "dr2_check"]);
+  assert.equal(session.steps[0].title, "Read Dynamic Assessment in a Thai EFL Classroom (2021)");
 
   const done = await start(h, h.owner, planned.body.thread.id, session.id);
   assert.equal(done.status, 200);
@@ -225,16 +239,47 @@ test("a run goes from planned to processing to completed, never through the stat
   assert.deepEqual(report.citations.map((citation: { href: string }) => citation.href), [`/workspace/library?paperId=${paperIdFromRunId(RUN)}`]);
 });
 
-test("the claim check runs on another model family than the one that wrote the report", async () => {
+test("each chosen paper is read whole, and the answer is written from the facts whose quotes are in it", async () => {
   const h = await workspace();
   const planned = await ask(h, h.owner, QUESTION);
+  const [planner] = calls("plan_reading");
+  assert.match(planner.user, /^\[S1\] Dynamic Assessment in a Thai EFL Classroom \(2021\)/m, "the planner sees a card per study, not a database id");
+  assert.ok(!planner.user.includes(String(paperIdFromRunId(RUN))));
   await start(h, h.owner, planned.body.thread.id, planned.body.deepResearchSession.id);
+  const [reader] = calls("record_paper");
+  assert.match(reader.user, /Read: the whole paper/);
+  assert.ok(reader.user.includes(QUOTE), "the paper's own text, not a passage chosen from it");
   const [writer] = calls("report");
-  const [checker] = calls("check_claims");
-  assert.ok(writer && checker);
-  const family = (model: string) => model.split("/")[0];
-  assert.notEqual(family(checker.model), family(writer.model));
-  assert.match(checker.user, /graduated prompts raised learners' writing scores/, "the checker reads what the writer wrote");
+  assert.ok(writer.user.includes(QUOTE), "the writer sees the quote the fact rests on");
+  assert.equal(calls("revise_sentences").length, 0, "an answer that checks out needs no second call");
+  assert.deepEqual([...new Set(world.calls.map((call) => call.model))], ["openai/gpt-6-luna-20260922"]);
+});
+
+test("a paper High would read is read too, even when the planner passed it over", async () => {
+  const h = await workspace();
+  const run2 = "7c8d9e0f-a1b2-4c3d-8e4f-5a6b7c8d9e01";
+  const second = paperIdFromRunId(run2);
+  await h.db.exec(`
+    INSERT INTO ingestion_runs (id, owner_user_id, folder_id, source_type, status, source_filename, input_payload, completed_at)
+      VALUES ('${run2}', '${OWNER}', '${FOLDER}', 'upload', 'succeeded', 'second.pdf', '{}'::jsonb, now());
+    INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES (${second}, '${OWNER}', '${FOLDER}', '2023', 'Graduated Prompts in Thai EFL Writing');
+  `);
+  await h.db.query(
+    `INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id, abstract, body) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [second, OWNER, FOLDER, run2, "Graduated prompts in dynamic assessment helped Thai EFL writers revise.", BODY]
+  );
+  // The planner chooses only S1; High's selection (its planner, then its reranker) has both.
+  const planned = await ask(h, h.owner, QUESTION);
+  const reads = planned.body.deepResearchSession.steps
+    .filter((step: { tool_name: string }) => step.tool_name === "dr2_read")
+    .map((step: { input_payload: { paper: { title: string; via: string } } }) => [step.input_payload.paper.title, step.input_payload.paper.via]);
+  assert.deepEqual(reads, [
+    ["Dynamic Assessment in a Thai EFL Classroom", "planner"],
+    ["Graduated Prompts in Thai EFL Writing", "high"],
+  ], "the planner's paper first, then High's other paper");
+  assert.equal(calls("execution_plan").length, 1, "High's own plan of the question");
+  assert.equal(calls("rerank").length, 1, "High's reranker was asked");
+  assert.equal(calls("rerank")[0].model, "openai/gpt-6-luna-20260922", "with the chat's model");
 });
 
 test("a lease holds a run to one worker; a released or expired lease can be taken again", async () => {
@@ -299,13 +344,13 @@ test("a run costs one deep research unit on its first start; a retry after a fai
   const failed = await start(h, h.owner, thread, id);
   assert.equal(failed.body.deepResearchSession.status, "failed");
   assert.equal(await researchUnits(h), 1);
-  assert.equal(calls("record_findings").length, 1);
+  assert.equal(calls("record_paper").length, 1);
 
   world.failReport = false;
   const retried = await start(h, h.owner, thread, id);
   assert.equal(retried.body.deepResearchSession.status, "completed");
   assert.equal(await researchUnits(h), 1, "the retry is free");
-  assert.equal(calls("record_findings").length, 1, "the finished gather step is not run again");
+  assert.equal(calls("record_paper").length, 1, "a paper already read is not read again");
   assert.equal(calls("report").length, 2, "the step that failed is");
 
   // A plan canceled before it ever ran is still charged when it starts.
@@ -317,7 +362,7 @@ test("a run costs one deep research unit on its first start; a retry after a fai
   assert.equal(await researchUnits(h), 2);
 });
 
-test("a session planned before deep research v2, or someone else's, is refused, not run and not charged", async () => {
+test("a session planned by an earlier engine, or someone else's, is refused, not run and not charged", async () => {
   const h = await workspace();
   const thread = "00000000-0000-4000-8000-0000000000d1";
   const old = "00000000-0000-4000-8000-0000000000d2";
@@ -331,13 +376,25 @@ test("a session planned before deep research v2, or someone else's, is refused, 
   assert.match(refused.body.error, /planned by an earlier version of Papertrend/);
   assert.equal(await sessionStatus(h, old), "planned");
 
+  // Deep research v2 searched passages per sub-question; its plans are planned again too.
+  const v2 = "00000000-0000-4000-8000-0000000000d3";
+  await h.db.exec(`
+    INSERT INTO deep_research_sessions (id, thread_id, owner_user_id, status, prompt) VALUES ('${v2}', '${thread}', '${OWNER}', 'planned', 'A v2 question');
+    INSERT INTO deep_research_steps (session_id, owner_user_id, position, title, tool_name, input_payload) VALUES
+      ('${v2}', '${OWNER}', 1, 'A sub-question', 'dr2_gather', '{}'::jsonb),
+      ('${v2}', '${OWNER}', 2, 'Write the answer', 'dr2_write', '{"engine":"deep-research-v2"}'::jsonb);
+  `);
+  const refusedV2 = await start(h, h.owner, thread, v2);
+  assert.equal(refusedV2.status, 409);
+  assert.equal(await sessionStatus(h, v2), "planned");
+
   const mine = await ask(h, h.owner, QUESTION);
   const theirs = await start(h, h.other, mine.body.thread.id, mine.body.deepResearchSession.id);
   assert.equal(theirs.status, 409);
   assert.equal(await sessionStatus(h, mine.body.deepResearchSession.id), "planned");
   assert.equal(await researchUnits(h, OWNER), 0);
   assert.equal(await researchUnits(h, OTHER), 0);
-  assert.equal(calls("record_findings").length, 0, "nothing ran");
+  assert.equal(calls("record_paper").length, 0, "nothing ran");
 });
 
 /* ------------------------------------------------------------ the queue */
@@ -377,7 +434,7 @@ test("only this service's own tasks can run a queued session, and what the run s
   assert.equal(await sessionStatus(h, id), "completed");
 
   const runCalls = world.calls.length - before;
-  assert.equal(runCalls, 3, "findings, report and check");
+  assert.equal(runCalls, 2, "reading the paper, and the answer");
   const spend = await h.db.query<{ units: number; metadata: Record<string, unknown> }>(
     `SELECT units, metadata FROM ai_usage_events WHERE owner_user_id = $1 AND usage_kind = 'chat_message' AND metadata->>'source' = 'deep-research'`,
     [OWNER]

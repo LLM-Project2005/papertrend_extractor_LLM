@@ -2,9 +2,10 @@
  * Chat answers and whole conversations as Markdown (docs/32, 4.2): the text as
  * written, with its citations numbered and a source list at the end - papers
  * by title and year, web pages with their address - so it still reads
- * correctly outside the app.
+ * correctly outside the app. A paper the answer quoted has the passage under
+ * its entry, as a blockquote, so the claim can be checked without the app.
  */
-import { citationPaperId, markCitations } from "@/lib/answer-citations";
+import { citationPaperId, citationPassageFields, markCitations } from "@/lib/answer-citations";
 
 export interface ExportCitation {
   paperId: string | number;
@@ -12,6 +13,8 @@ export interface ExportCitation {
   year: string;
   href: string;
   sourceType?: "paper" | "web";
+  quote?: string;
+  section?: string;
 }
 
 export interface ExportMessage {
@@ -28,6 +31,8 @@ interface NumberedSource {
   year: string;
   href: string;
   web: boolean;
+  quote?: string;
+  section?: string;
 }
 
 function isWeb(citation: ExportCitation | undefined, href: string): boolean {
@@ -35,9 +40,13 @@ function isWeb(citation: ExportCitation | undefined, href: string): boolean {
 }
 
 function sourceLine(source: NumberedSource): string {
-  return source.web
+  const line = source.web
     ? `${source.number}. ${source.title}. ${source.href}`
     : `${source.number}. ${source.title}${source.year && source.year !== "Unknown" ? ` (${source.year})` : ""}.`;
+  if (source.web || !source.quote) return line;
+  // Indented to the entry's text, so the quote belongs to the list item.
+  const indent = " ".repeat(`${source.number}. `.length);
+  return `${line}\n${indent}> ${source.quote.replace(/\s+/g, " ").trim()}${source.section ? ` (${source.section})` : ""}`;
 }
 
 /**
@@ -56,7 +65,8 @@ function numberAnswer(content: string, citations: ExportCitation[], sources: Map
     const key = web ? `web:${source.href}` : `paper:${source.paperId}`;
     let entry = sources.get(key);
     if (!entry) {
-      entry = { number: sources.size + 1, title: source.title, year: source.year, href: source.href, web };
+      const { quote, section } = citationPassageFields(byId.get(source.paperId) ?? {});
+      entry = { number: sources.size + 1, title: source.title, year: source.year, href: source.href, web, ...(quote ? { quote } : {}), ...(section ? { section } : {}) };
       sources.set(key, entry);
     }
     renumber.set(source.number, entry.number);

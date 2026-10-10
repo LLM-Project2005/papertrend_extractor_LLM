@@ -11,6 +11,8 @@
  * The open paper lives in the address (?paper=<run>&paperTab=<tab>), so Back
  * closes it, Forward reopens it and a copied link opens it again. "paperTab"
  * rather than "tab", because the dashboard already keeps its own tab there.
+ * A chat citation also names the passage it quotes (&paperQuote=), which the
+ * window shows and marks in the PDF.
  * The Library keeps its own window (it also updates its file list), so on the
  * Library page this defers to it.
  */
@@ -18,7 +20,16 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import dynamic from "next/dynamic";
-import { PAPER_PARAM, PAPER_TAB_PARAM, libraryPaperHref, readPaperTab, type PaperExplorerTab, type PaperTarget } from "@/lib/paper-address";
+import {
+  PAPER_PARAM,
+  PAPER_QUOTE_PARAM,
+  PAPER_TAB_PARAM,
+  libraryPaperHref,
+  readPaperQuote,
+  readPaperTab,
+  type PaperExplorerTab,
+  type PaperTarget,
+} from "@/lib/paper-address";
 import Modal from "@/components/ui/Modal";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
 import { SpinnerIcon } from "@/components/ui/Icons";
@@ -60,6 +71,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<PaperExplorerTab>("overview");
+  const [quote, setQuote] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -82,6 +94,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
       setError(null);
       setLoading(true);
       setTab(target.tab ?? "overview");
+      setQuote(readPaperQuote(target.quote));
       try {
         let runId = target.runId ?? null;
         if (!runId && target.paperId) {
@@ -111,15 +124,18 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
     [authHeaders]
   );
 
-  const writeAddress = useCallback((runId: string | null, nextTab: PaperExplorerTab, mode: "push" | "replace") => {
+  const writeAddress = useCallback((runId: string | null, nextTab: PaperExplorerTab, mode: "push" | "replace", nextQuote: string | null = null) => {
     const url = new URL(window.location.href);
     if (runId) {
       url.searchParams.set(PAPER_PARAM, runId);
       if (nextTab !== "overview") url.searchParams.set(PAPER_TAB_PARAM, nextTab);
       else url.searchParams.delete(PAPER_TAB_PARAM);
+      if (nextQuote) url.searchParams.set(PAPER_QUOTE_PARAM, nextQuote);
+      else url.searchParams.delete(PAPER_QUOTE_PARAM);
     } else {
       url.searchParams.delete(PAPER_PARAM);
       url.searchParams.delete(PAPER_TAB_PARAM);
+      url.searchParams.delete(PAPER_QUOTE_PARAM);
     }
     const next = `${url.pathname}${url.search}${url.hash}`;
     if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
@@ -137,7 +153,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
       }
       void load(target).then((runId) => {
         if (!runId) return;
-        writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push");
+        writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push", readPaperQuote(target.quote));
         pushedRef.current = true;
       });
     },
@@ -151,6 +167,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
     setRun(null);
     setDetail(null);
     setError(null);
+    setQuote(null);
     setRenaming(false);
     if (pushedRef.current) {
       // Step back out of the entry that opening added, so Back does not reopen it.
@@ -176,14 +193,17 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
         setRun(null);
         setDetail(null);
         setError(null);
+        setQuote(null);
         return;
       }
       const nextTab = readPaperTab(params.get(PAPER_TAB_PARAM));
+      const nextQuote = readPaperQuote(params.get(PAPER_QUOTE_PARAM));
       if (shownRunIdRef.current !== runId) {
         shownRunIdRef.current = runId;
-        void load({ runId, tab: nextTab });
+        void load({ runId, tab: nextTab, quote: nextQuote });
       } else {
         setTab(nextTab);
+        setQuote(nextQuote);
       }
     };
     if (token) sync();
@@ -269,9 +289,10 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
           key={run.id}
           run={run}
           initialTab={tab}
+          quote={quote}
           onTabChange={(next) => {
             setTab(next);
-            writeAddress(run.id, next, "replace");
+            writeAddress(run.id, next, "replace", quote);
           }}
           detail={detail}
           loading={loading}

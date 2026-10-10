@@ -23,10 +23,11 @@ import {
 import { chartAnimationActive } from "@/lib/chart-theme";
 import { TOPIC_PALETTE } from "@/lib/constants";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
+import PaperLink from "@/components/workspace/PaperLink";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
 
-/** Splits a label into at most two lines of `chars` characters; a cut label ends in an ellipsis. */
-export function wrapLabel(label: string, chars: number): string[] {
+/** Splits a label into at most `maxLines` lines of `chars` characters; a cut label ends in an ellipsis. */
+export function wrapLabel(label: string, chars: number, maxLines = 2): string[] {
   const words = label.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = "";
@@ -39,23 +40,23 @@ export function wrapLabel(label: string, chars: number): string[] {
       continue;
     }
     if (line) lines.push(line);
-    if (lines.length === 2) break;
+    if (lines.length === maxLines) break;
     line = word.length > chars ? `${word.slice(0, chars - 1)}…` : word;
     used += 1;
   }
-  if (line && lines.length < 2) lines.push(line);
+  if (line && lines.length < maxLines) lines.push(line);
   const cut = used < words.length || lines.some((text) => text.endsWith("…"));
   if (cut && lines.length > 0) {
     const last = lines[lines.length - 1].replace(/…$/, "");
     lines[lines.length - 1] = `${last.slice(0, Math.max(1, chars - 1))}…`;
   }
-  return lines.slice(0, 2);
+  return lines.slice(0, maxLines);
 }
 
-/** A category tick on the label axis: two lines at most, with the whole label on hover. */
-function LabelTick({ x, y, payload, chars }: { x?: number; y?: number; payload?: { value: string }; chars: number }) {
+/** A category tick on the label axis: two lines at most, or one when rows are many, with the whole label on hover. */
+function LabelTick({ x, y, payload, chars, maxLines = 2 }: { x?: number; y?: number; payload?: { value: string }; chars: number; maxLines?: number }) {
   const label = String(payload?.value ?? "");
-  const lines = wrapLabel(label, chars);
+  const lines = wrapLabel(label, chars, maxLines);
   return (
     <g transform={`translate(${x ?? 0},${y ?? 0})`}>
       <title>{label}</title>
@@ -91,6 +92,51 @@ const chatChartTooltipTheme = {
   },
 };
 
+/** A table cell: a figure a paper does not give is a dash, not a zero. */
+function tableValue(value: string | number | undefined): string {
+  const number = Number(value);
+  if (value === undefined || value === "" || !Number.isFinite(number)) return "–";
+  return number.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/**
+ * Where each value read from the papers comes from: the value, its paper and
+ * the paper's own sentence, so a reader can check a bar without opening it.
+ */
+function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sources"]> }) {
+  return (
+    <details className="border-t border-slate-200 dark:border-[#1f1f1f]">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-700 hover:text-slate-950 dark:text-[#d4d4d4] dark:hover:text-white">
+        Where each value comes from ({sources.length})
+      </summary>
+      <ul className="max-h-[420px] space-y-3 overflow-auto px-4 pb-4">
+        {sources.map((source, index) => (
+          <li key={`${source.paperId}-${index}`} className="text-sm leading-6">
+            <p className="text-slate-900 dark:text-white">
+              <span className="font-semibold">{source.value}</span>
+              {source.note ? <span className="text-slate-600 dark:text-[#a3a3a3]"> ({source.note})</span> : null}
+              <span className="text-slate-500 dark:text-[#8f8f8f]"> · </span>
+              {/* With its sentence, the paper opens on its PDF with that sentence marked, as a citation does. */}
+              <PaperLink
+                paper={source.quote ? { paperId: source.paperId, tab: "preview", quote: source.quote } : { paperId: source.paperId }}
+                className="text-slate-700 underline-offset-2 hover:underline dark:text-[#d8d8d8]"
+              >
+                {source.title}
+              </PaperLink>
+              {source.year && source.year !== "Unknown" ? <span className="text-slate-500 dark:text-[#8f8f8f]"> · {source.year}</span> : null}
+            </p>
+            {source.quote ? (
+              <blockquote className="mt-1 border-l-2 border-slate-300 pl-3 text-slate-600 dark:border-[#3a3a3a] dark:text-[#b4b4b4]">
+                {source.quote}
+              </blockquote>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   const narrow = useIsNarrow();
   const chartData = chart.data ?? [];
@@ -118,8 +164,12 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
     chars: Math.min(34, Math.max(14, longestLabel)),
   });
   const series = yKeys.length;
-  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : 38;
-  const barHeight = sideways ? Math.max(200, Math.min(760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
+  // Many rows - a value read from each of 34 papers - get one-line labels and
+  // a taller chart: squeezed into 760 pixels, two-line titles ran into each
+  // other (the pilot, 2026-10-11).
+  const dense = sideways && chartData.length > 16;
+  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : dense ? 26 : 38;
+  const barHeight = sideways ? Math.max(200, Math.min(dense ? 1_400 : 760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
@@ -162,7 +212,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                       key={key}
                       className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white"
                     >
-                      {Number(row[key]) || 0}
+                      {tableValue(row[key])}
                     </td>
                   ))}
                 </tr>
@@ -231,7 +281,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                   width={sideways ? column.width : undefined}
                   allowDecimals={false}
                   interval={0}
-                  tick={sideways ? <LabelTick chars={column.chars} /> : { fill: "currentColor", fontSize: 12 }}
+                  tick={sideways ? <LabelTick chars={column.chars} maxLines={dense ? 1 : 2} /> : { fill: "currentColor", fontSize: 12 }}
                 />
                 <Tooltip {...chatChartTooltipTheme} />
                 {series > 1 ? <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} /> : null}
@@ -263,6 +313,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
           </ResponsiveContainer>
         </div>
       )}
+      {chart.sources && chart.sources.length > 0 ? <ChartSources sources={chart.sources} /> : null}
     </div>
   );
 }

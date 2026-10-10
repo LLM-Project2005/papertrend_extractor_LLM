@@ -20,6 +20,7 @@ import PaperAnalysisExplorerModal, {
 } from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
+import { readPaperQuote } from "@/lib/paper-address";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
 import dynamic from "next/dynamic";
@@ -337,6 +338,8 @@ export default function AdminImportClient() {
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
   const [analysisRun, setAnalysisRun] = useState<IngestionRunRow | null>(null);
   const [analysisTab, setAnalysisTab] = useState<PaperExplorerTab>("overview");
+  // A passage a chat citation asked to see (?quote=), for the paper it named only.
+  const [analysisQuote, setAnalysisQuote] = useState<{ runId: string; quote: string } | null>(null);
   // Permanent deletion from Trash: one paper, or everything in Trash.
   const [deleteTarget, setDeleteTarget] = useState<{ runs: IngestionRunRow[]; all: boolean } | null>(null);
   // Several papers at once (docs/32, 4.5): the selection, by run, and the
@@ -654,6 +657,8 @@ export default function AdminImportClient() {
     }
 
     autoOpenedRunIdRef.current = requestedKey;
+    const quote = readPaperQuote(searchParams.get("quote"));
+    setAnalysisQuote(quote ? { runId: matchingRun.id, quote } : null);
     void handleOpenPrimaryFileAction(matchingRun, readChoice(searchParams.get("tab"), PAPER_EXPLORER_TABS, "overview"));
   }, [requestedPaperId, requestedRunId, runs, runsLoaded, searchParams]);
 
@@ -2706,6 +2711,7 @@ export default function AdminImportClient() {
           run={analysisRun}
           initialTab={analysisTab}
           onTabChange={setAnalysisTab}
+          quote={analysisQuote?.runId === analysisRun.id ? analysisQuote.quote : null}
           detail={analysisDetail}
           loading={analysisLoading}
           error={analysisError}
@@ -2713,6 +2719,7 @@ export default function AdminImportClient() {
             setAnalysisRun(null);
             setAnalysisDetail(null);
             setAnalysisError(null);
+            setAnalysisQuote(null);
           }}
           onResolvePreviewUrl={() => getRunOpenUrl(analysisRun)}
           onOpenInNewTab={() => handleOpenRunInNewTab(analysisRun)}

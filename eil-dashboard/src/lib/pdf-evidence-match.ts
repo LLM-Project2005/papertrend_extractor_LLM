@@ -76,6 +76,25 @@ export function indexPage(page: PageRuns): PageIndex {
   return { text, spans };
 }
 
+/**
+ * The page with every space taken out. pdf.js often gives one word as two runs
+ * ("lear" + "ners", where the font or kerning changes) and some PDFs place
+ * each word by position with no space at all, so a passage the paper plainly
+ * contains was "not in the PDF's text" (the test repository, 2026-10-11).
+ */
+export function indexPageCompact(page: PageRuns): PageIndex {
+  let text = "";
+  const spans: PageIndex["spans"] = [];
+  page.runs.forEach((raw, index) => {
+    const hyphenated = /[A-Za-z]-\s*$/.test(raw) && index < page.runs.length - 1;
+    const normalized = normalizeForMatch(hyphenated ? raw.replace(/-\s*$/, "") : raw).replace(/ /g, "");
+    const start = text.length;
+    text += normalized;
+    spans.push({ start, end: text.length });
+  });
+  return { text, spans };
+}
+
 function runsCovering(index: PageIndex, start: number, end: number): number[] {
   const runs: number[] = [];
   index.spans.forEach((span, runIndex) => {
@@ -105,20 +124,37 @@ function located(index: PageIndex, page: number, start: number, end: number, qua
 export function locateEvidence(pages: PageRuns[], evidence: string): EvidenceLocation | null {
   const target = normalizeForMatch(evidence);
   if (target.length < 12) return null;
-  const indexes = pages.map(indexPage);
+  const words = target.split(" ");
+  const spaced = pages.map(indexPage);
+  const compact = pages.map(indexPageCompact);
+  const unspaced = words.join("");
+  // The whole sentence, as spaced and then with every space ignored on both
+  // sides, before any partial match: a partial spaced match of a sentence with
+  // one split word marks only its second half.
+  return (
+    wholeMatch(spaced, target) ??
+    wholeMatch(compact, unspaced) ??
+    windowMatch(spaced, target, words, " ") ??
+    windowMatch(compact, unspaced, words, "")
+  );
+}
 
-  // The whole sentence, as stored.
+function wholeMatch(indexes: PageIndex[], target: string): EvidenceLocation | null {
   for (let page = 0; page < indexes.length; page += 1) {
     const at = indexes[page].text.indexOf(target);
     if (at !== -1) {
       return located(indexes[page], page, at, at + target.length, "exact");
     }
   }
+  return null;
+}
 
-  // Otherwise the page where most overlapping word windows appear, from the
-  // first window found to the last, so a sentence broken by a figure or a
-  // shortened with "..." still lands on the right lines.
-  const words = target.split(" ");
+/**
+ * The page where most overlapping word windows appear, from the first window
+ * found to the last, so a sentence broken by a figure or shortened with "..."
+ * still lands on the right lines.
+ */
+function windowMatch(indexes: PageIndex[], target: string, words: string[], joiner: string): EvidenceLocation | null {
   if (words.length < 5) return null;
   for (const size of [10, 7, 5]) {
     if (words.length < size) continue;
@@ -128,7 +164,7 @@ export function locateEvidence(pages: PageRuns[], evidence: string): EvidenceLoc
       let first = -1;
       let last = -1;
       for (let from = 0; from + size <= words.length; from += Math.max(1, Math.floor(size / 2))) {
-        const window = words.slice(from, from + size).join(" ");
+        const window = words.slice(from, from + size).join(joiner);
         const at = indexes[page].text.indexOf(window, first === -1 ? 0 : first);
         if (at === -1) continue;
         hits += 1;

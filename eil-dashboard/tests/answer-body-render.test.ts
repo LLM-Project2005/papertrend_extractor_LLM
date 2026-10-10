@@ -111,6 +111,48 @@ test("the internal marker never reaches the reader as text", () => {
   assert.equal(html.includes("[[cite:"), false);
 });
 
+const QUOTED = {
+  ...PAPER,
+  href: "/workspace/library?paperId=12",
+  quote: "Reading scores rose by twelve points after the programme.",
+  section: "Results",
+  passages: [
+    { at: 0, quote: "Reading scores rose by twelve points after the programme.", section: "Results" },
+    { at: 1, quote: "Forty students in two classes took part.", section: "Method" },
+  ],
+};
+
+/** The quotes the cards carry, in the order the markers come. */
+const cardQuotes = (html: string) => [...html.matchAll(/<q[^>]*>([^<]*)<\/q>/g)].map((match) => match[1]);
+
+test("a citation's card quotes the passage behind its own sentence", () => {
+  const html = renderAnswer(
+    `Reading scores rose (${citationLabel(PAPER)}). The sample was forty students (${citationLabel(PAPER)}).`,
+    [QUOTED]
+  );
+  // One paper, two markers, each with the passage found for its sentence.
+  assert.deepEqual(cardQuotes(html), [
+    "Reading scores rose by twelve points after the programme.",
+    "Forty students in two classes took part.",
+  ]);
+  assert.match(html, /Results/);
+  assert.match(html, /Method/);
+  assert.equal(/@\d/.test(html.replace(/<[^>]+>/g, "")), false, "the marker's place never shows as text");
+  // A quote inside a sentence is not a <blockquote>, which a <p> may not hold.
+  assert.equal(html.includes("<blockquote"), false);
+});
+
+test("a citation without a passage keeps its plain card", () => {
+  const html = renderAnswer(`Gains (${citationLabel(PAPER)}).`, [PAPER]);
+  assert.deepEqual(cardQuotes(html), []);
+});
+
+test("a quoted card works in both themes", () => {
+  const html = renderAnswer(`Reading scores rose (${citationLabel(PAPER)}).`, [QUOTED]);
+  const offenders = lightOnlyColours(html);
+  assert.deepEqual(offenders, [], `light-only colours: ${offenders.join(" | ")}`);
+});
+
 /* ------------------------------------------------------------------- the fold */
 
 test("a short answer renders with no fold control", () => {

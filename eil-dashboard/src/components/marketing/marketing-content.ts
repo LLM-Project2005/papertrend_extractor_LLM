@@ -98,7 +98,7 @@ export const faqs: Array<{ question: string; answer: string }> = [
   {
     question: "Which AI models does it use?",
     answer:
-      "GPT-6 Luna (OpenAI) plans, writes and checks chat answers and deep research reports. Gemini 3.8 Flash (Google) checks every sentence of a deep research report. Gemini Flash-Lite reads each paper and builds charts, and OpenAI’s text-embedding-3-small finds passages by meaning. Each was measured on a real repository before it was switched on.",
+      "GPT-6 Luna (OpenAI) plans, writes and checks chat answers, and reads each paper for a Max answer. Gemini Flash-Lite reads each paper and builds charts, and OpenAI’s text-embedding-3-small finds passages by meaning. Each was measured on a real repository before it was switched on.",
   },
   {
     question: "Can I use my own research areas?",

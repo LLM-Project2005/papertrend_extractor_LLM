@@ -164,6 +164,35 @@ test("an address with ?paper= opens the window, as a copied link or Forward does
   }
 });
 
+test("a chat citation's passage travels with the paper, in the address and to the window", async () => {
+  const quote = "Peer feedback raised scores from 21 to 29 (p < .01).";
+  const paper = await paperWindow("https://papertrend.test/workspace/chat", serve);
+  try {
+    paper.viewer().openPaper({ paperId: "42", tab: "preview", quote });
+    await settle();
+    assert.equal(paper.explorer()?.props.initialTab, "preview");
+    assert.equal(paper.explorer()?.props.quote, quote, "the window is told which passage to show and mark");
+    const opened = new URL(`https://papertrend.test${paper.dom.window.historyLog[0].href}`);
+    assert.equal(opened.searchParams.get("paperQuote"), quote);
+    // Changing tab keeps it; closing takes it out with the paper.
+    call(paper.explorer(), "onTabChange", "overview");
+    assert.equal(new URL(`https://papertrend.test${paper.dom.window.historyLog.at(-1)!.href}`).searchParams.get("paperQuote"), quote);
+    call(paper.explorer(), "onClose");
+    assert.equal(paper.dom.window.location.search, "");
+  } finally {
+    paper.done();
+  }
+
+  // A copied link opens on the passage too.
+  const linked = await paperWindow(`https://papertrend.test/workspace/home?paper=run-1&paperTab=preview&paperQuote=${encodeURIComponent(quote)}`, serve);
+  try {
+    await settle();
+    assert.equal(linked.explorer()?.props.quote, quote);
+  } finally {
+    linked.done();
+  }
+});
+
 test("on the Library a paper opens in the Library's own window", async () => {
   const paper = await paperWindow("https://papertrend.test/workspace/library", serve);
   try {

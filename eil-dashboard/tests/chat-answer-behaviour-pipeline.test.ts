@@ -170,6 +170,36 @@ test("markup the reader cannot see sends a confident answer to the review, and a
   assert.equal(clean.diagnostics.faithfulnessChecked, false);
 });
 
+test("a cited paper carries the passage its sentence rests on, from the text the answer read", async () => {
+  const { ask, script, ids, peerFeedback } = await repository();
+  script((call) =>
+    call.taskName === "CHAT_SYNTHESIS"
+      ? { answer: `Students who exchanged peer feedback revised their drafts more often [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 }
+      : null
+  );
+  const focused = await ask(QUESTION, { executionPlan: plan("search_evidence", "focused", QUESTION) });
+  const [citation] = focused.citations;
+  assert.equal(citation.quote, "Students who exchanged peer feedback revised their second drafts more often, and revision quality improved.");
+  assert.deepEqual(citation.passages?.map((passage) => passage.at), [0], "the answer's one marker");
+  assert.equal("passageSources" in focused, false, "what the answer read is not handed on");
+
+  // A paper-by-paper answer cites no marker: each paper is quoted for its own section.
+  const analyses = [
+    "Students who exchanged peer feedback revised their drafts more often.",
+    "Retention of new words improved after eight weeks of daily app use.",
+    "Rubric use varied widely between the schools surveyed.",
+  ];
+  script((call) =>
+    call.taskName === "CHAT_DOCUMENT_ANALYSIS"
+      ? { overview: "The three papers study feedback, vocabulary and assessment.", items: ids.map((paperId, index) => ({ paperId, analysis: analyses[index] })) }
+      : null
+  );
+  const each = await ask("Explain each paper", { executionPlan: plan("analyze_each_document", "complete", "Explain each paper") });
+  const quotes = new Map(each.citations.map((entry) => [entry.paperId, entry.quote]));
+  assert.match(quotes.get(ids[1]) ?? "", /Retention of new words improved after eight weeks/);
+  assert.match(quotes.get(ids[2]) ?? "", /Rubric use varied widely between schools/);
+});
+
 test("an answer in several parts never stacks a heading on a heading", async () => {
   const { ask, script, peerFeedback } = await repository();
   const twoParts = { ...plan("list_documents", "focused", QUESTION), operations: ["list_documents", "search_evidence"] as RepositoryExecutionPlan["operations"] };
@@ -182,12 +212,12 @@ test("an answer in several parts never stacks a heading on a heading", async () 
   assert.deepEqual(emptySections(headed.answer), [], headed.answer);
   assert.match(headed.answer, /^## Papers in Language learning repository/);
   assert.match(headed.answer, /\n## Direct answer\n\nPeer feedback improved revision quality/);
-  assert.doesNotMatch(headed.answer, /## Evidence answer/);
+  assert.doesNotMatch(headed.answer, /## What the papers say/);
 
   // A part without one is labelled, so the two parts can be told apart.
   answerWith(`Peer feedback improved revision quality [Paper ${peerFeedback}].`);
   const unheaded = await ask(`${QUESTION} `, { executionPlan: twoParts });
-  assert.match(unheaded.answer, /\n## Evidence answer\n\nPeer feedback improved revision quality/);
+  assert.match(unheaded.answer, /\n## What the papers say\n\nPeer feedback improved revision quality/);
   assert.deepEqual(emptySections(unheaded.answer), []);
 });
 
@@ -541,4 +571,81 @@ test("a focused answer whose review cannot be read or does not run is shown mark
   } finally {
     quiet.mock.restore();
   }
+});
+
+/* ------------------------------------------------- choosing and reading papers (2026-10-10) */
+
+test("a reranker that explains itself at length still chooses the papers", async () => {
+  // Live, GPT-6 Luna's reason ran to 1,000-1,700 characters against a 500
+  // limit: every choice was thrown away and answers read the keyword ranking's top papers.
+  const { ask, task, script, peerFeedback, ids } = await repository();
+  script((call) => {
+    if (call.taskName === "CHAT_RERANK") return { paperIds: [peerFeedback], reason: "Peer feedback is the subject of this paper. ".repeat(40), confidence: "high" };
+    if (call.taskName === "CHAT_SYNTHESIS") return { answer: `Peer feedback improved revision quality [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 };
+    return null;
+  });
+  const result = await ask(QUESTION, { executionPlan: plan("search_evidence", "focused", QUESTION) });
+  assert.equal(task("CHAT_RERANK").length, 1, "the papers are ranked by the model");
+  assert.equal(result.diagnostics.rerankerSource, "llm", "a long reason no longer throws the choice away");
+  // The evidence is each chosen paper's text under its heading; every paper in
+  // scope is still named once in the repository overview above it.
+  const read = text(task("CHAT_SYNTHESIS")[0]);
+  assert.ok(read.includes(`[Paper ${peerFeedback}] Peer feedback in second-language writing (2021) - the whole paper`));
+  assert.ok(!read.includes(`[Paper ${ids[1]}] Mobile apps for vocabulary learning (2022) - the`), "a paper the reranker left out is not read");
+});
+
+test("an evidence answer with a per-paper analysis analyses the papers the answer draws on, not every paper in scope", async () => {
+  const { ask, task, script, peerFeedback } = await repository();
+  script((call) => (call.taskName === "CHAT_SYNTHESIS" ? { answer: `Peer feedback improved revision quality [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 } : null));
+  // The planner's order put the per-paper step first; the answer still leads.
+  const both = { ...plan("analyze_each_document", "complete", QUESTION), operations: ["analyze_each_document", "search_evidence"] as RepositoryExecutionPlan["operations"] };
+  const result = await ask(QUESTION, { executionPlan: both });
+  const analysed = task("CHAT_DOCUMENT_ANALYSIS");
+  assert.ok(analysed.length >= 1, "the per-paper step ran");
+  const request = JSON.parse(String(analysed[0].messages[1].content)) as { papers: Array<{ title: string }> };
+  assert.deepEqual(request.papers.map((paper) => paper.title), ["Peer feedback in second-language writing"]);
+  assert.match(result.answer, /^Peer feedback improved revision quality/);
+});
+
+test("a plan that explains itself at length, or asks for five steps, is cut to size rather than refused", async () => {
+  const { parseExecutionPlanCandidate } = await repository();
+  const parsed = parseExecutionPlanCandidate({
+    operation: "search_evidence",
+    operations: ["search_evidence", "analyze_text", "visualize", "list_documents", "inspect_scope"],
+    scopeMode: "focused",
+    refinedQuestion: "What do the papers report about peer feedback?",
+    retrievalQueries: ["q".repeat(400), "", "peer feedback"],
+    reason: "Because the reader asks about one issue. ".repeat(30),
+    confidence: "high",
+  });
+  assert.ok(parsed, "the plan is kept");
+  assert.equal(parsed.operations?.length, 4);
+  assert.equal(parsed.reason.length, 500);
+  assert.deepEqual(parsed.retrievalQueries.map((query) => query.length), [240, 13]);
+});
+
+test("a follow-up's writer reads the answer it follows, not its first 1,200 characters", async () => {
+  const { ask, task, script, peerFeedback } = await repository();
+  script((call) => (call.taskName === "CHAT_SYNTHESIS" ? { answer: `Peer feedback improved revision quality [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 } : null));
+  const earlier = `${"Two peer feedback studies are compared here. ".repeat(100)}The second study had 49 students.`;
+  const followUp = "Tell me more about the second study";
+  await ask(followUp, {
+    executionPlan: plan("search_evidence", "focused", "What did the second peer feedback study do?"),
+    history: [
+      { role: "user", content: QUESTION },
+      { role: "assistant", content: earlier },
+      { role: "user", content: followUp },
+    ],
+  });
+  assert.ok(text(task("CHAT_SYNTHESIS")[0]).includes("The second study had 49 students."), "the end of a 4,600-character answer is read");
+});
+
+test("two uploads of one paper are one study, whatever their word counts", async () => {
+  const { oneCopyEach } = await repository();
+  const papers = [
+    { title: "A Corpus-Based Study of Discourse Markers", year: "2022", copy: 1 },
+    { title: "A corpus-based study of discourse markers ", year: "2022", copy: 2 },
+    { title: "A Corpus-Based Study of Discourse Markers", year: "2023", copy: 3 },
+  ];
+  assert.deepEqual(oneCopyEach(papers).map((paper) => paper.copy), [1, 3]);
 });

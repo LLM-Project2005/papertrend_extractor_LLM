@@ -38,6 +38,8 @@ type Props = {
   initialTab?: PaperExplorerTab;
   /** Told when the reader changes tab, so the address can follow. */
   onTabChange?: (tab: PaperExplorerTab) => void;
+  /** A passage a chat answer quoted from this paper: shown, and marked in the PDF. */
+  quote?: string | null;
 };
 
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
@@ -382,8 +384,12 @@ export default function PaperAnalysisExplorerModal({
   onCorrect,
   initialTab,
   onTabChange,
+  quote,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaperExplorerTab>(initialTab ?? "overview");
+  // Hidden by the reader until a different passage is asked for.
+  const [hiddenQuote, setHiddenQuote] = useState<string | null>(null);
+  const citedQuote = quote && quote !== hiddenQuote ? quote : null;
   const onTabChangeRef = useRef(onTabChange);
   onTabChangeRef.current = onTabChange;
   useEffect(() => {
@@ -703,6 +709,42 @@ export default function PaperAnalysisExplorerModal({
               </button>
             ))}
           </nav>
+
+          {/* The passage a chat answer quoted from this paper. It sits above
+              every tab, so the reader still has it when the PDF cannot mark
+              it: a scan has no text to find it in, and a PDF that will not
+              load falls back to the browser's viewer. */}
+          {citedQuote ? (
+            <section
+              aria-label="Passage cited in the answer"
+              className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">Passage cited in the answer</p>
+                <div className="flex items-center gap-1">
+                  {activeTab !== "preview" ? (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("preview")}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-200"
+                    >
+                      Show in the PDF
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setHiddenQuote(citedQuote)}
+                    className="rounded-md px-2 py-1 text-xs font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-200"
+                  >
+                    Hide
+                  </button>
+                </div>
+              </div>
+              <blockquote className="mt-2 break-words border-l-2 border-amber-400 pl-3 text-sm leading-7 text-ink dark:border-amber-600">
+                {citedQuote}
+              </blockquote>
+            </section>
+          ) : null}
 
           {loading ? (
             <div className="space-y-4" role="status">
@@ -1174,7 +1216,14 @@ export default function PaperAnalysisExplorerModal({
                   ) : null}
 
                   {!previewError ? (
-                    <PdfViewer cacheKey={run.id} url={previewUrl} title={detail?.title || titleOf(run)} heightClass="h-[68vh]" />
+                    <PdfViewer
+                      cacheKey={run.id}
+                      url={previewUrl}
+                      title={detail?.title || titleOf(run)}
+                      heightClass="h-[68vh]"
+                      highlight={citedQuote}
+                      highlightKey={citedQuote ?? undefined}
+                    />
                   ) : null}
                 </section>
               ) : null}
