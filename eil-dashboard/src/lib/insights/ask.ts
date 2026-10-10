@@ -415,6 +415,26 @@ export function askTool() {
   };
 }
 
+/** How to fill build_view: its dimensions, measures and worked examples. Chart mode's planner shows it too. */
+export function askGuide(): string[] {
+  return [
+    "Dimensions: theme (what a paper studies), method (how it was done), category, contribution (what it produces), study_type, aim (its objective verb), year.",
+    "Use measure 'change' for questions about growth, decline or trends; 'papers' otherwise. Use columns to cross two dimensions. When the question names a subject ('writing papers', 'assessment research'), narrow to it: focus_dimension is where the subject is listed, and focus_values is every listed value that matches it. When it asks about one value of rows ('is mixed methods more common…'), put that value in about_values.",
+    "Examples:",
+    "- 'Which methods are used for which themes?' -> rows theme, columns method, focus_dimension none.",
+    "- 'Is mixed-methods research more common in writing papers?' -> rows method, focus_dimension theme, focus_values [every theme naming writing], about_values [the mixed-methods method].",
+    "- 'What do the papers on assessment set out to produce?' -> rows contribution, focus_dimension theme, focus_values [every theme naming assessment or testing].",
+    "- 'How has the use of interviews changed?' -> measure change, rows method, about_values [the interview method].",
+    "- 'How many papers were published each year?' -> rows year.",
+    "- 'How have the themes changed over time?' -> measure change, rows theme.",
+    "- 'How many papers study writing compared with reading?' -> rows theme, about_values [the writing theme, the reading theme].",
+    "- 'Compare the methods used in writing papers and reading papers' -> rows method, columns theme, focus_dimension theme, focus_values [every theme naming writing or reading].",
+    "- 'Which themes appear alongside assessment?' -> rows theme, focus_dimension theme, focus_values [every theme naming assessment].",
+    "- 'How do the categories change over the years?' -> rows year, columns category.",
+    "The question may be in any language, or ask for a chart without saying which; choose the view that best answers it.",
+  ];
+}
+
 export function askMessages(question: string, vocabulary: Record<AskDimension, string[]>, selection: string) {
   return [
     {
@@ -426,20 +446,7 @@ export function askMessages(question: string, vocabulary: Record<AskDimension, s
     {
       role: "user" as const,
       content: [
-        "Dimensions: theme (what a paper studies), method (how it was done), category, contribution (what it produces), study_type, aim (its objective verb), year.",
-        "Use measure 'change' for questions about growth, decline or trends; 'papers' otherwise. Use columns to cross two dimensions. When the question names a subject ('writing papers', 'assessment research'), narrow to it: focus_dimension is where the subject is listed, and focus_values is every listed value that matches it. When it asks about one value of rows ('is mixed methods more common…'), put that value in about_values.",
-        "Examples:",
-        "- 'Which methods are used for which themes?' -> rows theme, columns method, focus_dimension none.",
-        "- 'Is mixed-methods research more common in writing papers?' -> rows method, focus_dimension theme, focus_values [every theme naming writing], about_values [the mixed-methods method].",
-        "- 'What do the papers on assessment set out to produce?' -> rows contribution, focus_dimension theme, focus_values [every theme naming assessment or testing].",
-        "- 'How has the use of interviews changed?' -> measure change, rows method, about_values [the interview method].",
-        "- 'How many papers were published each year?' -> rows year.",
-        "- 'How have the themes changed over time?' -> measure change, rows theme.",
-        "- 'How many papers study writing compared with reading?' -> rows theme, about_values [the writing theme, the reading theme].",
-        "- 'Compare the methods used in writing papers and reading papers' -> rows method, columns theme, focus_dimension theme, focus_values [every theme naming writing or reading].",
-        "- 'Which themes appear alongside assessment?' -> rows theme, focus_dimension theme, focus_values [every theme naming assessment].",
-        "- 'How do the categories change over the years?' -> rows year, columns category.",
-        "The question may be in any language, or ask for a chart without saying which; choose the view that best answers it.",
+        ...askGuide(),
         "If the question needs anything else - authors, citations, countries, findings, sample sizes, quality - set answerable to false and say why.",
         `Selection: ${selection}.`,
         `Values present: ${JSON.stringify(vocabulary)}`,

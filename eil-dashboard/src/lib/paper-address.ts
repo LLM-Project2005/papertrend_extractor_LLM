@@ -10,14 +10,29 @@ export interface PaperTarget {
   runId?: string | null;
   paperId?: string | null;
   tab?: PaperExplorerTab;
+  /** Words to find and mark in the paper's PDF: the passage an answer quoted from it. */
+  quote?: string | null;
 }
 
-/** The open paper outside the Library: ?paper=<run>&paperTab=<tab> ("tab" is the dashboard's). */
+/**
+ * The open paper outside the Library: ?paper=<run>&paperTab=<tab>&paperQuote=<passage>
+ * ("tab" is the dashboard's). The Library's own address names the passage "quote".
+ */
 export const PAPER_PARAM = "paper";
 export const PAPER_TAB_PARAM = "paperTab";
+export const PAPER_QUOTE_PARAM = "paperQuote";
+
+/** Longer than any quote a citation carries (QUOTE_MAX_CHARS is 400), so a real one is never cut. */
+export const PAPER_QUOTE_MAX = 600;
 
 export function readPaperTab(value: string | null | undefined): PaperExplorerTab {
   return PAPER_EXPLORER_TABS.includes(value as PaperExplorerTab) ? (value as PaperExplorerTab) : "overview";
+}
+
+/** A passage named in an address, tidied and bounded: it is only shown and searched for. */
+export function readPaperQuote(value: string | null | undefined): string | null {
+  const quote = String(value ?? "").replace(/\s+/g, " ").trim().slice(0, PAPER_QUOTE_MAX).trim();
+  return quote || null;
 }
 
 /** The Library address for a paper: for a new tab, and for pages outside the workspace. */
@@ -26,6 +41,8 @@ export function libraryPaperHref(target: PaperTarget): string {
   if (target.runId) params.set("paper", target.runId);
   else if (target.paperId) params.set("paperId", target.paperId);
   if (target.tab && target.tab !== "overview") params.set("tab", target.tab);
+  const quote = readPaperQuote(target.quote);
+  if (quote) params.set("quote", quote);
   return `/workspace/library?${params.toString()}`;
 }
 
@@ -37,5 +54,11 @@ export function parsePaperHref(href: string | null | undefined): PaperTarget | n
   const paperId = params.get("paperId");
   if (!runId && !paperId) return null;
   const tab = params.get("tab");
-  return { runId: runId ?? null, paperId: runId ? null : paperId, tab: tab ? readPaperTab(tab) : undefined };
+  const quote = readPaperQuote(params.get("quote"));
+  return {
+    runId: runId ?? null,
+    paperId: runId ? null : paperId,
+    tab: tab ? readPaperTab(tab) : undefined,
+    ...(quote ? { quote } : {}),
+  };
 }

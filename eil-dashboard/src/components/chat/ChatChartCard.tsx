@@ -23,6 +23,7 @@ import {
 import { chartAnimationActive } from "@/lib/chart-theme";
 import { TOPIC_PALETTE } from "@/lib/constants";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
+import PaperLink from "@/components/workspace/PaperLink";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
 
 /** Splits a label into at most two lines of `chars` characters; a cut label ends in an ellipsis. */
@@ -90,6 +91,51 @@ const chatChartTooltipTheme = {
     stroke: "rgba(148, 163, 184, 0.25)",
   },
 };
+
+/** A table cell: a figure a paper does not give is a dash, not a zero. */
+function tableValue(value: string | number | undefined): string {
+  const number = Number(value);
+  if (value === undefined || value === "" || !Number.isFinite(number)) return "–";
+  return number.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/**
+ * Where each value read from the papers comes from: the value, its paper and
+ * the paper's own sentence, so a reader can check a bar without opening it.
+ */
+function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sources"]> }) {
+  return (
+    <details className="border-t border-slate-200 dark:border-[#1f1f1f]">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-700 hover:text-slate-950 dark:text-[#d4d4d4] dark:hover:text-white">
+        Where each value comes from ({sources.length})
+      </summary>
+      <ul className="max-h-[420px] space-y-3 overflow-auto px-4 pb-4">
+        {sources.map((source, index) => (
+          <li key={`${source.paperId}-${index}`} className="text-sm leading-6">
+            <p className="text-slate-900 dark:text-white">
+              <span className="font-semibold">{source.value}</span>
+              {source.note ? <span className="text-slate-600 dark:text-[#a3a3a3]"> ({source.note})</span> : null}
+              <span className="text-slate-500 dark:text-[#8f8f8f]"> · </span>
+              {/* With its sentence, the paper opens on its PDF with that sentence marked, as a citation does. */}
+              <PaperLink
+                paper={source.quote ? { paperId: source.paperId, tab: "preview", quote: source.quote } : { paperId: source.paperId }}
+                className="text-slate-700 underline-offset-2 hover:underline dark:text-[#d8d8d8]"
+              >
+                {source.title}
+              </PaperLink>
+              {source.year && source.year !== "Unknown" ? <span className="text-slate-500 dark:text-[#8f8f8f]"> · {source.year}</span> : null}
+            </p>
+            {source.quote ? (
+              <blockquote className="mt-1 border-l-2 border-slate-300 pl-3 text-slate-600 dark:border-[#3a3a3a] dark:text-[#b4b4b4]">
+                {source.quote}
+              </blockquote>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   const narrow = useIsNarrow();
@@ -162,7 +208,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                       key={key}
                       className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white"
                     >
-                      {Number(row[key]) || 0}
+                      {tableValue(row[key])}
                     </td>
                   ))}
                 </tr>
@@ -263,6 +309,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
           </ResponsiveContainer>
         </div>
       )}
+      {chart.sources && chart.sources.length > 0 ? <ChartSources sources={chart.sources} /> : null}
     </div>
   );
 }

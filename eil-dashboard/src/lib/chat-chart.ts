@@ -48,9 +48,9 @@ export interface ChatChartOutcome {
 }
 
 const WHAT_CAN_BE_CHARTED =
-  "I can chart how these papers divide by theme, method, research area, contribution, kind of study, aim or year, and cross any two - for example \"methods by theme\", \"papers per year\" or \"how the themes changed\".";
+  "I can chart how these papers divide by theme, method, research area, contribution, kind of study, aim or year, and cross any two - for example \"methods by theme\" or \"how the themes changed\" - and what the papers report, read from their text: \"participants in each study\", \"where the studies were done\", or the figures in a paper's table.";
 const WHAT_CAN_BE_CHARTED_TH =
-  "แผนภูมิที่ทำได้คือการแบ่งงานวิจัยตามหัวข้อ วิธีวิจัย หมวดหมู่ ประเภทผลงาน ประเภทการศึกษา จุดมุ่งหมาย หรือปี และการไขว้สองมิติเข้าด้วยกัน เช่น \"วิธีวิจัยในแต่ละหัวข้อ\" \"จำนวนงานวิจัยต่อปี\" หรือ \"หัวข้อที่เปลี่ยนไปตามเวลา\"";
+  "แผนภูมิที่ทำได้คือการแบ่งงานวิจัยตามหัวข้อ วิธีวิจัย หมวดหมู่ ประเภทผลงาน ประเภทการศึกษา จุดมุ่งหมาย หรือปี และการไขว้สองมิติเข้าด้วยกัน เช่น \"วิธีวิจัยในแต่ละหัวข้อ\" \"จำนวนงานวิจัยต่อปี\" หรือ \"หัวข้อที่เปลี่ยนไปตามเวลา\" รวมถึงสิ่งที่งานวิจัยรายงานไว้ในเนื้อหา เช่น \"จำนวนผู้เข้าร่วมในแต่ละงานวิจัย\" \"ประเทศที่ทำการศึกษา\" หรือตัวเลขในตารางของงานวิจัยฉบับหนึ่ง";
 
 /**
  * The chat scope's papers as the dashboard sees them: its themes, methods and
@@ -90,7 +90,7 @@ function numbersOf(text: string): string {
  * The chart's words in Thai for a Thai question. The labels stay as the papers
  * name them; a translation that changes any number is not used.
  */
-async function inThai(texts: string[]): Promise<string[]> {
+export async function inThai(texts: string[]): Promise<string[]> {
   try {
     const result = await createChatCompletionResult(
       [
@@ -156,6 +156,8 @@ export async function chatChartResult(input: {
   restated?: string | null;
   scopeLabel: string;
   answerLanguage?: string;
+  /** The view Chart mode's planner already chose (chart-reading.ts), so it is not asked for again. */
+  query?: AskQuery | null;
 }): Promise<ChatChartOutcome> {
   const thai = isThai(input.answerLanguage, input.question);
   const { corpus } = input;
@@ -187,29 +189,31 @@ export async function chatChartResult(input: {
   const asked = input.restated && input.restated.trim() && input.restated.trim() !== input.question.trim()
     ? `${input.question.trim()}\n(Restated with the conversation: ${input.restated.trim()})`
     : input.question.trim();
-  let query: AskQuery | null = null;
-  try {
-    const result = await createChatCompletionResult(
-      askMessages(asked.slice(0, 700), askVocabulary(corpus), input.scopeLabel),
-      0,
-      undefined,
-      "CHAT_CHART_QUERY",
-      {
-        maxTokens: 400,
-        tools: [askTool()],
-        toolChoice: { type: "function", function: { name: "build_view" } },
-        parallelToolCalls: false,
-        timeoutMs: 20_000,
-      }
-    );
-    const call = result?.toolCalls.find((entry) => entry.function?.name === "build_view");
+  let query: AskQuery | null = input.query ?? null;
+  if (!query) {
     try {
-      query = parseAskQuery(JSON.parse(call?.function?.arguments ?? result?.content ?? "null"));
-    } catch {
-      query = null;
+      const result = await createChatCompletionResult(
+        askMessages(asked.slice(0, 700), askVocabulary(corpus), input.scopeLabel),
+        0,
+        undefined,
+        "CHAT_CHART_QUERY",
+        {
+          maxTokens: 400,
+          tools: [askTool()],
+          toolChoice: { type: "function", function: { name: "build_view" } },
+          parallelToolCalls: false,
+          timeoutMs: 20_000,
+        }
+      );
+      const call = result?.toolCalls.find((entry) => entry.function?.name === "build_view");
+      try {
+        query = parseAskQuery(JSON.parse(call?.function?.arguments ?? result?.content ?? "null"));
+      } catch {
+        query = null;
+      }
+    } catch (error) {
+      console.warn("chat_chart_query_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     }
-  } catch (error) {
-    console.warn("chat_chart_query_failed", { message: error instanceof Error ? error.message : "unknown_error" });
   }
   if (!query) {
     return finish(`The chart could not be worked out just now. ${WHAT_CAN_BE_CHARTED} Try asking again.`, null, null);

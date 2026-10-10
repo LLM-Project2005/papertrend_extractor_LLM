@@ -12,7 +12,8 @@ import {
   validateInlinePaperCitations,
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
-import { citationLabel } from "@/lib/answer-citations";
+import { citationLabel, type CitationPassageFields } from "@/lib/answer-citations";
+import { attachCitationPassages, type PassageSources } from "@/lib/citation-passages";
 import {
   readAnswerCache,
   writeAnswerCache,
@@ -27,17 +28,22 @@ export type { UnavailableMetric };
 import {
   renderingInstruction,
   renderingIssues,
+  withoutOpeningLabel,
 } from "@/lib/answer-rendering";
 import { semanticPaperRanking } from "@/lib/repository-memory";
 import { loadThemeStore } from "@/lib/topic-theme-service";
 import { normalizeTopicKey, type ThemeStore } from "@/lib/topic-themes";
 import { usableAnalysisSql } from "@/lib/usable-analysis";
-import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
+import { BLANK_CHART_REQUEST, chatChartResult, inThai, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
+import { FIGURE_PAPERS, planChart, readFigures, readValues, valueChart, type ChartSource, type ReadChart, type ReadPlan } from "@/lib/chart-reading";
+import { askVocabulary, type AskQuery } from "@/lib/insights/ask";
+import type { InsightCorpus } from "@/lib/insights/corpus";
 import { MIN_PAPERS } from "@/lib/insights/stats";
 import { reportChatProgress } from "@/lib/chat-progress";
 import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey } from "@/lib/paper-sections";
 import { normalizeTitle } from "@/lib/references/citation";
 import { normalizeEffort, type ChatEffort } from "@/lib/chat-effort";
+import { READING_BUDGET, readPapers, type PaperReading } from "@/lib/paper-reading";
 import {
   ANSWER_FORMAT_RULES,
   formatConstraintInstruction,
@@ -65,7 +71,7 @@ export type RepositoryIntent =
 
 export type RepositoryRetrievalMode = "focused" | "comparative" | "exhaustive";
 
-export interface RepositoryCitation {
+export interface RepositoryCitation extends CitationPassageFields {
   paperId: string;
   title: string;
   year: string;
@@ -74,17 +80,19 @@ export interface RepositoryCitation {
   sourceType: "paper" | "web";
 }
 
-/** A chart of stored values (word counts); drawn with the chat's own chart. */
+/** A chart of counted or read values (word counts, what the papers report); drawn with the chat's own chart. */
 export interface RepositoryDataChart {
   chartType: "bar" | "line" | "pie" | "table";
   title: string;
   scopeLabel: string;
-  metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency";
+  metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency" | "reported_value" | "paper_figures";
   xKey: "label";
   yKeys: string[];
   /** Series drawn end to end in one bar per row, when they are parts of a whole. */
   stacked?: boolean;
   data: Array<Record<string, string | number>>;
+  /** Where each value read from the papers comes from, in the papers' own words. */
+  sources?: ChartSource[];
   planner: {
     source: "llm" | "fallback";
     reason: string;
@@ -205,6 +213,11 @@ export interface RepositoryChatResult {
   coverage?: RepositoryCoverage;
   limitations?: string[];
   jobId?: string;
+  /**
+   * What the answer read of each paper, for quoting the passage behind each
+   * citation once the answer is final (runRepositoryChat). Never sent on.
+   */
+  passageSources?: PassageSources;
   scopeSnapshot: KnowledgeScopeSnapshot;
   diagnostics: {
     projectId: string | null;
@@ -457,6 +470,32 @@ interface TermIndexRow {
   term_counts: Record<string, number> | null;
 }
 
+/**
+ * Free text from a model, cut to `max` characters rather than refused. GPT-6
+ * Luna explains itself at length: the reranker's reason ran to 1,000-1,700
+ * characters against a 500 limit, so every reply was thrown away and every
+ * answer read the sixteen papers the keyword ranking put first, three
+ * relevant among them (the test repository, 2026-10-10).
+ */
+function clippedText(max: number) {
+  return z.preprocess((value) => (value === undefined || value === null ? undefined : String(value).slice(0, max)), z.string());
+}
+
+/** A list from a model: at most `max` non-empty strings of at most `chars` each, cut rather than refused. */
+function clippedList(max: number, chars: number) {
+  return z.preprocess(
+    (value) =>
+      Array.isArray(value)
+        ? value
+            .map((item) => (item === null || item === undefined ? "" : String(item).trim()))
+            .filter(Boolean)
+            .map((item) => item.slice(0, chars))
+            .slice(0, max)
+        : value,
+    z.array(z.string())
+  );
+}
+
 const ExecutionPlanSchema = z.object({
   operation: z.enum([
     "converse",
@@ -468,7 +507,7 @@ const ExecutionPlanSchema = z.object({
     "analyze_text",
     "visualize",
   ]),
-  operations: z.array(z.enum([
+  operations: z.preprocess((value) => (Array.isArray(value) ? value.slice(0, 4) : value), z.array(z.enum([
     "converse",
     "inspect_scope",
     "list_documents",
@@ -477,17 +516,17 @@ const ExecutionPlanSchema = z.object({
     "search_evidence",
     "analyze_text",
     "visualize",
-  ])).min(1).max(4).optional(),
+  ])).min(1)).optional(),
   scopeMode: z.enum(["complete", "focused"]),
-  refinedQuestion: z.string().min(1).max(1_000),
-  terms: z.array(z.string().min(1).max(100)).max(12).default([]),
-  retrievalQueries: z.array(z.string().min(1).max(240)).max(8).default([]),
-  evidenceNeeds: z.array(z.string().min(1).max(240)).max(8).default([]),
-  requestedFields: z.array(z.string().min(1).max(80)).max(12).default([]),
-  answerLanguage: z.string().min(1).max(80).default("same as user"),
+  refinedQuestion: clippedText(1_000).pipe(z.string().min(1)),
+  terms: clippedList(12, 100).default([]),
+  retrievalQueries: clippedList(8, 240).default([]),
+  evidenceNeeds: clippedList(8, 240).default([]),
+  requestedFields: clippedList(12, 80).default([]),
+  answerLanguage: clippedText(80).pipe(z.string().min(1)).default("same as user"),
   outputFormat: z.enum(["prose", "list", "table", "report"]).default("prose"),
   chartType: z.enum(["bar", "line", "pie", "table"]).default("bar"),
-  reason: z.string().max(500).default(""),
+  reason: clippedText(500).default(""),
   confidence: z.enum(["high", "medium", "low"]).default("medium"),
 });
 
@@ -541,19 +580,6 @@ function normalizeExecutionPlanCandidate(value: Record<string, unknown> | null):
     confidence,
   };
 }
-
-const RerankSchema = z.object({
-  paperIds: z.array(z.string().min(1)).max(20),
-  reason: z.string().max(500).default(""),
-  confidence: z.number().min(0).max(1).default(0.5),
-});
-
-const EvidenceSufficiencySchema = z.object({
-  sufficient: z.boolean(),
-  missingEvidenceNeeds: z.array(z.string().min(1).max(240)).max(6).default([]),
-  expansionQueries: z.array(z.string().min(1).max(240)).max(4).default([]),
-  confidence: z.number().min(0).max(1).default(0.5),
-});
 
 const CONFIDENCE_WORDS: Record<string, number> = {
   "very high": 0.95,
@@ -611,6 +637,19 @@ const stringListValue = z.preprocess((value) => {
   return items.slice(0, 12);
 }, z.array(z.string()).max(12));
 
+const RerankSchema = z.object({
+  paperIds: clippedList(20, 40),
+  reason: clippedText(500).default(""),
+  confidence: confidenceValue.default(0.5),
+});
+
+const EvidenceSufficiencySchema = z.object({
+  sufficient: booleanValue,
+  missingEvidenceNeeds: clippedList(6, 240).default([]),
+  expansionQueries: clippedList(4, 240).default([]),
+  confidence: confidenceValue.default(0.5),
+});
+
 export const GroundedAnswerSchema = z.object({
   answer: z.string().min(1),
   citedPaperIds: stringListValue.default([]),
@@ -655,6 +694,7 @@ const REPOSITORY_MEMORY_MAX_PAPERS = 500;
 const REPOSITORY_MEMORY_MAX_CHARS = 18_000;
 const REPOSITORY_PAPER_BRIEF_MAX_CHARS = 360;
 const DOCUMENT_ANALYSIS_BATCH_SIZE = 6;
+const DOCUMENT_ANALYSIS_CONCURRENCY = 3;
 
 /**
  * Whether the reader asked for a chart.
@@ -1517,6 +1557,34 @@ function wholePaper(row: PaperSectionCounts): number {
 }
 
 /** One row per paper: a second upload of the same paper is counted once. */
+/**
+ * One copy of each study. Two uploads of one paper - the same title and year,
+ * even when the files differ by a few hundred words - are one study to count,
+ * read and cite; the test repository has five such pairs, and answers cited
+ * both copies of each (2026-10-10).
+ */
+export function oneCopyEach<T extends { title: string; year: string }>(papers: T[]): T[] {
+  const seen = new Set<string>();
+  return papers.filter((paper) => {
+    const key = `${normalizeTitle(paper.title)}\u0000${paper.year}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** The context cut to some of its papers, with its counts recomputed for them. */
+function contextFor(context: RepositoryContext, papers: RepositoryPaper[], scopeLabel: string): RepositoryContext {
+  return {
+    ...context,
+    papers,
+    scopeLabel,
+    topicCounts: labelCounts(papers, (paper) => paper.topics),
+    keywordCounts: labelCounts(papers, (paper) => paper.keywords),
+    totalWords: papers.reduce((sum, paper) => sum + paper.totalWords, 0),
+  };
+}
+
 function distinctPapers(papers: RepositoryPaper[]): RepositoryPaper[] {
   const seen = new Set<string>();
   return papers.filter((paper) => {
@@ -1790,9 +1858,11 @@ function topicResult(
   };
 }
 
-interface SelectedEvidence {
+export interface SelectedEvidence {
   text: string;
   papers: RepositoryPaper[];
+  /** What the answer is given of each paper, which its citations quote from. */
+  readings: PaperReading[];
   candidateCount: number;
   repositoryCoverageCount: number;
   rerankerSource: "llm" | "fallback";
@@ -2055,7 +2125,7 @@ function repositoryStatisticsResult(
 }
 
 interface RepositoryQaOutput
-  extends Pick<RepositoryChatResult, "answer" | "citations" | "charts"> {
+  extends Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "passageSources"> {
   /** Caveats raised by the answer audit, surfaced to the reader. */
   auditLimitations?: string[];
   quality: {
@@ -2214,7 +2284,8 @@ export function expansionIsPossible(selectedIds: string[], scopedPaperCount: num
   return new Set(selectedIds).size < scopedPaperCount;
 }
 
-async function selectEvidence(
+/** The papers an answer reads, chosen as High chooses them; Max starts from the same choice. */
+export async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
   model?: string,
@@ -2262,6 +2333,10 @@ async function selectEvidence(
     // in-memory ranking stands as it is.
     candidates = (semantic ? fuseSemanticRanks(candidates, semantic) : candidates).slice(0, budgets.candidateLimit);
   }
+  // The better-ranked copy of a paper uploaded twice stands for both.
+  const yearOf = new Map(context.papers.map((paper) => [paper.paperId, paper.year]));
+  const kept = new Set(oneCopyEach(candidates.map((candidate) => ({ ...candidate, year: yearOf.get(candidate.paperId) ?? "" }))).map((candidate) => candidate.paperId));
+  candidates = candidates.filter((candidate) => kept.has(candidate.paperId));
   let selectedIds = candidates.slice(0, budgets.sourceLimit).map((candidate) => candidate.paperId);
   let rerankerSource: SelectedEvidence["rerankerSource"] = "fallback";
   let rerankerConfidence = 0.45;
@@ -2363,10 +2438,17 @@ async function selectEvidence(
           sufficiency.expansionQueries,
           Math.min(context.papers.length, budgets.candidateLimit)
         );
-        selectedIds = [...new Set([
-          ...selectedIds,
-          ...expanded.map((candidate) => candidate.paperId),
-        ])].slice(0, expandedLimit);
+        // What the first choice missed, not a refill: the second search used to
+        // fill up to twenty papers from the keyword ranking, which, once the
+        // reranker worked, buried its four chosen papers among sixteen it had
+        // passed over and read each in slices (2026-10-10).
+        const yearOfPaper = new Map(context.papers.map((paper) => [paper.paperId, paper.year]));
+        const added = oneCopyEach(
+          expanded
+            .filter((candidate) => !selectedIds.includes(candidate.paperId))
+            .map((candidate) => ({ ...candidate, year: yearOfPaper.get(candidate.paperId) ?? "" }))
+        ).slice(0, EXPANSION_PAPERS);
+        selectedIds = [...selectedIds, ...added.map((candidate) => candidate.paperId)].slice(0, expandedLimit);
         const mergedById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
         expanded.forEach((candidate) => mergedById.set(candidate.paperId, candidate));
         candidates = [...mergedById.values()];
@@ -2379,23 +2461,19 @@ async function selectEvidence(
     }
   }
 
-  const candidateById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
   const paperById = new Map(context.papers.map((paper) => [paper.paperId, paper]));
-  const selectedCandidates = selectedIds
-    .map((paperId) => candidateById.get(paperId))
-    .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
   const papers = selectedIds
     .map((paperId) => paperById.get(paperId))
     .filter((paper): paper is RepositoryPaper => Boolean(paper));
-  const detailedText = selectedCandidates
-    .map((candidate) => {
-      const paper = paperById.get(candidate.paperId);
-      return [
-        `[Paper ${candidate.paperId}] ${candidate.title} (${paper?.year ?? "Unknown"})`,
-        `Topics: ${paper ? [...paper.topics.keys()].slice(0, 8).join(", ") || "Not available" : "Not available"}`,
-        `Evidence excerpt: ${candidate.excerpt || "No extracted excerpt available."}`,
-      ].join("\n");
-    })
+  // Each chosen paper is read whole when the papers fit the effort's budget,
+  // and otherwise as its abstract plus the passages that answer the question.
+  const readings = readPapers(papers, queries, READING_BUDGET[effort]);
+  const detailedText = papers
+    .map((paper, index) => [
+      `[Paper ${paper.paperId}] ${paper.title} (${paper.year || "Unknown"}) - ${readings[index].whole ? "the whole paper" : "the parts that bear on the question"}`,
+      `Topics: ${[...paper.topics.keys()].slice(0, 8).join(", ") || "Not available"}`,
+      readings[index].text || "No text available.",
+    ].join("\n"))
     .join("\n\n");
   const text = [
     plan.retrievalMode === "focused" ? "" : corpusCoverageMap(context),
@@ -2403,8 +2481,9 @@ async function selectEvidence(
     detailedText,
   ].filter(Boolean).join("\n\n");
   return {
-    text: text.slice(0, plan.retrievalMode === "focused" ? 18_000 : 32_000),
+    text,
     papers,
+    readings,
     candidateCount: candidates.length,
     repositoryCoverageCount: context.papers.length,
     rerankerSource,
@@ -2456,9 +2535,17 @@ function deterministicEvidenceFallback(
  * characters, draft first, so for a repository-wide answer most of the batch
  * findings never reached the auditor and every claim about the rest looked
  * unsupported (found on the pilot). Evidence now has its own budget - the
- * synthesis's own for an exhaustive answer - and a cut is stated.
+ * synthesis's own for an exhaustive answer - and a cut is stated. Answers now
+ * read whole papers (paper-reading.ts, up to 240,000 characters at High), so
+ * the audit reads all of what the answer read.
  */
-export const AUDIT_EVIDENCE_CHARS = { focused: 16_000, exhaustive: 56_000 } as const;
+export const AUDIT_EVIDENCE_CHARS = { focused: 250_000, exhaustive: 250_000 } as const;
+
+/** Papers a second search may add to the reranker's choice. */
+export const EXPANSION_PAPERS = 4;
+
+/** How much of the previous answer a follow-up's writer reads. */
+export const FOLLOW_UP_ANSWER_CHARS = 8_000;
 
 export function auditEvidence(evidenceText: string, scopeMode: "focused" | "comparative" | "exhaustive"): string {
   const budget = scopeMode === "exhaustive" ? AUDIT_EVIDENCE_CHARS.exhaustive : AUDIT_EVIDENCE_CHARS.focused;
@@ -2736,9 +2823,17 @@ async function repositoryQaResult(
   );
   const allowedIds = evidence.papers.map((paper) => paper.paperId);
   const paperById = new Map(evidence.papers.map((paper) => [paper.paperId, paper]));
-  const history = (input.history ?? []).slice(-8).map((message) => ({
+  const passageSources: PassageSources = {
+    readings: new Map(evidence.readings.map((reading) => [reading.paperId, reading.text])),
+  };
+  // The answer a follow-up asks about ("the second study", "those two") is
+  // read as it was written, up to 8,000 characters; the turns before it stay
+  // short. Every turn was cut to 1,200, a fifth of a typical answer.
+  const recent = (input.history ?? []).slice(-8);
+  const lastAnswer = recent.map((message) => message.role).lastIndexOf("assistant");
+  const history = recent.map((message, index) => ({
     role: message.role,
-    content: message.content.slice(0, 1_200),
+    content: message.content.slice(0, index === lastAnswer ? FOLLOW_UP_ANSWER_CHARS : 1_200),
   }));
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
@@ -2843,6 +2938,7 @@ async function repositoryQaResult(
         citationForPaper(paper, "Cited in the grounded repository answer.")
       ),
       charts: [],
+      passageSources,
       auditLimitations: [],
       quality: {
         retrievalCandidateCount: evidence.candidateCount,
@@ -2914,6 +3010,7 @@ async function repositoryQaResult(
       citationForPaper(paper, "Cited in the grounded repository answer.")
     ),
     charts: [],
+    passageSources,
     auditLimitations,
     quality: {
       retrievalCandidateCount: evidence.candidateCount,
@@ -3083,6 +3180,7 @@ export async function planRepositoryExecution(
         "Use converse for clearly unrelated conversation that does not require repository evidence. Even in converse mode, remember that you are Papertrend, a research-paper knowledge assistant. " +
         "Use inspect_scope for repository metadata/count/status/year questions, including asking what is in the selected repository or folder; " +
         "list_documents for complete title or metadata listings; analyze_each_document when the reader wants something back about each document separately - one explanation, classification or summary per paper; " +
+        "analyze_each_document covers every paper in scope, so a question about some of the papers ('the intervention studies on writing: what did each do?') is search_evidence alone, which compares the papers that answer it. " +
         "aggregate_corpus for repository-wide topics, methods, trends, gaps or synthesis, including a request to summarise the repository as a whole. " +
         "A request to summarise the collection is one summary of the corpus, not one summary per paper: it is aggregate_corpus. Per-paper summaries are only what is wanted when the reader asks about each, every or per paper. " +
         "search_evidence for a focused evidence question; " +
@@ -3201,24 +3299,26 @@ function completeCoverage(context: RepositoryContext, returned: number): Reposit
  * when there is more than one section to tell apart, and when the answer does
  * not already introduce itself.
  */
-export function composeAnswerSection(label: string, answer: string, sectionCount: number): string {
+export function composeAnswerSection(label: string, answer: string, sectionCount: number, position = 1): string {
   const body = answer.trim();
-  if (sectionCount <= 1) return body;
+  // The first part is the answer itself and reads best without a label.
+  if (sectionCount <= 1 || position === 0) return body;
   if (/^\s*#{1,6}\s+\S/.test(body)) return body;
   return `## ${label}
 
 ${body}`;
 }
 
+/** A later part's heading, in the reader's words rather than the step's name. */
 const OPERATION_LABELS: Record<RepositoryOperation, string> = {
-  converse: "Conversation",
-  inspect_scope: "Repository scope",
-  list_documents: "Documents",
-  analyze_each_document: "Document analysis",
-  aggregate_corpus: "Corpus synthesis",
-  search_evidence: "Evidence answer",
-  analyze_text: "Text analysis",
-  visualize: "Visualization",
+  converse: "In short",
+  inspect_scope: "What is in scope",
+  list_documents: "The papers",
+  analyze_each_document: "Paper by paper",
+  aggregate_corpus: "Across the papers",
+  search_evidence: "What the papers say",
+  analyze_text: "Word counts",
+  visualize: "The chart",
 };
 
 /**
@@ -3304,51 +3404,163 @@ ${note}`,
   };
 }
 
+type ChartStepResult = Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
+
+/** A view of the papers as the dashboard groups them - by theme, method, year - for three papers or more. */
+async function corpusChartResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan,
+  corpus: InsightCorpus,
+  query: AskQuery | null
+): Promise<ChartStepResult> {
+  const outcome = await chatChartResult({
+    corpus,
+    question: input.prompt,
+    restated: execution.refinedQuestion,
+    scopeLabel: context.scopeLabel,
+    answerLanguage: execution.answerLanguage,
+    query,
+  });
+  const limitations: string[] = [];
+  if (corpus.duplicates.length > 0) {
+    limitations.push(`${corpus.duplicates.length === 1 ? "One paper looks like" : `${corpus.duplicates.length} papers look like`} a second upload of another and ${corpus.duplicates.length === 1 ? "is" : "are"} counted once in the chart.`);
+  }
+  return {
+    answer: outcome.answer,
+    citations: [],
+    charts: outcome.chart ? [outcome.chart] : [],
+    coverage: completeCoverage(context, corpus.papers.length),
+    limitations,
+  };
+}
+
+/**
+ * A chart read from the papers' text (chart-reading.ts): a value each paper
+ * reports, a paper's own figures, or their length, sections and wording.
+ * Null when the dashboard's view answers it better.
+ */
+async function readChartResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan,
+  read: ReadPlan
+): Promise<ChartStepResult | null> {
+  const legacy = legacyPlanForExecution(execution, input.prompt);
+  const covered = completeCoverage(context, context.papers.length);
+  const barOrTable = read.chart === "table" ? "table" : "bar";
+  if (read.kind === "sections") return { ...sectionWordCountResult(context, { ...legacy, needsChart: true }), coverage: covered };
+  if (read.kind === "length") return { ...wordCountResult(context, { ...legacy, intent: "word_count", terms: [], needsChart: true, chartType: barOrTable }), coverage: covered };
+  if (read.kind === "terms") return { ...wordCountResult(context, { ...legacy, intent: "word_count", terms: read.terms, needsChart: true, chartType: barOrTable }), coverage: covered };
+  if (read.kind === "keywords") return context.papers.length < MIN_PAPERS ? smallScopeChartResult(input.prompt, context, legacy) : null;
+
+  const thai = answerLanguageIsThai(execution.answerLanguage);
+  const effort = normalizeEffort(input.effort);
+  const papers = oneCopyEach(context.papers);
+  const copies = context.papers.length - papers.length;
+  if (read.kind === "paper_table" && papers.length > FIGURE_PAPERS) {
+    const answer = `A paper's own figures are read from its tables and results, for up to ${FIGURE_PAPERS} papers at a time, and ${papers.length} are in scope. Name the paper in the question, by its title, or attach it, and ask again.`;
+    return { answer: thai ? (await inThai([answer]))[0] : answer, citations: [], charts: [], coverage: completeCoverage(context, 0), limitations: [] };
+  }
+  reportChatProgress("reading_evidence");
+  const outcome: ReadChart =
+    read.kind === "values"
+      ? valueChart(await readValues({ papers, plan: read, question: input.prompt, effort, model: input.model }), read)
+      : await readFigures({ papers, plan: read, question: input.prompt, effort, model: input.model });
+  reportChatProgress("charting");
+
+  let [lead, title] = [outcome.lead, outcome.chart?.title ?? ""];
+  let limitations = [
+    ...outcome.limitations,
+    ...(copies > 0 ? [`${copies === 1 ? "One paper is a second copy" : `${copies} papers are second copies`} of another, with the same title and year, and ${copies === 1 ? "was" : "were"} read once.`] : []),
+  ];
+  if (thai) {
+    const translated = await inThai([lead, title, ...limitations]);
+    [lead, title] = translated;
+    limitations = translated.slice(2);
+  }
+  const byId = new Map(papers.map((paper) => [paper.paperId, paper]));
+  const quotes = new Map(outcome.sources.filter((source) => source.quote).map((source) => [source.paperId, source.quote]));
+  return {
+    answer: lead,
+    citations: outcome.citedPaperIds
+      .map((id) => byId.get(id))
+      .filter((paper): paper is RepositoryPaper => Boolean(paper))
+      .map((paper) => citationForPaper(paper, quotes.has(paper.paperId) ? `“${quotes.get(paper.paperId)}”` : `Read for ${read.field}.`)),
+    charts: outcome.chart
+      ? [
+          {
+            chartType: outcome.chart.chartType,
+            title,
+            scopeLabel: context.scopeLabel,
+            metric: read.kind === "values" ? "reported_value" : "paper_figures",
+            xKey: "label",
+            yKeys: outcome.chart.yKeys,
+            data: outcome.chart.data,
+            sources: outcome.sources,
+            planner: { source: "llm", reason: `Read from the papers' text: ${read.field}.`, confidence: "high", warnings: [] },
+          },
+        ]
+      : [],
+    coverage: completeCoverage(context, outcome.citedPaperIds.length),
+    limitations,
+  };
+}
+
+/**
+ * Chart mode's chart. One planning call (chart-reading.ts) chooses between the
+ * dashboard's views of the papers and reading the papers for what they
+ * report; without a plan, the dashboard's view as before. Words in each
+ * section need no plan.
+ */
 async function visualizeResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
-): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+): Promise<ChartStepResult> {
   reportChatProgress("charting");
-  if (context.papers.length > 0 && context.papers.length < MIN_PAPERS) {
-    return smallScopeChartResult(input.prompt, context, legacyPlanForExecution(execution, input.prompt));
-  }
+  const legacy = legacyPlanForExecution(execution, input.prompt);
   if (asksForSectionWordCounts(input.prompt, [])) {
-    const plan = legacyPlanForExecution(execution, input.prompt);
-    return { ...sectionWordCountResult(context, { ...plan, needsChart: true }), coverage: completeCoverage(context, context.papers.length) };
+    return { ...sectionWordCountResult(context, { ...legacy, needsChart: true }), coverage: completeCoverage(context, context.papers.length) };
   }
-  const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
-  const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
-  try {
-    const corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, paperIds);
-    const outcome = await chatChartResult({
-      corpus,
-      question: input.prompt,
-      restated: execution.refinedQuestion,
-      scopeLabel: context.scopeLabel,
-      answerLanguage: execution.answerLanguage,
-    });
-    const limitations: string[] = [];
-    if (corpus.duplicates.length > 0) {
-      limitations.push(`${corpus.duplicates.length === 1 ? "One paper looks like" : `${corpus.duplicates.length} papers look like`} a second upload of another and ${corpus.duplicates.length === 1 ? "is" : "are"} counted once in the chart.`);
+  const small = context.papers.length > 0 && context.papers.length < MIN_PAPERS;
+  let corpus: InsightCorpus | null = null;
+  if (!small) {
+    const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
+    const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
+    try {
+      corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, paperIds);
+    } catch (error) {
+      console.warn("chat_chart_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     }
-    return {
-      answer: outcome.answer,
-      citations: [],
-      charts: outcome.chart ? [outcome.chart] : [],
-      coverage: completeCoverage(context, corpus.papers.length),
-      limitations,
-    };
-  } catch (error) {
-    console.warn("chat_chart_failed", { message: error instanceof Error ? error.message : "unknown_error" });
-    return {
-      answer: "The chart could not be drawn just now: the papers' themes could not be read. Try again in a moment.",
-      citations: [],
-      charts: [],
-      coverage: completeCoverage(context, 0),
-      limitations: ["The chart step failed before drawing anything."],
-    };
   }
+
+  const prompt = input.prompt.trim();
+  if (context.papers.length > 0 && prompt && prompt !== BLANK_CHART_REQUEST) {
+    const restated = execution.refinedQuestion?.trim();
+    const plan = await planChart({
+      question: restated && restated !== prompt ? `${prompt}\n(Restated with the conversation: ${restated})` : prompt,
+      scopeLabel: context.scopeLabel,
+      papers: context.papers,
+      vocabulary: corpus && corpus.papers.length >= MIN_PAPERS ? askVocabulary(corpus) : null,
+    });
+    if (plan?.tool === "read_papers") {
+      const read = await readChartResult(input, context, execution, plan.read);
+      if (read) return read;
+    } else if (plan?.tool === "build_view" && corpus) {
+      return corpusChartResult(input, context, execution, corpus, plan.query);
+    }
+  }
+
+  if (small) return smallScopeChartResult(input.prompt, context, legacy);
+  if (corpus) return corpusChartResult(input, context, execution, corpus, null);
+  return {
+    answer: "The chart could not be drawn just now: the papers' themes could not be read. Try again in a moment.",
+    citations: [],
+    charts: [],
+    coverage: completeCoverage(context, 0),
+    limitations: ["The chart step failed before drawing anything."],
+  };
 }
 
 async function runMultiCapabilityPlan(input: RepositoryChatInput, context: RepositoryContext, execution: RepositoryExecutionPlan) {
@@ -3358,19 +3570,36 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
   const limitations = new Set<string>();
   const coverages: RepositoryCoverage[] = [];
   const quality: Partial<RepositoryQaOutput["quality"]> = {};
+  const passageSources: PassageSources = { readings: new Map(), claims: new Map() };
+  // An evidence answer with a per-paper analysis: the answer goes first, and
+  // the per-paper part covers the papers it draws on. Asked to compare "the
+  // intervention studies that tried to improve writing: what did each do",
+  // the per-paper part analysed all 41 papers in scope after the answer -
+  // seven more calls, two more minutes and 42,000 characters, most about
+  // papers the question was not about (the test repository, 2026-10-10).
+  const paired = execution.operations.includes("search_evidence") && execution.operations.includes("analyze_each_document");
+  const operations: RepositoryOperation[] = paired
+    ? ["search_evidence", ...execution.operations.filter((operation) => operation !== "search_evidence")]
+    : execution.operations;
+  let answered: RepositoryPaper[] = [];
 
-  for (const operation of execution.operations) {
+  for (const operation of operations) {
     const stepExecution: RepositoryExecutionPlan = {
       ...execution,
       operation,
       operations: [operation],
     };
     const stepPlan = legacyPlanForExecution(stepExecution, input.prompt);
-    let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
+    let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations" | "passageSources">;
 
     if (operation === "converse") result = await converseResult(input, context, stepExecution);
     else if (operation === "list_documents") result = listDocumentsResult(context);
-    else if (operation === "analyze_each_document") result = await analyzeEachDocumentResult(input, context, stepExecution);
+    else if (operation === "analyze_each_document") {
+      const relevant = paired && answered.length > 0
+        ? contextFor(context, answered, `the ${answered.length === 1 ? "paper" : `${answered.length} papers`} the answer draws on`)
+        : context;
+      result = await analyzeEachDocumentResult(input, relevant, stepExecution);
+    }
     else if (operation === "aggregate_corpus") result = await aggregateCorpusResult(input, context, stepExecution);
     else if (operation === "inspect_scope") result = {
       ...repositoryStatisticsResult(context, stepPlan, input.prompt),
@@ -3396,10 +3625,13 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     else {
       const qa = await repositoryQaResult(input, context, stepPlan);
       Object.assign(quality, qa.quality);
+      const cited = new Set(qa.citations.filter((citation) => citation.sourceType === "paper").map((citation) => citation.paperId));
+      answered = oneCopyEach(context.papers.filter((paper) => cited.has(paper.paperId)));
       result = {
         answer: qa.answer,
         citations: qa.citations,
         charts: qa.charts,
+        passageSources: qa.passageSources,
         coverage: {
           eligiblePapers: context.papers.length,
           processedPapers: qa.quality.selectedEvidenceCount,
@@ -3414,12 +3646,20 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     }
 
     sections.push(
-      composeAnswerSection(OPERATION_LABELS[operation], result.answer, execution.operations.length)
+      composeAnswerSection(OPERATION_LABELS[operation], result.answer, operations.length, sections.length)
     );
     result.citations.forEach((citation) => citations.set(`${citation.paperId}:${citation.href}`, citation));
     charts.push(...result.charts);
     result.limitations?.forEach((limitation) => limitations.add(limitation));
     if (result.coverage) coverages.push(result.coverage);
+    // Two steps may each read the same paper; its quotes may come from either.
+    result.passageSources?.readings.forEach((text, paperId) => {
+      const earlier = passageSources.readings.get(paperId);
+      passageSources.readings.set(paperId, earlier && earlier !== text ? `${earlier}\n[…]\n${text}` : text);
+    });
+    result.passageSources?.claims?.forEach((about, paperId) => {
+      passageSources.claims?.set(paperId, [...(passageSources.claims.get(paperId) ?? []), ...about]);
+    });
   }
 
   const eligiblePapers = context.papers.length;
@@ -3427,6 +3667,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     answer: sections.join("\n\n"),
     citations: [...citations.values()],
     charts,
+    passageSources,
     coverage: {
       eligiblePapers,
       processedPapers: Math.max(0, ...coverages.map((coverage) => coverage.processedPapers)),
@@ -3536,15 +3777,19 @@ export function buildDocumentAnalysisFallbackAnswer(
   ].join("\n\n");
 }
 
-function documentAnalysisEvidence(paper: RepositoryPaper) {
+/**
+ * One paper as a per-paper explanation reads it: the whole paper when the
+ * batch fits the effort's reading budget (paper-reading.ts), else its abstract
+ * and the passages that bear on the request. It used to be the first 900-1,200
+ * characters of four stored parts.
+ */
+function documentAnalysisEvidence(paper: RepositoryPaper, reading: PaperReading) {
   return {
     paperId: paper.paperId,
     title: paper.title,
     year: paper.year,
-    abstract: paper.abstract.slice(0, 1_200),
-    methods: paper.methods.slice(0, 900),
-    results: paper.results.slice(0, 1_100),
-    conclusion: paper.conclusion.slice(0, 900),
+    read: reading.whole ? "the whole paper" : "excerpts; […] marks text left out",
+    text: reading.text,
     topics: [...paper.topics.keys()].slice(0, 10),
     keywords: [...paper.keywords.keys()].slice(0, 12),
   };
@@ -3566,18 +3811,35 @@ function validDocumentAnalysisBatch(
   return candidate.items.every((item) => answerMatchesRequestedLanguage(item.analysis, answerLanguage));
 }
 
-async function generateDocumentAnalysisBatch(
+/** What a per-paper explanation reads of each paper in one batch. */
+function documentAnalysisReadings(
   input: RepositoryChatInput,
   execution: RepositoryExecutionPlan,
   papers: RepositoryPaper[]
+): PaperReading[] {
+  return readPapers(
+    papers,
+    [execution.refinedQuestion, ...execution.retrievalQueries, ...execution.evidenceNeeds, ...execution.requestedFields],
+    READING_BUDGET[normalizeEffort(input.effort)]
+  );
+}
+
+async function generateDocumentAnalysisBatch(
+  input: RepositoryChatInput,
+  execution: RepositoryExecutionPlan,
+  papers: RepositoryPaper[],
+  readings: PaperReading[]
 ): Promise<z.infer<typeof DocumentAnalysisBatchSchema> | null> {
-  const evidence = papers.map(documentAnalysisEvidence);
+  const effort = normalizeEffort(input.effort);
+  const evidence = papers.map((paper, index) => documentAnalysisEvidence(paper, readings[index]));
   const system = buildPapertrendSystemPrompt("grounded_answer", [
     "Analyze every supplied paper exactly once and directly satisfy the user's requested dimensions. " +
       "The overview must answer the cross-paper intent, including meaningful similarities and differences when comparison is requested. " +
       "Every claim in the overview about what a paper did or found must name that paper in the sentence, so a reader can check it; " +
       "a claim that holds across several papers must name them or say how many of them it covers. " +
       "Each item must give a substantive, evidence-bounded explanation of that paper, and must state plainly which requested dimensions its evidence does not cover. " +
+      "Each paper's text says whether it is the whole paper or excerpts. From excerpts, say a detail is not in the parts read, never that the paper does not report it. " +
+      "Be specific: name the participants and their number, the instruments, the analysis, and the figures the paper reports, as the paper states them. " +
       `${ANSWER_FORMAT_RULES} ` +
       "Do not expose database IDs in prose; name papers by title. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
       "Return JSON only: {overview, items:[{paperId, analysis}]}. Preserve each supplied paperId only in its JSON paperId field, include every supplied ID exactly once, and write overview and every analysis in the required answer language.",
@@ -3611,7 +3873,7 @@ async function generateDocumentAnalysisBatch(
         0.15,
         input.model,
         attempt === 0 ? "CHAT_DOCUMENT_ANALYSIS" : "CHAT_DOCUMENT_ANALYSIS_REPAIR",
-        writingBudget(STEP_BUDGETS.documentAnalysis(papers.length), normalizeEffort(input.effort))
+        writingBudget(STEP_BUDGETS.documentAnalysis(papers.length), effort)
       );
       raw = completion?.content?.trim() ?? "";
       const parsed = DocumentAnalysisBatchSchema.safeParse(extractJsonObject(raw));
@@ -3700,14 +3962,7 @@ export function namedPaperContext(
   const named = papersNamedInQuestion(prompt, context.papers);
   if (named.length === 0 || named.length === context.papers.length) return null;
   const distinctTitles = new Set(named.map((paper) => normalizeTitle(paper.title))).size;
-  return {
-    ...context,
-    papers: named,
-    scopeLabel: distinctTitles === 1 ? `“${shortLabel(named[0].title, 90)}”` : `the ${distinctTitles} papers named`,
-    topicCounts: labelCounts(named, (paper) => paper.topics),
-    keywordCounts: labelCounts(named, (paper) => paper.keywords),
-    totalWords: named.reduce((sum, paper) => sum + paper.totalWords, 0),
-  };
+  return contextFor(context, named, distinctTitles === 1 ? `“${shortLabel(named[0].title, 90)}”` : `the ${distinctTitles} papers named`);
 }
 
 /**
@@ -3765,16 +4020,22 @@ async function analyzeEachDocumentResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
-): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
-  const papers = [...context.papers].sort((left, right) => left.title.localeCompare(right.title));
+): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations" | "passageSources">> {
+  const papers = oneCopyEach(context.papers).sort((left, right) => left.title.localeCompare(right.title));
   const missingExtraction = papers.filter((paper) => !paper.abstract && !paper.methods && !paper.results && !paper.conclusion).length;
   const batches: RepositoryPaper[][] = [];
   for (let index = 0; index < papers.length; index += DOCUMENT_ANALYSIS_BATCH_SIZE) {
     batches.push(papers.slice(index, index + DOCUMENT_ANALYSIS_BATCH_SIZE));
   }
+  const readings = batches.map((batch) => documentAnalysisReadings(input, execution, batch));
+  // Three batches at a time: one after another, a 39-paper request waited for seven calls in a row.
   const generated = [] as Array<{ papers: RepositoryPaper[]; result: z.infer<typeof DocumentAnalysisBatchSchema> | null }>;
-  for (const batch of batches) {
-    generated.push({ papers: batch, result: await generateDocumentAnalysisBatch(input, execution, batch) });
+  for (let start = 0; start < batches.length; start += DOCUMENT_ANALYSIS_CONCURRENCY) {
+    const wave = batches.slice(start, start + DOCUMENT_ANALYSIS_CONCURRENCY);
+    const results = await Promise.all(
+      wave.map((batch, offset) => generateDocumentAnalysisBatch(input, execution, batch, readings[start + offset]))
+    );
+    wave.forEach((batch, index) => generated.push({ papers: batch, result: results[index] }));
   }
   const providerFallbackCount = generated.filter((batch) => !batch.result).reduce((total, batch) => total + batch.papers.length, 0);
   const rawOverviewParts = generated
@@ -3783,29 +4044,36 @@ async function analyzeEachDocumentResult(
   const overviewParts = await Promise.all(
     rawOverviewParts.map((overview) => attributeOverview(overview, papers, execution, input.model))
   );
+  // A paper's section speaks for it without a citation marker (ids are kept
+  // out of the prose), so its passage is quoted for what its section says.
+  const claims = new Map<string, string[]>();
   const detailSections = generated.flatMap((batch) => {
     const byId = new Map(batch.result?.items.map((item) => [item.paperId, item.analysis.trim()]) ?? []);
     return batch.papers.map((paper) => {
       const analysis = byId.get(paper.paperId) || concisePaperExplanation(paper, execution.answerLanguage);
+      claims.set(paper.paperId, [analysis]);
       return `### ${papers.indexOf(paper) + 1}. ${paper.title}\n${formatPaperReferencesForReaders(analysis, papers)}`;
     });
   });
   const thai = answerLanguageIsThai(execution.answerLanguage);
-  const answer = [
-    thai ? "## \u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e42\u0e14\u0e22\u0e2a\u0e23\u0e38\u0e1b" : "## Direct answer",
-    overviewParts.length > 0
-      ? overviewParts.map((overview) => formatPaperReferencesForReaders(overview, papers)).join("\n\n")
-      : thai
-        ? `\u0e23\u0e30\u0e1a\u0e1a\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e15\u0e32\u0e21\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15\u0e17\u0e35\u0e48\u0e40\u0e25\u0e37\u0e2d\u0e01 \u0e41\u0e25\u0e30\u0e41\u0e2a\u0e14\u0e07\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e17\u0e35\u0e48\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e44\u0e14\u0e49\u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07`
-        : `All ${papers.length} selected papers were processed. The complete evidence-bounded detail is organized by paper below.`,
-    "",
-    thai ? "## \u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21" : "## Paper-by-paper detail",
-    thai
-      ? `\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a **${papers.length} \u0e08\u0e32\u0e01 ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23** \u0e17\u0e35\u0e48\u0e2d\u0e22\u0e39\u0e48\u0e43\u0e19\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15`
-      : `Processed **${papers.length} of ${papers.length} eligible papers**.`,
-    "",
-    ...detailSections,
-  ].join("\n\n");
+  // One paper is one explanation: its overview, then the detail, without a
+  // paper-by-paper scaffold around a single paper.
+  const single = papers.length === 1 && overviewParts.length > 0 && Boolean(generated[0]?.result?.items[0]);
+  const answer = single
+    ? [
+        formatPaperReferencesForReaders(overviewParts[0], papers),
+        formatPaperReferencesForReaders(generated[0].result!.items[0].analysis.trim(), papers),
+      ].join("\n\n")
+    : [
+        overviewParts.length > 0
+          ? overviewParts.map((overview) => formatPaperReferencesForReaders(overview, papers)).join("\n\n")
+          : thai
+            ? `\u0e23\u0e30\u0e1a\u0e1a\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e15\u0e32\u0e21\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15\u0e17\u0e35\u0e48\u0e40\u0e25\u0e37\u0e2d\u0e01 \u0e41\u0e25\u0e30\u0e41\u0e2a\u0e14\u0e07\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e17\u0e35\u0e48\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e44\u0e14\u0e49\u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07`
+            : `All ${papers.length} selected papers were processed. The complete evidence-bounded detail is organized by paper below.`,
+        "",
+        thai ? "## \u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21" : "## Paper by paper",
+        ...detailSections,
+      ].join("\n\n");
   const limitations: string[] = [];
   if (missingExtraction > 0) {
     limitations.push(thai
@@ -3823,6 +4091,10 @@ async function analyzeEachDocumentResult(
     charts: [],
     coverage: completeCoverage(context, papers.length),
     limitations,
+    passageSources: {
+      readings: new Map(readings.flat().map((reading) => [reading.paperId, reading.text])),
+      claims,
+    },
   };
 }
 
@@ -3966,9 +4238,11 @@ async function themeStoreFor(context: RepositoryContext): Promise<ThemeStore | n
 
 async function aggregateCorpusResult(
   input: RepositoryChatInput,
-  context: RepositoryContext,
+  scope: RepositoryContext,
   execution: RepositoryExecutionPlan
 ): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+  // One copy of each study: a summary cited both uploads of a paper as two sources.
+  const context = contextFor(scope, oneCopyEach(scope.papers), scope.scopeLabel);
   const batches: RepositoryPaper[][] = [];
   for (let index = 0; index < context.papers.length; index += 10) {
     batches.push(context.papers.slice(index, index + 10));
@@ -4181,7 +4455,11 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     }
   }
 
-  const result = await runRepositoryChatWithContext(input, context);
+  const { passageSources, ...result } = await runRepositoryChatWithContext(input, context);
+  result.answer = withoutOpeningLabel(result.answer);
+  // Quoted from the answer as it is final, so each marker's passage belongs to
+  // the marker the reader sees; cached with it, so a repeat carries them too.
+  if (passageSources) result.citations = attachCitationPassages(result.answer, result.citations, passageSources);
   // Only a clean answer is kept: one with a limitation - a fallback, a check
   // that did not run, a gap - would be served again after the cause was gone.
   const clean = (result.limitations ?? []).length === 0;
@@ -4359,6 +4637,7 @@ async function runRepositoryChatWithContext(
       answer: result.answer,
       citations: result.citations,
       charts: result.charts,
+      passageSources: result.passageSources,
       plan,
       execution,
       coverage: result.coverage,
@@ -4384,6 +4663,7 @@ async function runRepositoryChatWithContext(
       answer: result.answer,
       citations: result.citations,
       charts: result.charts,
+      passageSources: result.passageSources,
       plan,
       execution,
       coverage: {

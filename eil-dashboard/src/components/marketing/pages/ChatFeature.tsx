@@ -22,15 +22,8 @@ const MODELS = [
     name: "GPT-6 Luna",
     maker: "OpenAI",
     Mark: OpenAIIcon,
-    role: "Plans, searches, chooses, writes and checks chat answers. Writes deep research reports.",
+    role: "Plans, searches, chooses, writes and checks chat answers. At Max, reads each chosen paper in full and writes from what it quotes.",
     why: "As well grounded as the model it replaced on a 41-paper test repository, for about a third of the cost.",
-  },
-  {
-    name: "Gemini 3.8 Flash",
-    maker: "Google",
-    Mark: GeminiIcon,
-    role: "Checks every sentence of a deep research report against its evidence.",
-    why: "A different model family from the writer: a second opinion, not an echo.",
   },
   {
     name: "Gemini 3.1 Flash-Lite",
