@@ -170,6 +170,36 @@ test("markup the reader cannot see sends a confident answer to the review, and a
   assert.equal(clean.diagnostics.faithfulnessChecked, false);
 });
 
+test("a cited paper carries the passage its sentence rests on, from the text the answer read", async () => {
+  const { ask, script, ids, peerFeedback } = await repository();
+  script((call) =>
+    call.taskName === "CHAT_SYNTHESIS"
+      ? { answer: `Students who exchanged peer feedback revised their drafts more often [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 }
+      : null
+  );
+  const focused = await ask(QUESTION, { executionPlan: plan("search_evidence", "focused", QUESTION) });
+  const [citation] = focused.citations;
+  assert.equal(citation.quote, "Students who exchanged peer feedback revised their second drafts more often, and revision quality improved.");
+  assert.deepEqual(citation.passages?.map((passage) => passage.at), [0], "the answer's one marker");
+  assert.equal("passageSources" in focused, false, "what the answer read is not handed on");
+
+  // A paper-by-paper answer cites no marker: each paper is quoted for its own section.
+  const analyses = [
+    "Students who exchanged peer feedback revised their drafts more often.",
+    "Retention of new words improved after eight weeks of daily app use.",
+    "Rubric use varied widely between the schools surveyed.",
+  ];
+  script((call) =>
+    call.taskName === "CHAT_DOCUMENT_ANALYSIS"
+      ? { overview: "The three papers study feedback, vocabulary and assessment.", items: ids.map((paperId, index) => ({ paperId, analysis: analyses[index] })) }
+      : null
+  );
+  const each = await ask("Explain each paper", { executionPlan: plan("analyze_each_document", "complete", "Explain each paper") });
+  const quotes = new Map(each.citations.map((entry) => [entry.paperId, entry.quote]));
+  assert.match(quotes.get(ids[1]) ?? "", /Retention of new words improved after eight weeks/);
+  assert.match(quotes.get(ids[2]) ?? "", /Rubric use varied widely between schools/);
+});
+
 test("an answer in several parts never stacks a heading on a heading", async () => {
   const { ask, script, peerFeedback } = await repository();
   const twoParts = { ...plan("list_documents", "focused", QUESTION), operations: ["list_documents", "search_evidence"] as RepositoryExecutionPlan["operations"] };

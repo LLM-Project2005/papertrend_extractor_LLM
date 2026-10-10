@@ -3,7 +3,7 @@
 import { useDismiss } from "@/hooks/useDismiss";
 import Link from "next/link";
 import PaperLink from "@/components/workspace/PaperLink";
-import { parsePaperHref } from "@/lib/paper-address";
+import { libraryPaperHref, parsePaperHref } from "@/lib/paper-address";
 import {
   FormEvent,
   KeyboardEvent,
@@ -38,8 +38,14 @@ import {
   ANSWER_META_CLASS,
   ANSWER_META_SM_CLASS,
 } from "@/lib/answer-typography";
-import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
-import { citationPaperId, markCitations, type CitationSource } from "@/lib/answer-citations";
+import { AssistantAnswer, passageTarget, renderRichMessage } from "@/components/chat/AnswerBody";
+import {
+  citationPaperId,
+  citationPassageFields,
+  markCitations,
+  type CitationPassageFields,
+  type CitationSource,
+} from "@/lib/answer-citations";
 import { isV2Session } from "@/lib/deep-research/types";
 import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
 import ThinkingOrb, { orbStateForStage } from "@/components/ui/ThinkingOrb";
@@ -130,7 +136,7 @@ import type {
   WorkspaceThreadSummary,
 } from "@/types/research";
 
-interface Citation {
+interface Citation extends CitationPassageFields {
   paperId: number | string;
   title: string;
   year: string;
@@ -425,9 +431,14 @@ const localMessage = (
 });
 
 function CitationLink({ citation, compact = false, number }: { citation: Citation; compact?: boolean; number?: number }) {
+  // The full card quotes the passage behind the paper's citation and opens the
+  // PDF with it marked; the compact row under an answer stays one line.
+  const fields = citationPassageFields(citation);
+  const quoted = !compact && citation.sourceType !== "web" && fields.quote ? { quote: fields.quote, section: fields.section } : null;
+  const inPaper = quoted ? passageTarget(citation.href, quoted) : null;
   return (
     <SourceLink
-      href={safeCitationHref(citation.href)}
+      href={inPaper ? libraryPaperHref(inPaper) : safeCitationHref(citation.href)}
       className={`flex items-start gap-2.5 border border-slate-200 bg-white text-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a] ${
         compact ? "rounded-lg px-3 py-2" : "rounded-xl px-3.5 py-3"
       }`}
@@ -448,6 +459,14 @@ function CitationLink({ citation, compact = false, number }: { citation: Citatio
         {!compact && citation.reason ? (
           <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>
             {citation.reason}
+          </span>
+        ) : null}
+        {quoted ? (
+          <span className="mt-1.5 block border-l-2 border-slate-300 pl-2.5 dark:border-[#3a3a3a]">
+            <q className={`line-clamp-4 ${ANSWER_META_CLASS} text-slate-700 dark:text-[#d4d4d4]`}>{quoted.quote}</q>
+            {quoted.section ? (
+              <span className={`block ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>{quoted.section}</span>
+            ) : null}
           </span>
         ) : null}
       </span>

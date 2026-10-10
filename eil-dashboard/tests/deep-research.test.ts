@@ -357,7 +357,11 @@ test("a report downloads as Markdown with its sources listed", () => {
   const final = finalizeReport("Scores rose [E1]. Guidance was issued [E2].", EVIDENCE_MAP);
   const markdown = reportMarkdown(final.text, final.citations);
   assert.match(markdown, /Scores rose \[1\]\./);
-  assert.match(markdown, /## Sources\n\n1\. Dynamic Assessment in a Thai EFL Classroom \(2021\)\.\n2\. Ministry guidance\. https:\/\/example\.org\/p/);
+  // The paper's entry quotes the passage the sentence was written from; a web page has none.
+  assert.match(
+    markdown,
+    /## Sources\n\n1\. Dynamic Assessment in a Thai EFL Classroom \(2021\)\.\n {3}> learners' scores rose from 12 to 18 across the semester\n2\. Ministry guidance\. https:\/\/example\.org\/p/
+  );
   assert.equal(reportFileName("Dynamic assessment: Thai EFL!"), "dynamic-assessment-thai-efl.md");
 });
 

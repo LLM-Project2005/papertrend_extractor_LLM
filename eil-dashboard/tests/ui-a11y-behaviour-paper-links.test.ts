@@ -183,6 +183,20 @@ test("a chat citation opens its paper in place, and a web source leaves for the 
   assert.deepEqual(parsePaperHref(evidence as string), { runId: null, paperId: "42", tab: "evidence" }, "pinned, it opens the paper's evidence in place");
   marker.unmount();
 
+  // With the passage behind its sentence, it opens the PDF on that passage instead.
+  const quoted = mount(CitationMarker, {
+    numbers: [1],
+    at: 1,
+    sources: [{
+      number: 1, paperId: "42", title: "Peer feedback", year: "2021", href: "/workspace/library?paperId=42",
+      quote: "Drafts improved after two rounds.",
+      passages: [{ at: 0, quote: "Drafts improved after two rounds." }, { at: 1, quote: "Sixty students took part." }],
+    }],
+  });
+  click(only(quoted.tree, { "aria-label": "Source: Peer feedback (2021)" }));
+  assert.deepEqual(paperLinks(quoted.tree), [{ runId: null, paperId: "42", tab: "preview", quote: "Sixty students took part." }], "this marker's own passage");
+  quoted.unmount();
+
   globalThis.__auditfixWorkspace = { currentProject: PROJECT, hasActiveProject: true, selectedProjectId: PROJECT.id, allProjects: ALL_PROJECTS, selectedYears: [], selectedTracks: [], searchQuery: "" };
   globalThis.__auditfixPathname = "/workspace/chat";
   dom.window.respond = (url) => {

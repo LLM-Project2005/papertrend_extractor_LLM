@@ -17,9 +17,15 @@ import { safeCitationHref } from "@/lib/safe-citation-href";
 import {
   foldPoint,
   citationPaperId,
+  citationPassageFields,
   markCitations,
+  numberCitationMarkers,
+  passageForMarker,
+  type CitationPassage,
+  type CitationPassageFields,
   type CitationSource,
 } from "@/lib/answer-citations";
+import { parsePaperHref, type PaperTarget } from "@/lib/paper-address";
 import {
   ANSWER_BODY_CLASS,
   ANSWER_CELL_CLASS,
@@ -27,7 +33,7 @@ import {
   ANSWER_META_CLASS,
 } from "@/lib/answer-typography";
 
-export interface AnswerCitation {
+export interface AnswerCitation extends CitationPassageFields {
   paperId: number | string;
   title: string;
   year: string;
@@ -47,8 +53,12 @@ export interface AnswerCitation {
  * Clicking the number pins the card open with a link to each paper's
  * evidence, where the passage behind the claim is highlighted in the PDF.
  * A click used to do nothing at all.
+ *
+ * When the answer found the passage behind this marker's sentence
+ * (citation-passages.ts), the card quotes it, and the link opens the paper's
+ * PDF with that passage marked rather than the paper's evidence list.
  */
-export function CitationMarker({ numbers, sources }: { numbers: number[]; sources: CitationSource[] }) {
+export function CitationMarker({ numbers, sources, at }: { numbers: number[]; sources: CitationSource[]; at?: number }) {
   const [pinned, setPinned] = useState(false);
   const containerRef = React.useRef<HTMLSpanElement>(null);
   React.useEffect(() => {
@@ -74,6 +84,10 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
   const label = referenced
     .map((source) => `${source.title}${source.year && source.year !== "Unknown" ? ` (${source.year})` : ""}`)
     .join("; ");
+  const passages = new Map(
+    referenced.map((source) => [source.paperId, isWebSource(source) ? null : passageForMarker(source, at)])
+  );
+  const quoted = [...passages.values()].some(Boolean);
 
   return (
     <span ref={containerRef} className="group relative inline-block align-baseline">
@@ -89,18 +103,22 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
       <span
         role={pinned ? "group" : "tooltip"}
         aria-label={pinned ? "Cited papers" : undefined}
-        className={`absolute bottom-full left-1/2 z-30 mb-2 w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4] ${
-          pinned ? "block" : "pointer-events-none hidden group-focus-within:block group-hover:block"
+        // A quote needs a wider card to read as prose; pinned, a long one scrolls.
+        className={`absolute bottom-full left-1/2 z-30 mb-2 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4] ${
+          pinned ? "block max-h-[60vh] overflow-y-auto" : "pointer-events-none hidden group-focus-within:block group-hover:block"
         }`}
       >
         {referenced.map((source) => {
           const webPage = isWebSource(source);
+          const passage = passages.get(source.paperId) ?? null;
+          const inPaper = passage ? passageTarget(source.href, passage) : null;
           return (
           <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
             <span className="block font-semibold text-slate-900 dark:text-white">{source.title}</span>
             <span className="block text-slate-600 dark:text-[#8e8e8e]">
               {webPage ? `Web page · ${webHost(source.href)}` : source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
             </span>
+            {passage ? <PassageQuote passage={passage} clamp={!pinned} /> : null}
             {pinned && webPage ? (
               <a
                 href={safeCitationHref(source.href)}
@@ -110,6 +128,13 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
               >
                 Open the page
               </a>
+            ) : pinned && inPaper ? (
+              <PaperLink
+                paper={inPaper}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
+              >
+                Show in paper
+              </PaperLink>
             ) : pinned && source.href ? (
               <PaperLink
                 paper={evidenceHref(source.href)}
@@ -124,6 +149,28 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
       </span>
     </span>
   );
+}
+
+/**
+ * The passage a citation quotes, in its card. The card sits inside a sentence,
+ * so this is built of inline elements shown as blocks: a <blockquote> inside a
+ * <p> is invalid markup. Unpinned it shows the opening lines; pinned, all of it.
+ */
+function PassageQuote({ passage, clamp }: { passage: CitationPassage; clamp: boolean }) {
+  return (
+    <span className="mt-2 block border-l-2 border-sky-300 pl-2.5 dark:border-sky-700">
+      <q className={`block text-slate-800 dark:text-[#e5e5e5] ${clamp ? "line-clamp-5" : ""}`}>{passage.quote}</q>
+      {passage.section ? (
+        <span className="mt-0.5 block text-slate-600 dark:text-[#8e8e8e]">{passage.section}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The cited paper opened on its PDF with the passage marked, or null when the link names no paper. */
+export function passageTarget(href: string, passage: CitationPassage): PaperTarget | null {
+  const target = parsePaperHref(safeCitationHref(href));
+  return target ? { ...target, tab: "preview", quote: passage.quote } : null;
 }
 
 /** A source the web search found: its link leaves the app rather than opening a paper. */
@@ -154,7 +201,7 @@ export function renderInlineMarkdown(
   const nodes: ReactNode[] = [];
   // Ordered so the longer opener wins: ** before *, ~~ before ~.
   const pattern =
-    /(\[\[cite:[\d,]+\]\]|\*\*[^*]+\*\*|~~[^~]+~~|(?<![*\w])\*[^*\n]+\*(?!\*)|(?<![_\w])_[^_\n]+_(?![_\w])|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
+    /(\[\[cite:[\d,]+(?:@\d+)?\]\]|\*\*[^*]+\*\*|~~[^~]+~~|(?<![*\w])\*[^*\n]+\*(?!\*)|(?<![_\w])_[^_\n]+_(?![_\w])|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -165,13 +212,20 @@ export function renderInlineMarkdown(
 
     const token = match[0];
     if (token.startsWith("[[cite:")) {
-      const numbers = token
-        .slice(7, -2)
+      // "[[cite:1,2@4]]": sources 1 and 2, at the answer's fifth marker (numberCitationMarkers).
+      const [list, place] = token.slice(7, -2).split("@");
+      const numbers = list
         .split(",")
         .map((part) => Number.parseInt(part, 10))
         .filter((value) => Number.isFinite(value));
+      const at = place === undefined ? undefined : Number.parseInt(place, 10);
       nodes.push(
-        <CitationMarker key={`${keyPrefix}-cite-${match.index}`} numbers={numbers} sources={sources} />
+        <CitationMarker
+          key={`${keyPrefix}-cite-${match.index}`}
+          numbers={numbers}
+          sources={sources}
+          at={Number.isFinite(at) ? at : undefined}
+        />
       );
     } else if (token.startsWith("~~") && token.endsWith("~~")) {
       nodes.push(
@@ -590,6 +644,7 @@ export function AssistantAnswer({
             title: String(citation.title ?? ""),
             year: String(citation.year ?? ""),
             href: String(citation.href ?? ""),
+            ...citationPassageFields(citation),
           }))
       ),
     [content, citations]
@@ -601,7 +656,10 @@ export function AssistantAnswer({
 
   return (
     <div className="space-y-3">
-      {renderRichMessage(visible, messageId, "assistant", sources)}
+      {/* Numbered after the fold is found, so the fold falls where it always did.
+          The visible part is the answer's opening, so a marker's place in it is
+          its place in the whole answer, which is how the server counted it. */}
+      {renderRichMessage(numberCitationMarkers(visible), messageId, "assistant", sources)}
       {cut !== null ? (
         <button
           type="button"
