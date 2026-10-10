@@ -4237,9 +4237,11 @@ async function themeStoreFor(context: RepositoryContext): Promise<ThemeStore | n
 
 async function aggregateCorpusResult(
   input: RepositoryChatInput,
-  context: RepositoryContext,
+  scope: RepositoryContext,
   execution: RepositoryExecutionPlan
 ): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+  // One copy of each study: a summary cited both uploads of a paper as two sources.
+  const context = contextFor(scope, oneCopyEach(scope.papers), scope.scopeLabel);
   const batches: RepositoryPaper[][] = [];
   for (let index = 0; index < context.papers.length; index += 10) {
     batches.push(context.papers.slice(index, index + 10));
