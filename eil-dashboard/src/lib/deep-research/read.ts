@@ -133,6 +133,27 @@ function clean(value: unknown, max: number): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+function near(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(0.005, Math.abs(b) * 1e-6);
+}
+
+/** Whether `value` is printed in the sources, or is the difference or sum of two numbers printed there. */
+export function numberSupported(value: number, printed: number[]): boolean {
+  if (printed.some((number) => near(number, value))) return true;
+  const list = [...new Set(printed)].slice(0, 80);
+  for (let i = 0; i < list.length; i += 1) {
+    for (let j = i + 1; j < list.length; j += 1) {
+      if (near(Math.abs(list[i] - list[j]), value) || near(list[i] + list[j], value)) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether the question asks about earlier work, so a paper's account of the studies it cites is wanted. */
+export function asksAboutEarlierWork(question: string): boolean {
+  return /\b(?:earlier|previous|prior|past)\s+(?:work|research|stud(?:y|ies))|\bliterature review|\bstudies (?:they|it) cites?\b|งานวิจัยก่อนหน้า|ทบทวนวรรณกรรม/i.test(question);
+}
+
 /** The numbers written in digits in a statement; "two groups" and "L1" are words. */
 export function digitNumbers(text: string): number[] {
   const words = wordsOf(text);
@@ -150,7 +171,13 @@ const OUTSIDE_NUMBERS = 2;
  * printed in a quote (or is the paper's year, or in its title) - or, for up to
  * two numbers, printed elsewhere in the paper.
  */
-export function checkRecord(raw: unknown, paper: StudyPaper, whole: boolean, text: CheckableText = checkableText(paper)): PaperRecord {
+export function checkRecord(
+  raw: unknown,
+  paper: StudyPaper,
+  whole: boolean,
+  text: CheckableText = checkableText(paper),
+  options: { keepCited?: boolean } = {}
+): PaperRecord {
   const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const exempt = new Set([...digitNumbers(paper.title), Number(paper.year)].filter((number) => Number.isFinite(number)));
   const facts: PaperFact[] = [];
@@ -163,13 +190,22 @@ export function checkRecord(raw: unknown, paper: StudyPaper, whole: boolean, tex
     // Up to three quotes; an older reply's single quote is one.
     const given = (Array.isArray(item.quotes) ? item.quotes : [item.quote]).map((quote) => clean(quote, 400)).filter(Boolean).slice(0, 3);
     if (!statement || given.length === 0) continue;
+    // What a paper says about the studies it cites is kept only when the question asks about earlier
+    // work: told to leave such studies out, the writer still made them rows of a comparison (2026-10-10).
+    if (item.own === false && !options.keepCited) continue;
     const found = given.filter((quote) => quoteInText(quote, text));
+    const quoted = found.flatMap((quote) => numbersIn(wordsOf(quote)).map((token) => token.value));
     // A number from outside the quotes - a scale's "100-point", a course's
     // "17-week" - is allowed when the paper prints it, two at most; on the test
     // repository the strict rule dropped a study's means and another's sample
     // size for one such number each. The answer check still holds every number
     // to this fact's quotes and statement.
-    const outside = found.length ? digitNumbers(statement).filter((number) => !exempt.has(number) && !found.some((quote) => numberInQuote(number, quote, text))) : [];
+    // A difference or sum of two quoted numbers ("a 19.54-point gain") is the quotes' own arithmetic;
+    // not a whole number, which some pair of numbers in a table row always makes ("48" and ".001" make 49).
+    const arithmetic = (number: number) => !Number.isInteger(number) && numberSupported(number, quoted);
+    const outside = found.length
+      ? digitNumbers(statement).filter((number) => !exempt.has(number) && !found.some((quote) => numberInQuote(number, quote, text)) && !arithmetic(number))
+      : [];
     const missing = outside.length <= OUTSIDE_NUMBERS ? outside.filter((number) => !numberInPaper(number, text)) : outside;
     if (found.length === 0 || missing.length > 0) {
       unverified += 1;

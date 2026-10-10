@@ -18,7 +18,7 @@
 import { numbersIn, wordsOf } from "@/lib/chart-reading";
 import type { ChatMessage } from "@/lib/openai";
 import { callTool } from "@/lib/deep-research/model";
-import { digitNumbers } from "@/lib/deep-research/read";
+import { digitNumbers, numberSupported } from "@/lib/deep-research/read";
 import type { AuditResult, Evidence } from "@/lib/deep-research/types";
 
 export interface ReportUnit {
@@ -193,21 +193,7 @@ function valuesIn(text: string): number[] {
   return numbersIn(wordsOf(text)).map((token) => token.value);
 }
 
-function near(a: number, b: number): boolean {
-  return Math.abs(a - b) <= Math.max(0.005, Math.abs(b) * 1e-6);
-}
-
-/** Whether `value` is printed in the sources, or is the difference or sum of two numbers printed there. */
-export function numberSupported(value: number, printed: number[]): boolean {
-  if (printed.some((number) => near(number, value))) return true;
-  const list = [...new Set(printed)].slice(0, 80);
-  for (let i = 0; i < list.length; i += 1) {
-    for (let j = i + 1; j < list.length; j += 1) {
-      if (near(Math.abs(list[i] - list[j]), value) || near(list[i] + list[j], value)) return true;
-    }
-  }
-  return false;
-}
+export { numberSupported };
 
 export interface CheckContext {
   evidence: Map<string, Evidence>;

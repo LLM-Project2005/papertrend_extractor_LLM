@@ -17,7 +17,7 @@ import type { DeepResearchStepRecord } from "@/types/research";
 import { finalizeReport } from "@/lib/deep-research/finalize";
 import { callTool } from "@/lib/deep-research/model";
 import { dedupeStudies, studyOf, type StudyPaper } from "@/lib/deep-research/plan";
-import { checkRecord, readingText, readMessages, readSummary, readTool } from "@/lib/deep-research/read";
+import { asksAboutEarlierWork, checkRecord, readingText, readMessages, readSummary, readTool } from "@/lib/deep-research/read";
 import {
   claimSession,
   completeSession,
@@ -57,7 +57,7 @@ export async function readPaper(input: { question: string; plan: Pick<ResearchPl
     { maxTokens: 9_000, timeoutMs: 150_000, reasoningEffort: "medium" }
   );
   if (!raw) return null;
-  return checkRecord(raw, input.paper, reading.whole);
+  return checkRecord(raw, input.paper, reading.whole, undefined, { keepCited: asksAboutEarlierWork(input.question) });
 }
 
 /** Runs `work` on each item, `size` at a time. */

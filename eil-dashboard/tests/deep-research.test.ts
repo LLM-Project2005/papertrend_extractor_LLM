@@ -181,7 +181,7 @@ test("a fact is kept only when its quote is in the paper and every number in it 
     { aspect: "results", kind: "finding", statement: "Learners loved it.", quote: "All learners said they loved dynamic assessment.", section: "Results", own: true },
     { aspect: "earlier work", kind: "context", statement: "Poehner (2008) found mediation revealed learners' potential.", quote: "Poehner (2008) found that mediation revealed learners' potential in a French class.", section: "Literature review", own: false },
   ];
-  const record = checkRecord({ relevant: true, facts, notReported: ["1. delayed post-test"] }, DA, true);
+  const record = checkRecord({ relevant: true, facts, notReported: ["1. delayed post-test"] }, DA, true, undefined, { keepCited: true });
   assert.deepEqual(record.facts.map((fact) => fact.statement.slice(0, 20)), ["The mean writing sco", "49 students at a pub", "L1 Thai learners imp", "Poehner (2008) found"]);
   assert.equal(record.unverified, 2, "a number not in its quote, and a quote not in the paper, are dropped");
   assert.equal(record.facts[3].own, false, "what a paper says about another study is marked so");
@@ -239,6 +239,21 @@ test("up to two numbers may come from elsewhere in the paper than the quotes; a 
   );
   assert.deepEqual(record.facts.map((entry) => entry.statement), ["Over 15 weeks, the mean rose from 12.5 to 18.4."], "15 is printed in the methods");
   assert.deepEqual(record.rejected?.map((entry) => entry.reason), ["not in its quotes: 15, 49, 2", "not in its quotes: 16"], "three from outside are too many; 16 is not in the paper");
+});
+
+test("a fact may give a difference of its quoted numbers; a paper's account of a study it cites is kept only when the question asks about earlier work", async () => {
+  const { asksAboutEarlierWork } = await import("../src/lib/deep-research/read");
+  const quote = "The mean writing score rose from 12.5 (SD 2.1) to 18.4 (SD 1.9), t(48) = 9.82, p < .001.";
+  const facts = [
+    { aspect: "results", kind: "finding", own: true, section: "Results", statement: "The mean rose from 12.5 to 18.4, a 5.9-point gain.", quotes: [quote] },
+    { aspect: "earlier work", kind: "context", own: false, section: "Literature review", statement: "Poehner (2008) found mediation revealed potential.", quotes: ["Poehner (2008) found that mediation revealed learners' potential in a French class."] },
+  ];
+  const record = checkRecord({ relevant: true, facts, notReported: [] }, DA, true);
+  assert.deepEqual(record.facts.map((fact) => fact.statement), ["The mean rose from 12.5 to 18.4, a 5.9-point gain."], "18.4 - 12.5; the cited study is left out");
+  assert.equal(record.unverified, 0, "a cited study left out is not a failed check");
+  assert.equal(checkRecord({ relevant: true, facts, notReported: [] }, DA, true, undefined, { keepCited: true }).facts.length, 2);
+  assert.equal(asksAboutEarlierWork("What earlier studies do these papers review?"), true);
+  assert.equal(asksAboutEarlierWork("Compare the intervention studies that tried to improve writing"), false);
 });
 
 test("only a paper read whole may be said not to report something", () => {
