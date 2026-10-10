@@ -172,6 +172,8 @@ export const ANSWER_FORMAT_RULES = [
   // nothing told the model that an explicit request outranks them.
   "If the request names a format or a length - one paragraph, a table, three bullets, under 100 words - follow it exactly. It overrides every rule below, including the ones about headings, bullets and tables.",
   "Open with the answer itself in one or two sentences, with no heading above it: never a label such as \"Direct answer\" or \"Summary\".",
+  // Live answers opened "The supplied evidence identifies three interventions" (2026-10-10).
+  "Speak of the papers, never of what you were given: not \"the supplied evidence\", \"the retrieved studies\", \"the excerpts\" or \"the provided context\".",
   `Keep every paragraph under ${MAX_PARAGRAPH_CHARS} characters; split longer reasoning into separate paragraphs.`,
   "Use a bulleted list whenever you enumerate three or more things, rather than running them into a sentence.",
   "Use a Markdown table when the content is genuinely tabular, such as a value per paper.",
