@@ -164,6 +164,25 @@ test("each marker's claim is the sentence it closes, counted as the renderer cou
   assert.deepEqual([...numbered.matchAll(/@(\d+)\]\]/g)].map((match) => Number(match[1])), [0, 1, 2]);
 });
 
+test("a citation after the full stop quotes the sentences before it, as answers are written", () => {
+  // The answer writer closes a sentence, then cites: every live claim came out empty.
+  const answer = [
+    `Peer feedback raised the mean writing score from 21.4 to 29.8. (${citationLabel(PEER)})`,
+    "",
+    `- Recorded role plays improved fluency ratings for nursing students. (${citationLabel(SPEAKING)})`,
+    `- That peer feedback study had sixty second-year students over one semester. (${citationLabel(PEER)})`,
+  ].join("\n");
+  const claims = citedClaims(answer, [PEER, SPEAKING]);
+  assert.match(claims[0].claim, /raised the mean writing score from 21\.4 to 29\.8/);
+  assert.match(claims[1].claim, /role plays improved fluency ratings/);
+  assert.doesNotMatch(claims[1].claim, /21\.4/, "a list item's claim is its own line");
+  assert.match(claims[2].claim, /sixty second-year students/);
+  const [peer, speaking] = attachCitationPassages(answer, [PEER, SPEAKING], { readings: READINGS });
+  assert.match(passageForMarker(peer, 0)?.quote ?? "", /21\.4 to 29\.8/);
+  assert.match(passageForMarker(peer, 2)?.quote ?? "", /Sixty second-year students/);
+  assert.match(speaking.quote ?? "", /Fluency ratings improved/);
+});
+
 test("two places citing one paper each get their own passage", () => {
   const [peer, speaking] = attachCitationPassages(ANSWER, [PEER, SPEAKING], { readings: READINGS });
   assert.equal(peer.passages?.length, 2);

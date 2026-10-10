@@ -60,7 +60,11 @@ export interface AnswerCitation extends CitationPassageFields {
  */
 export function CitationMarker({ numbers, sources, at }: { numbers: number[]; sources: CitationSource[]; at?: number }) {
   const [pinned, setPinned] = useState(false);
+  // The card opens below a marker near the top of the window: above it, a card
+  // with a quote was cut off by the top of the conversation (the pilot, 2026-10-11).
+  const [below, setBelow] = useState(false);
   const containerRef = React.useRef<HTMLSpanElement>(null);
+  const place = () => setBelow((containerRef.current?.getBoundingClientRect().top ?? Infinity) < CARD_ROOM_PX);
   React.useEffect(() => {
     if (!pinned) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -90,12 +94,15 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
   const quoted = [...passages.values()].some(Boolean);
 
   return (
-    <span ref={containerRef} className="group relative inline-block align-baseline">
+    <span ref={containerRef} className="group relative inline-block align-baseline" onPointerEnter={place} onFocus={place}>
       <button
         type="button"
         aria-label={`Source: ${label}`}
         aria-expanded={pinned}
-        onClick={() => setPinned((current) => !current)}
+        onClick={() => {
+          place();
+          setPinned((current) => !current);
+        }}
         className="ml-0.5 cursor-pointer rounded align-super text-[0.68em] font-semibold text-sky-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200"
       >
         {numbers.join(",")}
@@ -104,7 +111,7 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
         role={pinned ? "group" : "tooltip"}
         aria-label={pinned ? "Cited papers" : undefined}
         // A quote needs a wider card to read as prose; pinned, a long one scrolls.
-        className={`absolute bottom-full left-1/2 z-30 mb-2 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4] ${
+        className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-1/2 z-30 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4] ${
           pinned ? "block max-h-[60vh] overflow-y-auto" : "pointer-events-none hidden group-focus-within:block group-hover:block"
         }`}
       >
@@ -150,6 +157,9 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
     </span>
   );
 }
+
+/** Room a citation card needs above its marker; with less, it opens below. */
+const CARD_ROOM_PX = 340;
 
 /**
  * The passage a citation quotes, in its card. The card sits inside a sentence,
