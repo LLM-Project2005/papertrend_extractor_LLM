@@ -150,7 +150,13 @@ test("deep research plans with the web available, so a question about current po
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     assert.equal(url, "https://openrouter.ai/api/v1/chat/completions", "only the model is asked");
-    const tool = JSON.parse(String(init?.body)).tool_choice?.function?.name;
+    const body = JSON.parse(String(init?.body));
+    const tool = body.tool_choice?.function?.name;
+    // Max's plan also runs High's own plan of the question, to read what High would.
+    if (!tool && String(body.messages?.[0]?.content ?? "").includes("Interpret the request semantically")) {
+      const execution = { operation: "search_evidence", operations: ["search_evidence"], scopeMode: "focused", refinedQuestion: "washback", terms: [], retrievalQueries: ["washback"], evidenceNeeds: [], requestedFields: [], answerLanguage: "English", outputFormat: "prose", chartType: "bar", reason: "r", confidence: "high" };
+      return Response.json({ model: "fake", usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cost: 0.001 }, choices: [{ message: { content: JSON.stringify(execution) } }] });
+    }
     assert.equal(tool, "plan_reading");
     return Response.json({
       model: "fake",

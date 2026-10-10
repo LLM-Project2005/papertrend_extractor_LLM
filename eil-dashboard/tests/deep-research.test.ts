@@ -421,12 +421,12 @@ test("the writer sees each paper as read - whole or in part - its checked facts,
   assert.match(messages[0].content, /never present it as that paper's own result/);
   assert.match(messages[0].content, /one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites/);
   assert.match(messages[0].content, /how many took part, the design, and the main result with its statistic/);
-  assert.match(messages[0].content, /Length: 3,000 to 6,000 characters/, "a focused question gets an answer High's length");
+  assert.match(messages[0].content, /Length: 450 to 900 words - never more than 900/, "a focused question gets an answer High's length");
   assert.match(messages[0].content, /the 2 or 3 most important things the question asks that the papers read do not report\b[^.]*\. Never a list of every missing detail/);
   assert.doesNotMatch(messages[0].content, /how many of the studies that bear on the question were read/, "nothing was left unread, so no coverage count");
   // A broad question past the cap: a longer answer, and it says how many were read of how many.
   const broad = reportMessages({ question: "q", plan: { ...plan, breadth: "broad", considered: 26 }, records: RECORDS, evidence: EVIDENCE, unread: [], scopeLabel: "A", studiesInScope: 36, pendingPapers: 0, today: "2026-10-10" });
-  assert.match(broad[0].content, /Length: at most 8,000 characters/);
+  assert.match(broad[0].content, /Length: at most 1,200 words/);
   assert.match(broad[0].content, /how many of the studies that bear on the question were read/);
   assert.match(broad[1].content, /26 bear on the question; the 2 most relevant were read/);
   assert.match(messages[0].content, /Cite only those ids; never write any other identifier/);

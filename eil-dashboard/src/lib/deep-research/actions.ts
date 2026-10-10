@@ -8,7 +8,7 @@
  * cancel resumes the same run and costs nothing more.
  */
 import { getChatRepository } from "@/lib/chat-repository";
-import { loadRepositoryContext, selectEvidence, type RepositoryContext, type RepositoryPromptPlan } from "@/lib/repository-chat";
+import { legacyPlanForExecution, loadRepositoryContext, planRepositoryExecution, selectEvidence, type RepositoryContext } from "@/lib/repository-chat";
 import { normalizeKnowledgeScope, type KnowledgeScope } from "@/lib/knowledge-scope";
 import { assertAndRecordAiUsage } from "@/lib/security-guards";
 import type { ChatThreadDetail, DeepResearchSessionRecord } from "@/types/research";
@@ -50,27 +50,21 @@ async function detailOf(ownerUserId: string, threadId: string): Promise<ChatThre
 }
 
 /**
- * The papers High would read for the question (repository-chat.ts's
- * selectEvidence at High: keyword and meaning search, the reranker, and up to
- * four papers more when the first choice falls short), searched with the
- * planner's terms when there are some. Empty when it cannot run.
+ * The papers High would read for the question: High's own plan of it (its
+ * refined question and searches), then its evidence selection at High -
+ * keyword and meaning search, the reranker, and up to four papers more when
+ * the first choice falls short. Always the focused selection: for a question
+ * about the whole collection High summarises every paper instead, and Max
+ * reads at most twenty. Searching with Max's own terms instead missed a paper
+ * High had found (the test repository, 2026-10-10). Empty when it cannot run.
  */
-export async function highSelection(context: RepositoryContext, question: string, terms: string[], aspects: string[]) {
-  const plan: RepositoryPromptPlan = {
-    intent: "repository_qa",
-    refinedQuestion: question,
-    terms: [],
-    retrievalQueries: terms.length ? terms : [question],
-    evidenceNeeds: aspects,
-    answerLanguage: /[ก-๛]/.test(question) ? "Thai" : "English",
-    retrievalMode: "focused",
-    needsChart: false,
-    chartType: "bar",
-    reason: "The papers High would read, for Max to read too.",
-    confidence: "medium",
-    source: "llm",
-  };
+export async function highSelection(context: RepositoryContext, question: string, history: Array<{ role: "user" | "assistant"; content: string }> = []) {
   try {
+    const execution = await planRepositoryExecution(
+      { ownerUserId: context.ownerUserId, projectId: context.projectId, prompt: question, model: CHAT_MODEL, effort: "high", history: [...history, { role: "user", content: question }] },
+      context
+    );
+    const plan = { ...legacyPlanForExecution(execution, question), retrievalMode: "focused" as const };
     return (await selectEvidence(context, plan, CHAT_MODEL, "high")).papers;
   } catch (error) {
     console.warn("deep_research_high_selection_failed", { message: error instanceof Error ? error.message : "unknown_error" });
@@ -80,8 +74,8 @@ export async function highSelection(context: RepositoryContext, question: string
 
 /**
  * Plans a question: one call over a card per study chooses the papers and
- * what to note from each, and High's own selection runs on its search terms;
- * Max reads both (plan.ts mergeSelection).
+ * what to note from each while High's own selection runs beside it; Max
+ * reads both (plan.ts mergeSelection).
  */
 export async function planFor(
   context: RepositoryContext,
@@ -91,22 +85,24 @@ export async function planFor(
   // One card per study (a duplicate upload is one study).
   const studies = dedupeStudies(context.papers.map(studyOf));
   const cards = studyCards(studies, prompt);
-  const raw = await callTool(
-    planMessages({
-      question: prompt,
-      scopeLabel: context.scopeLabel,
-      cards,
-      totalStudies: studies.length,
-      webAvailable: true,
-      today: new Date().toISOString().slice(0, 10),
-      history,
-    }),
-    planTool(),
-    "DEEP_RESEARCH_PLAN",
-    { maxTokens: 6_000, timeoutMs: 60_000, reasoningEffort: "low" }
-  );
+  const [raw, high] = await Promise.all([
+    callTool(
+      planMessages({
+        question: prompt,
+        scopeLabel: context.scopeLabel,
+        cards,
+        totalStudies: studies.length,
+        webAvailable: true,
+        today: new Date().toISOString().slice(0, 10),
+        history,
+      }),
+      planTool(),
+      "DEEP_RESEARCH_PLAN",
+      { maxTokens: 6_000, timeoutMs: 60_000, reasoningEffort: "low" }
+    ),
+    highSelection(context, prompt, history),
+  ]);
   const parsed = parsePlan(raw, { question: prompt, cards, webAvailable: true });
-  const high = await highSelection(context, prompt, parsed?.searchTerms ?? [], parsed?.aspects ?? []);
   if (!parsed) return fallbackPlan(prompt, high, studies);
   return { ...parsed, ...mergeSelection(parsed.papers, high, studies) };
 }

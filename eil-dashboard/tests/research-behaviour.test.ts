@@ -89,10 +89,29 @@ function completion(content: string | null, tool?: { name: string; args: unknown
   });
 }
 
+/** High's own steps, which Max's plan runs to read what High would: named for what they are. */
+function highStep(system: string): string | null {
+  if (system.includes("Interpret the request semantically")) return "execution_plan";
+  if (system.includes("Select at most")) return "rerank";
+  if (system.includes("Decide whether the selected excerpts are sufficient")) return "sufficiency";
+  return null;
+}
+
 function fakeModel(body: { model: string; messages: Array<{ role: string; content: string }>; tool_choice?: { function?: { name?: string } } }) {
-  const tool = body.tool_choice?.function?.name ?? "report";
+  const system = body.messages[0]?.content ?? "";
+  const tool = body.tool_choice?.function?.name ?? highStep(system) ?? "report";
   const user = body.messages[body.messages.length - 1]?.content ?? "";
-  world.calls.push({ tool, model: body.model, system: body.messages[0]?.content ?? "", user });
+  world.calls.push({ tool, model: body.model, system, user });
+  if (tool === "execution_plan") {
+    return completion(JSON.stringify({
+      operation: "search_evidence", operations: ["search_evidence"], scopeMode: "focused", refinedQuestion: QUESTION, terms: [],
+      retrievalQueries: [QUESTION], evidenceNeeds: [], requestedFields: [], answerLanguage: "English", outputFormat: "prose",
+      chartType: "bar", reason: "A focused question.", confidence: "high",
+    }));
+  }
+  // The reranker keeps every paper it is shown; the sufficiency check is satisfied.
+  if (tool === "rerank") return completion(JSON.stringify({ paperIds: [...user.matchAll(/\[Paper (\d+)\]/g)].map((match) => match[1]), reason: "Both bear on it.", confidence: 0.9 }));
+  if (tool === "sufficiency") return completion(JSON.stringify({ sufficient: true, missingEvidenceNeeds: [], expansionQueries: [], confidence: 0.9 }));
   const ids = [...user.matchAll(SENTENCE)].map((match) => match[1]);
   if (tool === "plan_reading") return completion(null, { name: tool, args: PLAN });
   if (tool === "record_paper") {
@@ -249,7 +268,7 @@ test("a paper High would read is read too, even when the planner passed it over"
     `INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id, abstract, body) VALUES ($1, $2, $3, $4, $5, $6)`,
     [second, OWNER, FOLDER, run2, "Graduated prompts in dynamic assessment helped Thai EFL writers revise.", BODY]
   );
-  // The planner chooses only S1; High's selection (its reranker unreadable here, so its ranking) has both.
+  // The planner chooses only S1; High's selection (its planner, then its reranker) has both.
   const planned = await ask(h, h.owner, QUESTION);
   const reads = planned.body.deepResearchSession.steps
     .filter((step: { tool_name: string }) => step.tool_name === "dr2_read")
@@ -258,8 +277,9 @@ test("a paper High would read is read too, even when the planner passed it over"
     ["Dynamic Assessment in a Thai EFL Classroom", "planner"],
     ["Graduated Prompts in Thai EFL Writing", "high"],
   ], "the planner's paper first, then High's other paper");
-  assert.equal(world.calls.filter((call) => call.system.includes("Select at most")).length, 1, "High's reranker was asked, with the run's model");
-  assert.equal(world.calls.find((call) => call.system.includes("Select at most"))?.model, "openai/gpt-6-luna-20260922");
+  assert.equal(calls("execution_plan").length, 1, "High's own plan of the question");
+  assert.equal(calls("rerank").length, 1, "High's reranker was asked");
+  assert.equal(calls("rerank")[0].model, "openai/gpt-6-luna-20260922", "with the chat's model");
 });
 
 test("a lease holds a run to one worker; a released or expired lease can be taken again", async () => {

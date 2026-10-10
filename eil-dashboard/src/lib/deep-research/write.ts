@@ -83,7 +83,7 @@ export function reportMessages(input: {
   const wholeCount = input.records.filter((record) => record.whole).length;
   // Measured against High on the test repository (2026-10-10): 8-15k-character
   // answers lost on readability to High's 4-6k at the same accuracy.
-  const length = input.plan.breadth === "broad" ? "at most 8,000 characters" : "3,000 to 6,000 characters";
+  const length = input.plan.breadth === "broad" ? "at most 1,200 words" : "450 to 900 words - never more than 900";
   const capped = input.plan.considered > input.records.length;
   return [
     {
@@ -96,7 +96,7 @@ export function reportMessages(input: {
         "1. Lead with the answer itself in 2 to 4 sentences, with no heading above it.",
         `2. Then the detail, under ## headings that follow the parts of the question: ${outline}. Make each heading say what its part is about; never "Direct answer", "Introduction", "Body" or "Report".`,
         "3. When the question compares studies, give one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites - with the points the question asks about and the numbers as printed; then compare them briefly in prose: where they agree, where they differ, and what the differences in design mean for comparing them.",
-        "4. For each study you discuss, give its key numbers as the facts give them: how many took part, the design, and the main result with its statistic (means, test value, effect size).",
+        "4. For each study you discuss, give its key numbers as the facts give them: how many took part, the design, and the main result with its statistic (means, test value, effect size). Leave out a study that touches the question only in passing.",
         `5. End with one short closing paragraph under a ## heading, at most 3 sentences: ${capped ? "how many of the studies that bear on the question were read (the scope line gives both numbers), and " : ""}the 2 or 3 most important things the question asks that the papers read do not report${input.pendingPapers > 0 ? ", and the papers still being analysed" : ""}. Never a list of every missing detail.`,
         "Rules:",
         "- Use only the facts and pages given. Add no outside knowledge, no general claims about the field, and no examples of your own.",
