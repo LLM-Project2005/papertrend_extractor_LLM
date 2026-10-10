@@ -12,7 +12,8 @@ import {
   validateInlinePaperCitations,
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
-import { citationLabel } from "@/lib/answer-citations";
+import { citationLabel, type CitationPassageFields } from "@/lib/answer-citations";
+import { attachCitationPassages, type PassageSources } from "@/lib/citation-passages";
 import {
   readAnswerCache,
   writeAnswerCache,
@@ -67,7 +68,7 @@ export type RepositoryIntent =
 
 export type RepositoryRetrievalMode = "focused" | "comparative" | "exhaustive";
 
-export interface RepositoryCitation {
+export interface RepositoryCitation extends CitationPassageFields {
   paperId: string;
   title: string;
   year: string;
@@ -207,6 +208,11 @@ export interface RepositoryChatResult {
   coverage?: RepositoryCoverage;
   limitations?: string[];
   jobId?: string;
+  /**
+   * What the answer read of each paper, for quoting the passage behind each
+   * citation once the answer is final (runRepositoryChat). Never sent on.
+   */
+  passageSources?: PassageSources;
   scopeSnapshot: KnowledgeScopeSnapshot;
   diagnostics: {
     projectId: string | null;
@@ -1796,6 +1802,8 @@ function topicResult(
 interface SelectedEvidence {
   text: string;
   papers: RepositoryPaper[];
+  /** What the answer is given of each paper, which its citations quote from. */
+  readings: PaperReading[];
   candidateCount: number;
   repositoryCoverageCount: number;
   rerankerSource: "llm" | "fallback";
@@ -2058,7 +2066,7 @@ function repositoryStatisticsResult(
 }
 
 interface RepositoryQaOutput
-  extends Pick<RepositoryChatResult, "answer" | "citations" | "charts"> {
+  extends Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "passageSources"> {
   /** Caveats raised by the answer audit, surfaced to the reader. */
   auditLimitations?: string[];
   quality: {
@@ -2404,6 +2412,7 @@ async function selectEvidence(
   return {
     text,
     papers,
+    readings,
     candidateCount: candidates.length,
     repositoryCoverageCount: context.papers.length,
     rerankerSource,
@@ -2737,6 +2746,9 @@ async function repositoryQaResult(
   );
   const allowedIds = evidence.papers.map((paper) => paper.paperId);
   const paperById = new Map(evidence.papers.map((paper) => [paper.paperId, paper]));
+  const passageSources: PassageSources = {
+    readings: new Map(evidence.readings.map((reading) => [reading.paperId, reading.text])),
+  };
   const history = (input.history ?? []).slice(-8).map((message) => ({
     role: message.role,
     content: message.content.slice(0, 1_200),
@@ -2844,6 +2856,7 @@ async function repositoryQaResult(
         citationForPaper(paper, "Cited in the grounded repository answer.")
       ),
       charts: [],
+      passageSources,
       auditLimitations: [],
       quality: {
         retrievalCandidateCount: evidence.candidateCount,
@@ -2915,6 +2928,7 @@ async function repositoryQaResult(
       citationForPaper(paper, "Cited in the grounded repository answer.")
     ),
     charts: [],
+    passageSources,
     auditLimitations,
     quality: {
       retrievalCandidateCount: evidence.candidateCount,
@@ -3361,6 +3375,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
   const limitations = new Set<string>();
   const coverages: RepositoryCoverage[] = [];
   const quality: Partial<RepositoryQaOutput["quality"]> = {};
+  const passageSources: PassageSources = { readings: new Map(), claims: new Map() };
 
   for (const operation of execution.operations) {
     const stepExecution: RepositoryExecutionPlan = {
@@ -3369,7 +3384,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
       operations: [operation],
     };
     const stepPlan = legacyPlanForExecution(stepExecution, input.prompt);
-    let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
+    let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations" | "passageSources">;
 
     if (operation === "converse") result = await converseResult(input, context, stepExecution);
     else if (operation === "list_documents") result = listDocumentsResult(context);
@@ -3403,6 +3418,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
         answer: qa.answer,
         citations: qa.citations,
         charts: qa.charts,
+        passageSources: qa.passageSources,
         coverage: {
           eligiblePapers: context.papers.length,
           processedPapers: qa.quality.selectedEvidenceCount,
@@ -3423,6 +3439,14 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     charts.push(...result.charts);
     result.limitations?.forEach((limitation) => limitations.add(limitation));
     if (result.coverage) coverages.push(result.coverage);
+    // Two steps may each read the same paper; its quotes may come from either.
+    result.passageSources?.readings.forEach((text, paperId) => {
+      const earlier = passageSources.readings.get(paperId);
+      passageSources.readings.set(paperId, earlier && earlier !== text ? `${earlier}\n[…]\n${text}` : text);
+    });
+    result.passageSources?.claims?.forEach((about, paperId) => {
+      passageSources.claims?.set(paperId, [...(passageSources.claims.get(paperId) ?? []), ...about]);
+    });
   }
 
   const eligiblePapers = context.papers.length;
@@ -3430,6 +3454,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     answer: sections.join("\n\n"),
     citations: [...citations.values()],
     charts,
+    passageSources,
     coverage: {
       eligiblePapers,
       processedPapers: Math.max(0, ...coverages.map((coverage) => coverage.processedPapers)),
@@ -3573,17 +3598,26 @@ function validDocumentAnalysisBatch(
   return candidate.items.every((item) => answerMatchesRequestedLanguage(item.analysis, answerLanguage));
 }
 
-async function generateDocumentAnalysisBatch(
+/** What a per-paper explanation reads of each paper in one batch. */
+function documentAnalysisReadings(
   input: RepositoryChatInput,
   execution: RepositoryExecutionPlan,
   papers: RepositoryPaper[]
-): Promise<z.infer<typeof DocumentAnalysisBatchSchema> | null> {
-  const effort = normalizeEffort(input.effort);
-  const readings = readPapers(
+): PaperReading[] {
+  return readPapers(
     papers,
     [execution.refinedQuestion, ...execution.retrievalQueries, ...execution.evidenceNeeds, ...execution.requestedFields],
-    READING_BUDGET[effort]
+    READING_BUDGET[normalizeEffort(input.effort)]
   );
+}
+
+async function generateDocumentAnalysisBatch(
+  input: RepositoryChatInput,
+  execution: RepositoryExecutionPlan,
+  papers: RepositoryPaper[],
+  readings: PaperReading[]
+): Promise<z.infer<typeof DocumentAnalysisBatchSchema> | null> {
+  const effort = normalizeEffort(input.effort);
   const evidence = papers.map((paper, index) => documentAnalysisEvidence(paper, readings[index]));
   const system = buildPapertrendSystemPrompt("grounded_answer", [
     "Analyze every supplied paper exactly once and directly satisfy the user's requested dimensions. " +
@@ -3780,18 +3814,21 @@ async function analyzeEachDocumentResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
-): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations" | "passageSources">> {
   const papers = [...context.papers].sort((left, right) => left.title.localeCompare(right.title));
   const missingExtraction = papers.filter((paper) => !paper.abstract && !paper.methods && !paper.results && !paper.conclusion).length;
   const batches: RepositoryPaper[][] = [];
   for (let index = 0; index < papers.length; index += DOCUMENT_ANALYSIS_BATCH_SIZE) {
     batches.push(papers.slice(index, index + DOCUMENT_ANALYSIS_BATCH_SIZE));
   }
+  const readings = batches.map((batch) => documentAnalysisReadings(input, execution, batch));
   // Three batches at a time: one after another, a 39-paper request waited for seven calls in a row.
   const generated = [] as Array<{ papers: RepositoryPaper[]; result: z.infer<typeof DocumentAnalysisBatchSchema> | null }>;
   for (let start = 0; start < batches.length; start += DOCUMENT_ANALYSIS_CONCURRENCY) {
     const wave = batches.slice(start, start + DOCUMENT_ANALYSIS_CONCURRENCY);
-    const results = await Promise.all(wave.map((batch) => generateDocumentAnalysisBatch(input, execution, batch)));
+    const results = await Promise.all(
+      wave.map((batch, offset) => generateDocumentAnalysisBatch(input, execution, batch, readings[start + offset]))
+    );
     wave.forEach((batch, index) => generated.push({ papers: batch, result: results[index] }));
   }
   const providerFallbackCount = generated.filter((batch) => !batch.result).reduce((total, batch) => total + batch.papers.length, 0);
@@ -3801,10 +3838,14 @@ async function analyzeEachDocumentResult(
   const overviewParts = await Promise.all(
     rawOverviewParts.map((overview) => attributeOverview(overview, papers, execution, input.model))
   );
+  // A paper's section speaks for it without a citation marker (ids are kept
+  // out of the prose), so its passage is quoted for what its section says.
+  const claims = new Map<string, string[]>();
   const detailSections = generated.flatMap((batch) => {
     const byId = new Map(batch.result?.items.map((item) => [item.paperId, item.analysis.trim()]) ?? []);
     return batch.papers.map((paper) => {
       const analysis = byId.get(paper.paperId) || concisePaperExplanation(paper, execution.answerLanguage);
+      claims.set(paper.paperId, [analysis]);
       return `### ${papers.indexOf(paper) + 1}. ${paper.title}\n${formatPaperReferencesForReaders(analysis, papers)}`;
     });
   });
@@ -3844,6 +3885,10 @@ async function analyzeEachDocumentResult(
     charts: [],
     coverage: completeCoverage(context, papers.length),
     limitations,
+    passageSources: {
+      readings: new Map(readings.flat().map((reading) => [reading.paperId, reading.text])),
+      claims,
+    },
   };
 }
 
@@ -4202,8 +4247,11 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     }
   }
 
-  const result = await runRepositoryChatWithContext(input, context);
+  const { passageSources, ...result } = await runRepositoryChatWithContext(input, context);
   result.answer = withoutOpeningLabel(result.answer);
+  // Quoted from the answer as it is final, so each marker's passage belongs to
+  // the marker the reader sees; cached with it, so a repeat carries them too.
+  if (passageSources) result.citations = attachCitationPassages(result.answer, result.citations, passageSources);
   // Only a clean answer is kept: one with a limitation - a fallback, a check
   // that did not run, a gap - would be served again after the cause was gone.
   const clean = (result.limitations ?? []).length === 0;
@@ -4381,6 +4429,7 @@ async function runRepositoryChatWithContext(
       answer: result.answer,
       citations: result.citations,
       charts: result.charts,
+      passageSources: result.passageSources,
       plan,
       execution,
       coverage: result.coverage,
@@ -4406,6 +4455,7 @@ async function runRepositoryChatWithContext(
       answer: result.answer,
       citations: result.citations,
       charts: result.charts,
+      passageSources: result.passageSources,
       plan,
       execution,
       coverage: {

@@ -192,6 +192,10 @@ export interface WorkspaceMessageRecord {
     href: string;
     reason: string;
     sourceType?: "paper" | "web";
+    /** The passage behind the claims citing the paper (lib/citation-passages.ts). */
+    quote?: string;
+    section?: string;
+    passages?: Array<{ at: number; quote: string; section?: string }>;
   }>;
   metadata?: Record<string, unknown> | null;
   created_at?: string;

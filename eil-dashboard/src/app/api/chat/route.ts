@@ -33,6 +33,7 @@ import { adviseOnFailure } from "@/lib/model-failure";
 import { ModelCallError } from "@/lib/openai";
 import { getPublicRequestOrigin } from "@/lib/public-request-origin";
 import type { ChatThreadDetail, WorkspaceMessageRecord } from "@/types/research";
+import type { CitationPassageFields } from "@/lib/answer-citations";
 
 /*
  * The chat endpoint: every answer runs through the repository chat
@@ -43,7 +44,8 @@ import type { ChatThreadDetail, WorkspaceMessageRecord } from "@/types/research"
  * (docs/32, long-term health).
  */
 
-interface Citation {
+/** A cited source, with the passage behind it when one was found; stored with the message as it is. */
+interface Citation extends CitationPassageFields {
   paperId: number | string;
   title: string;
   year: string;

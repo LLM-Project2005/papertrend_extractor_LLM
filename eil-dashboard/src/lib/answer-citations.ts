@@ -35,13 +35,90 @@ export function citationLabel(paper: { title: string; year?: string | null }): s
   return `${short}${year}`;
 }
 
-export interface CitationSource {
+/** A passage of a paper, quoted for a claim that cites it (citation-passages.ts). */
+export interface CitationPassage {
+  /** One to three of the paper's sentences, as the text the answer read has them. */
+  quote: string;
+  /** The printed section it sits in, when the paper's headings were found. */
+  section?: string;
+}
+
+/**
+ * The passage behind one citation marker. `at` is the marker's place among the
+ * answer's markers, counted from 0 in reading order as markCitations makes
+ * them, so the server and the renderer agree on which marker it belongs to.
+ */
+export interface MarkerPassage extends CitationPassage {
+  at: number;
+}
+
+/** What a citation carries about the passages behind it. */
+export interface CitationPassageFields {
+  /** The passage behind the first claim that cites the paper. */
+  quote?: string;
+  section?: string;
+  /** The passage behind each marker that cites the paper, where one was found. */
+  passages?: MarkerPassage[];
+}
+
+export interface CitationSource extends CitationPassageFields {
   paperId: string;
   title: string;
   year: string;
   href: string;
   /** 1-based position in this message's source list, as shown to the reader. */
   number: number;
+}
+
+/**
+ * A stored citation's passage fields, kept only when they have the shape the
+ * server writes. Citations come back from the database as plain JSON, and
+ * older ones have none of these.
+ */
+export function citationPassageFields(citation: {
+  quote?: unknown;
+  section?: unknown;
+  passages?: unknown;
+}): CitationPassageFields {
+  const fields: CitationPassageFields = {};
+  if (typeof citation.quote === "string" && citation.quote.trim()) {
+    fields.quote = citation.quote;
+    if (typeof citation.section === "string" && citation.section.trim()) fields.section = citation.section;
+  }
+  if (Array.isArray(citation.passages)) {
+    const passages = citation.passages.filter(
+      (passage): passage is MarkerPassage =>
+        Boolean(passage) &&
+        typeof (passage as MarkerPassage).quote === "string" &&
+        Number.isInteger((passage as MarkerPassage).at)
+    );
+    if (passages.length) fields.passages = passages;
+  }
+  return fields;
+}
+
+/**
+ * The passage to show for a marker. When the marker's place is known and the
+ * citation lists passages by marker, only that marker's passage will do: a
+ * passage found for another sentence would seem to support this one. Without
+ * a place (an older report) the citation's own quote stands for the paper.
+ */
+export function passageForMarker(source: CitationPassageFields, at?: number): CitationPassage | null {
+  if (at !== undefined && source.passages?.length) {
+    const found = source.passages.find((passage) => passage.at === at);
+    return found ? { quote: found.quote, ...(found.section ? { section: found.section } : {}) } : null;
+  }
+  return source.quote ? { quote: source.quote, ...(source.section ? { section: source.section } : {}) } : null;
+}
+
+/**
+ * Gives each marker its place in the answer: `[[cite:1,2]]` becomes
+ * `[[cite:1,2@0]]`. The renderer meets markers one paragraph at a time and
+ * cannot count them itself.
+ */
+export function numberCitationMarkers(text: string): string {
+  let at = 0;
+  return text.replace(/\[\[cite:([\d,]+)\]\]/g, (_whole, numbers: string) => `[[cite:${numbers}@${at++}]]`);
 }
 
 export interface MarkedAnswer {
@@ -66,7 +143,7 @@ function escapeForRegex(value: string): string {
  */
 export function markCitations(
   answer: string,
-  citations: Array<{ paperId: string; title: string; year: string; href: string }>
+  citations: Array<{ paperId: string; title: string; year: string; href: string } & CitationPassageFields>
 ): MarkedAnswer {
   if (!answer || citations.length === 0) return { text: answer, sources: [] };
 
@@ -88,6 +165,7 @@ export function markCitations(
         year: citation.year,
         href: citation.href,
         number: assigned.size + 1,
+        ...citationPassageFields(citation),
       };
       assigned.set(citation.paperId, source);
     }
