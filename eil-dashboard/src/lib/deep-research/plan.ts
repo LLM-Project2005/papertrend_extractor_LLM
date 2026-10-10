@@ -4,10 +4,13 @@
  *
  * One forced call sees a card for every study in scope - title, year, topics
  * and the opening of its abstract - and chooses the ones that bear on the
- * question. A card can hide a paper whose body answers the question, so the
- * repository's own ranking (the first stage of every chat answer) adds up to
- * three of its top eight that the planner passed over; reading them shows
- * whether they bear on it. A study uploaded twice is one study.
+ * question, central (core) or related. A card can hide a paper whose body
+ * answers the question, so High's own evidence selection - keyword and
+ * meaning search, the reranker and its widening - runs on the planner's
+ * search terms too, and Max reads both: the planner's core papers, then the
+ * papers High would read that the planner passed over, then the planner's
+ * related papers, at most twenty. Max never reads fewer of the papers that
+ * matter than High does. A study uploaded twice is one study.
  */
 import type { ChatMessage } from "@/lib/openai";
 import type { ReadablePaper } from "@/lib/paper-reading";
@@ -134,17 +137,23 @@ export function planTool() {
         properties: {
           title: { type: "string", description: "A short title for the answer, in the answer's language, at most 12 words." },
           language: { type: "string", description: "The language the answer must be written in: the language of the reader's question unless they asked for another." },
+          breadth: {
+            type: "string",
+            enum: ["focused", "broad"],
+            description: "focused: about particular studies or one topic; broad: about the collection as a whole or a wide theme.",
+          },
           papers: {
             type: "array",
-            maxItems: LIMITS.papers,
+            maxItems: LIMITS.cards,
             items: {
               type: "object",
               additionalProperties: false,
               properties: {
                 id: { type: "string", description: "The study's label, such as S4." },
+                tier: { type: "string", enum: ["core", "related"], description: "core: the question is about this study; related: it bears on the question less directly." },
                 reason: { type: "string", description: "Why it bears on the question, in a few words." },
               },
-              required: ["id", "reason"],
+              required: ["id", "tier", "reason"],
             },
             description: "Every study that bears on the question, most relevant first.",
           },
@@ -175,7 +184,7 @@ export function planTool() {
             description: "Web searches, only for what papers cannot hold: current policy, recent developments, the world outside the collection. Usually none.",
           },
         },
-        required: ["title", "language", "papers", "aspects", "outline", "searchTerms", "web"],
+        required: ["title", "language", "breadth", "papers", "aspects", "outline", "searchTerms", "web"],
       },
     },
   };
@@ -196,7 +205,7 @@ export function planMessages(input: {
       role: "system",
       content: [
         `Today is ${input.today}. You plan how to answer a researcher's question from their own collection of academic papers. Call plan_reading; do not answer the question.`,
-        "Each chosen paper is then read in full, so choose by what a paper is about: every study whose topic, participants, method or findings bear on the question. For a question about the collection as a whole, or a broad theme, choose every study that bears on it, even many. For a narrow question, choose only the studies that address it. When unsure, include the study: a paper not chosen is not read.",
+        "Each chosen paper is then read in full, so choose by what a paper is about: every study whose topic, participants, method or findings bear on the question. Mark as core the studies the question is about, and as related those that bear on it less directly. For a narrow question, choose only the studies that address it; for a question about the collection or a wide theme, choose every study that bears on it, even many. When unsure whether a study bears on the question, include it as related.",
         "Choose papers only by the labels given (S1, S2, ...). Put the most relevant first.",
         "Aspects say what to note from each paper so the answer can be complete and specific: who was studied and how many, how it was done and measured, what it found with its numbers, and anything else the question asks for (limitations, recommendations, comparisons).",
         "The outline follows the parts of the question. No heading may mention gaps in the literature.",
@@ -255,7 +264,8 @@ export function parsePlan(raw: unknown, input: { question: string; cards: StudyC
     const item = entry as Record<string, unknown>;
     const paper = byLabel.get(String(item.id ?? "").trim().toUpperCase().replace(/^\[|\]$/g, ""));
     if (!paper || papers.some((chosen) => chosen.paperId === paper.paperId)) continue;
-    papers.push({ paperId: paper.paperId, title: paper.title, year: paper.year, reason: cleanText(item.reason, 160), via: "planner" });
+    const tier = item.tier === "related" ? "related" : "core";
+    papers.push({ paperId: paper.paperId, title: paper.title, year: paper.year, reason: cleanText(item.reason, 160), via: "planner", tier });
   }
   const aspects = stringList(value.aspects, LIMITS.aspects, 120);
   if (aspects.length === 0) return null;
@@ -271,52 +281,61 @@ export function parsePlan(raw: unknown, input: { question: string; cards: StudyC
   return {
     title: cleanText(value.title, 140) || cleanText(input.question, 140),
     language: cleanText(value.language, 40) || (/[ก-๛]/.test(input.question) ? "Thai" : "English"),
+    breadth: value.breadth === "broad" ? "broad" : "focused",
     aspects,
     outline: outline.length >= 2 ? outline : [],
     searchTerms: stringList(value.searchTerms, 8, 120).map(searchable).filter((term) => term.length >= 3),
-    papers: papers.slice(0, LIMITS.papers),
+    // Every study the planner chose; mergeSelection orders and caps them.
+    papers,
+    considered: papers.length,
     web,
     source: "model",
   };
 }
 
 /**
- * The planner's papers, then up to three of the ranking's top eight it passed
- * over: a card shows only an abstract's opening, and a paper whose body
- * answers the question can look unrelated. Reading such a paper says whether
- * it bears on the question; one that does not is left out of the answer.
+ * The papers Max reads, most relevant first: the planner's core papers, then
+ * the papers High's own selection chose that the planner passed over (a card
+ * shows only an abstract's opening, and a paper whose results answer the
+ * question can look unrelated), then the planner's related papers - one copy
+ * of each study, at most `limit`. `considered` is how many there were before
+ * the cap, for the answer's note on coverage.
  */
 export function mergeSelection(
   chosen: SelectedPaper[],
-  ranked: Array<{ paperId: string }>,
+  high: Array<{ paperId: string; title: string; year: string }>,
   studies: StudyPaper[],
-  limits: { top: number; adds: number; total: number } = { top: LIMITS.rankingTop, adds: LIMITS.rankingAdds, total: LIMITS.papers }
-): SelectedPaper[] {
-  const byId = new Map(studies.map((paper) => [paper.paperId, paper]));
-  const out = [...chosen];
-  let added = 0;
-  for (const { paperId } of ranked.slice(0, limits.top)) {
-    if (added >= limits.adds) break;
-    if (out.some((paper) => paper.paperId === paperId)) continue;
-    const paper = byId.get(paperId);
-    if (!paper) continue;
-    out.push({ paperId, title: paper.title, year: paper.year, reason: "Matches the question's words", via: "ranking" });
-    added += 1;
-  }
-  return out.slice(0, limits.total);
+  limit: number = LIMITS.papers
+): { papers: SelectedPaper[]; considered: number } {
+  // A paper High chose may be the other upload of a study the planner saw as one.
+  const study = new Map(studies.map((paper) => [studyKey(paper), paper]));
+  const out: SelectedPaper[] = [];
+  const seen = new Set<string>();
+  const add = (paper: SelectedPaper) => {
+    const kept = study.get(studyKey(paper));
+    if (!kept || seen.has(studyKey(kept))) return;
+    seen.add(studyKey(kept));
+    out.push({ ...paper, paperId: kept.paperId, title: kept.title, year: kept.year });
+  };
+  chosen.filter((paper) => paper.tier === "core").forEach(add);
+  high.forEach((paper) => add({ paperId: paper.paperId, title: paper.title, year: paper.year, reason: "Chosen by High's evidence selection", via: "high", tier: "core" }));
+  chosen.filter((paper) => paper.tier !== "core").forEach(add);
+  return { papers: out.slice(0, limit), considered: out.length };
 }
 
-/** A plan from the question and the ranking alone, when the planning call fails. */
-export function fallbackPlan(question: string, ranked: Array<{ paperId: string }>, studies: StudyPaper[]): ResearchPlan {
+/** A plan from the question and High's selection alone, when the planning call fails. */
+export function fallbackPlan(question: string, high: Array<{ paperId: string; title: string; year: string }>, studies: StudyPaper[]): ResearchPlan {
   const thai = /[ก-๛]/.test(question);
-  const papers = mergeSelection([], ranked, studies, { top: LIMITS.rankingTop, adds: LIMITS.rankingTop, total: LIMITS.rankingTop });
+  const { papers, considered } = mergeSelection([], high, studies);
   return {
     title: cleanText(question, 140),
     language: thai ? "Thai" : "English",
+    breadth: "focused",
     aspects: ["who was studied, and how many", "how it was done and measured", "what it found, with its numbers", "anything else the question asks about"],
     outline: [],
     searchTerms: [searchable(question)].filter(Boolean),
     papers,
+    considered,
     web: [],
     source: "fallback",
   };

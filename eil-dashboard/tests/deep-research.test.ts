@@ -76,7 +76,8 @@ test("the planner's choice is held to the cards it was shown, each study once", 
     {
       title: "Dynamic assessment",
       language: "English",
-      papers: [{ id: "S2", reason: "mediation" }, { id: "s1", reason: "DA" }, { id: "S2", reason: "again" }, { id: "S9", reason: "made up" }],
+      breadth: "focused",
+      papers: [{ id: "S2", tier: "core", reason: "mediation" }, { id: "s1", tier: "related", reason: "DA" }, { id: "S2", tier: "core", reason: "again" }, { id: "S9", tier: "core", reason: "made up" }],
       aspects: ["participants", "results with their numbers"],
       outline: ["Who was studied", "What was found"],
       searchTerms: ["How is dynamic assessment used?", "mediation"],
@@ -85,28 +86,35 @@ test("the planner's choice is held to the cards it was shown, each study once", 
     { question: "What do these papers find about dynamic assessment?", cards, webAvailable: true }
   );
   assert.ok(plan);
-  assert.deepEqual(plan!.papers.map((chosen) => chosen.paperId), ["2", "1"], "an unknown label is dropped, a repeated one kept once");
+  assert.deepEqual(plan!.papers.map((chosen) => [chosen.paperId, chosen.tier]), [["2", "core"], ["1", "related"]], "an unknown label is dropped, a repeated one kept once");
+  assert.equal(plan!.breadth, "focused");
+  assert.equal(plan!.considered, 2);
   assert.equal(plan!.searchTerms[0], "dynamic assessment used");
   assert.deepEqual(plan!.web, [], "a question about these papers searches no web");
   assert.equal(parsePlan({ papers: [], aspects: [] }, { question: "q", cards, webAvailable: true }), null, "no aspects, no plan");
   assert.equal(searchable("What is mediation?"), "mediation");
 });
 
-test("the ranking adds up to three of its top eight the planner passed over, after the planner's own", () => {
-  const studies = Array.from({ length: 12 }, (_, index) => paper(String(index + 1), `Paper ${index + 1}`, "text"));
-  const chosen = [{ paperId: "5", title: "Paper 5", year: "2021", reason: "r", via: "planner" as const }];
-  const ranked = ["5", "1", "2", "3", "4", "6", "7", "8", "9"].map((paperId) => ({ paperId }));
-  const merged = mergeSelection(chosen, ranked, studies);
-  assert.deepEqual(merged.map((entry) => entry.paperId), ["5", "1", "2", "3"]);
-  assert.deepEqual(merged.map((entry) => entry.via), ["planner", "ranking", "ranking", "ranking"]);
-  // Only the top eight count: a paper ranked ninth is never added.
-  const late = mergeSelection(["1", "2", "3", "4", "5", "6", "7", "8"].map((paperId) => ({ paperId, title: "", year: "", reason: "", via: "planner" as const })), ranked, studies);
-  assert.equal(late.some((entry) => entry.paperId === "9"), false);
-  // When the planning call fails, the ranking's top eight are read.
-  const fallback = fallbackPlan("การประเมินแบบพลวัตใช้อย่างไร", ranked, studies);
+test("Max reads every paper High would, after the planner's core papers and before its related ones, one copy of each study", () => {
+  const studies = Array.from({ length: 30 }, (_, index) => paper(String(index + 1), `Paper ${index + 1}`, "text"));
+  const pick = (paperId: string, tier: "core" | "related") => ({ paperId, title: `Paper ${paperId}`, year: "2021", reason: "r", via: "planner" as const, tier });
+  const high = ["7", "1", "9"].map((paperId) => ({ paperId, title: `Paper ${paperId}`, year: "2021" }));
+  // "1b" is the other upload of study 1: High chose it, the planner saw one card.
+  const merged = mergeSelection([pick("5", "core"), pick("2", "related"), pick("1", "core")], [...high, { paperId: "1b", title: "Paper 1", year: "2021" }], studies);
+  assert.deepEqual(merged.papers.map((entry) => entry.paperId), ["5", "1", "7", "9", "2"], "planner core, then High's it missed, then related");
+  assert.deepEqual(merged.papers.map((entry) => entry.via), ["planner", "planner", "high", "high", "planner"]);
+  assert.equal(merged.considered, 5);
+  // A broad question: at most twenty read, the most relevant first; considered counts them all.
+  const many = Array.from({ length: 24 }, (_, index) => pick(String(index + 1), index < 10 ? "core" : "related"));
+  const broad = mergeSelection(many, [{ paperId: "30", title: "Paper 30", year: "2021" }], studies);
+  assert.equal(broad.papers.length, LIMITS.papers);
+  assert.equal(broad.considered, 25);
+  assert.equal(broad.papers[10].paperId, "30", "High's paper comes before the planner's related ones");
+  // When the planning call fails, High's selection is read.
+  const fallback = fallbackPlan("การประเมินแบบพลวัตใช้อย่างไร", high, studies);
   assert.equal(fallback.language, "Thai");
-  assert.equal(fallback.papers.length, LIMITS.rankingTop);
-  assert.match(planSummary(fallback), /^อ่านงานวิจัย 8 ฉบับ/);
+  assert.deepEqual(fallback.papers.map((entry) => entry.paperId), ["7", "1", "9"]);
+  assert.match(planSummary(fallback), /^อ่านงานวิจัย 3 ฉบับ/);
 });
 
 test("the web is planned only when the question asks for what papers cannot hold", () => {
@@ -114,14 +122,14 @@ test("the web is planned only when the question asks for what papers cannot hold
   assert.equal(questionNeedsWeb("What do these papers say about using ChatGPT for feedback in writing classes?"), false);
   assert.equal(questionNeedsWeb("How does Thailand's current national policy on English assessment compare with these papers?"), true);
   assert.equal(questionNeedsWeb("นโยบายการสอนภาษาอังกฤษของไทยในปัจจุบันเป็นอย่างไร"), true);
-  const raw = { title: "t", language: "English", papers: [{ id: "S1", reason: "r" }], aspects: ["a"], outline: [], searchTerms: ["x"], web: [{ query: "a", purpose: "" }, { query: "English test policy Thailand", purpose: "now" }, { query: "more policy", purpose: "" }, { query: "third", purpose: "" }] };
+  const raw = { title: "t", language: "English", breadth: "focused", papers: [{ id: "S1", tier: "core", reason: "r" }], aspects: ["a"], outline: [], searchTerms: ["x"], web: [{ query: "a", purpose: "" }, { query: "English test policy Thailand", purpose: "now" }, { query: "more policy", purpose: "" }, { query: "third", purpose: "" }] };
   const plan = parsePlan(raw, { question: "How does current policy compare with these papers?", cards, webAvailable: true });
   assert.deepEqual(plan?.web.map((search) => search.query), ["English test policy Thailand", "more policy"], `a too-short query goes, and at most ${LIMITS.webSearches} are kept`);
   assert.deepEqual(parsePlan(raw, { question: "How does current policy compare?", cards, webAvailable: false })?.web, []);
 });
 
 test("the first sixteen papers are read whole, the rest in their main sections; each is one step", () => {
-  const papers = Array.from({ length: 18 }, (_, index) => ({ paperId: String(index), title: `A study ${index}`, year: "2020", reason: "r", via: "planner" as const }));
+  const papers = Array.from({ length: 18 }, (_, index) => ({ paperId: String(index), title: `A study ${index}`, year: "2020", reason: "r", via: "planner" as const, tier: "core" as const }));
   const plan = { ...fallbackPlan("q", [], []), papers, web: [{ query: "policy now", purpose: "Policy now." }] };
   const steps = planSteps({ plan, scope: { kind: "project", projectId: "p", folderId: null, runIds: [] }, prompt: "q", model: null });
   assert.deepEqual([...new Set(steps.map((step) => step.tool))], ["dr2_read", "dr2_web", "dr2_write", "dr2_check"]);
@@ -211,6 +219,26 @@ test("citation ranges are written out, so each id is checked and becomes a citat
   } finally {
     if (saved !== undefined) process.env.OPENAI_API_KEY = saved;
   }
+});
+
+test("up to two numbers may come from elsewhere in the paper than the quotes; a number the paper does not print may not", () => {
+  const quote = "The mean writing score rose from 12.5 (SD 2.1) to 18.4 (SD 1.9), t(48) = 9.82, p < .001.";
+  const fact = (statement: string) => ({ aspect: "results", kind: "finding", own: true, section: "Results", statement, quotes: [quote] });
+  const record = checkRecord(
+    {
+      relevant: true,
+      facts: [
+        fact("Over 15 weeks, the mean rose from 12.5 to 18.4."),
+        fact("Over 15 weeks, 49 students' mean rose from 12.5 to 18.4 among 48 degrees of freedom and 2 raters."),
+        fact("Over 16 weeks, the mean rose from 12.5 to 18.4."),
+      ],
+      notReported: [],
+    },
+    DA,
+    true
+  );
+  assert.deepEqual(record.facts.map((entry) => entry.statement), ["Over 15 weeks, the mean rose from 12.5 to 18.4."], "15 is printed in the methods");
+  assert.deepEqual(record.rejected?.map((entry) => entry.reason), ["not in its quotes: 15, 49, 2", "not in its quotes: 16"], "three from outside are too many; 16 is not in the paper");
 });
 
 test("only a paper read whole may be said not to report something", () => {
@@ -391,7 +419,16 @@ test("the writer sees each paper as read - whole or in part - its checked facts,
   assert.match(messages[1].content, /36 analysed studies; 1 more still being analysed/);
   assert.match(messages[0].content, /Say that a paper does not report something only when that detail is listed under "Not reported" for that paper - that detail exactly, never something broader/);
   assert.match(messages[0].content, /never present it as that paper's own result/);
-  assert.match(messages[0].content, /give a Markdown table with one row per study/);
+  assert.match(messages[0].content, /one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites/);
+  assert.match(messages[0].content, /how many took part, the design, and the main result with its statistic/);
+  assert.match(messages[0].content, /Length: 3,000 to 6,000 characters/, "a focused question gets an answer High's length");
+  assert.match(messages[0].content, /the 2 or 3 most important things the question asks that the papers read do not report\b[^.]*\. Never a list of every missing detail/);
+  assert.doesNotMatch(messages[0].content, /how many of the studies that bear on the question were read/, "nothing was left unread, so no coverage count");
+  // A broad question past the cap: a longer answer, and it says how many were read of how many.
+  const broad = reportMessages({ question: "q", plan: { ...plan, breadth: "broad", considered: 26 }, records: RECORDS, evidence: EVIDENCE, unread: [], scopeLabel: "A", studiesInScope: 36, pendingPapers: 0, today: "2026-10-10" });
+  assert.match(broad[0].content, /Length: at most 8,000 characters/);
+  assert.match(broad[0].content, /how many of the studies that bear on the question were read/);
+  assert.match(broad[1].content, /26 bear on the question; the 2 most relevant were read/);
   assert.match(messages[0].content, /Cite only those ids; never write any other identifier/);
   const databaseId = "4600876543210987";
   const withId = reportMessages({ question: "q", plan, records: [{ ...RECORDS[0], paperId: databaseId }], evidence: buildEvidence([{ ...RECORDS[0], paperId: databaseId }], []), unread: [], scopeLabel: "A", studiesInScope: 1, pendingPapers: 0, today: "2026-10-10" });

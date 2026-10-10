@@ -236,6 +236,32 @@ test("each chosen paper is read whole, and the answer is written from the facts 
   assert.deepEqual([...new Set(world.calls.map((call) => call.model))], ["openai/gpt-6-luna-20260922"]);
 });
 
+test("a paper High would read is read too, even when the planner passed it over", async () => {
+  const h = await workspace();
+  const run2 = "7c8d9e0f-a1b2-4c3d-8e4f-5a6b7c8d9e01";
+  const second = paperIdFromRunId(run2);
+  await h.db.exec(`
+    INSERT INTO ingestion_runs (id, owner_user_id, folder_id, source_type, status, source_filename, input_payload, completed_at)
+      VALUES ('${run2}', '${OWNER}', '${FOLDER}', 'upload', 'succeeded', 'second.pdf', '{}'::jsonb, now());
+    INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES (${second}, '${OWNER}', '${FOLDER}', '2023', 'Graduated Prompts in Thai EFL Writing');
+  `);
+  await h.db.query(
+    `INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id, abstract, body) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [second, OWNER, FOLDER, run2, "Graduated prompts in dynamic assessment helped Thai EFL writers revise.", BODY]
+  );
+  // The planner chooses only S1; High's selection (its reranker unreadable here, so its ranking) has both.
+  const planned = await ask(h, h.owner, QUESTION);
+  const reads = planned.body.deepResearchSession.steps
+    .filter((step: { tool_name: string }) => step.tool_name === "dr2_read")
+    .map((step: { input_payload: { paper: { title: string; via: string } } }) => [step.input_payload.paper.title, step.input_payload.paper.via]);
+  assert.deepEqual(reads, [
+    ["Dynamic Assessment in a Thai EFL Classroom", "planner"],
+    ["Graduated Prompts in Thai EFL Writing", "high"],
+  ], "the planner's paper first, then High's other paper");
+  assert.equal(world.calls.filter((call) => call.system.includes("Select at most")).length, 1, "High's reranker was asked, with the run's model");
+  assert.equal(world.calls.find((call) => call.system.includes("Select at most"))?.model, "openai/gpt-6-luna-20260922");
+});
+
 test("a lease holds a run to one worker; a released or expired lease can be taken again", async () => {
   const h = await workspace();
   const planned = await ask(h, h.owner, QUESTION);

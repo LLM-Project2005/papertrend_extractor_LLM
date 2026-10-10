@@ -1,18 +1,19 @@
 /*
- * What the chat route does for deep research v2 (docs/31): plan, start (or
+ * What the chat route does for Max effort's research engine: plan, start (or
  * retry), cancel, and pick up a run whose worker went quiet.
  *
- * Planning costs one small model call, counted toward the daily token budget;
+ * Planning costs one small model call and High's evidence selection (its
+ * reranker and sufficiency check), counted toward the daily token budget;
  * starting a run costs one deep research unit. A retry after a failure or a
  * cancel resumes the same run and costs nothing more.
  */
 import { getChatRepository } from "@/lib/chat-repository";
-import { loadRepositoryContext } from "@/lib/repository-chat";
+import { loadRepositoryContext, selectEvidence, type RepositoryContext, type RepositoryPromptPlan } from "@/lib/repository-chat";
 import { normalizeKnowledgeScope, type KnowledgeScope } from "@/lib/knowledge-scope";
 import { assertAndRecordAiUsage } from "@/lib/security-guards";
 import type { ChatThreadDetail, DeepResearchSessionRecord } from "@/types/research";
 import { callTool } from "@/lib/deep-research/model";
-import { dedupeStudies, fallbackPlan, mergeSelection, parsePlan, planMessages, planSummary, planTool, rankStudies, studyCards, studyOf } from "@/lib/deep-research/plan";
+import { dedupeStudies, fallbackPlan, mergeSelection, parsePlan, planMessages, planSummary, planTool, studyCards, studyOf } from "@/lib/deep-research/plan";
 import { runResearchSession } from "@/lib/deep-research/run";
 import {
   cancelSession,
@@ -26,7 +27,7 @@ import {
   startSession,
 } from "@/lib/deep-research/store";
 import { enqueueResearchRun, researchQueue } from "@/lib/deep-research/tasks";
-import { isCurrentEngine, LIMITS } from "@/lib/deep-research/types";
+import { CHAT_MODEL, isCurrentEngine, type ResearchPlan } from "@/lib/deep-research/types";
 
 export interface ResearchRequest {
   message?: string;
@@ -46,6 +47,68 @@ function titleFrom(prompt: string): string {
 
 async function detailOf(ownerUserId: string, threadId: string): Promise<ChatThreadDetail> {
   return getChatRepository().getThreadDetail(ownerUserId, threadId);
+}
+
+/**
+ * The papers High would read for the question (repository-chat.ts's
+ * selectEvidence at High: keyword and meaning search, the reranker, and up to
+ * four papers more when the first choice falls short), searched with the
+ * planner's terms when there are some. Empty when it cannot run.
+ */
+export async function highSelection(context: RepositoryContext, question: string, terms: string[], aspects: string[]) {
+  const plan: RepositoryPromptPlan = {
+    intent: "repository_qa",
+    refinedQuestion: question,
+    terms: [],
+    retrievalQueries: terms.length ? terms : [question],
+    evidenceNeeds: aspects,
+    answerLanguage: /[ก-๛]/.test(question) ? "Thai" : "English",
+    retrievalMode: "focused",
+    needsChart: false,
+    chartType: "bar",
+    reason: "The papers High would read, for Max to read too.",
+    confidence: "medium",
+    source: "llm",
+  };
+  try {
+    return (await selectEvidence(context, plan, CHAT_MODEL, "high")).papers;
+  } catch (error) {
+    console.warn("deep_research_high_selection_failed", { message: error instanceof Error ? error.message : "unknown_error" });
+    return [];
+  }
+}
+
+/**
+ * Plans a question: one call over a card per study chooses the papers and
+ * what to note from each, and High's own selection runs on its search terms;
+ * Max reads both (plan.ts mergeSelection).
+ */
+export async function planFor(
+  context: RepositoryContext,
+  prompt: string,
+  history: Array<{ role: "user" | "assistant"; content: string }> = []
+): Promise<ResearchPlan> {
+  // One card per study (a duplicate upload is one study).
+  const studies = dedupeStudies(context.papers.map(studyOf));
+  const cards = studyCards(studies, prompt);
+  const raw = await callTool(
+    planMessages({
+      question: prompt,
+      scopeLabel: context.scopeLabel,
+      cards,
+      totalStudies: studies.length,
+      webAvailable: true,
+      today: new Date().toISOString().slice(0, 10),
+      history,
+    }),
+    planTool(),
+    "DEEP_RESEARCH_PLAN",
+    { maxTokens: 6_000, timeoutMs: 60_000, reasoningEffort: "low" }
+  );
+  const parsed = parsePlan(raw, { question: prompt, cards, webAvailable: true });
+  const high = await highSelection(context, prompt, parsed?.searchTerms ?? [], parsed?.aspects ?? []);
+  if (!parsed) return fallbackPlan(prompt, high, studies);
+  return { ...parsed, ...mergeSelection(parsed.papers, high, studies) };
 }
 
 /** Plans the question as a new run, or re-plans the thread's run not yet started. */
@@ -98,27 +161,7 @@ export async function planResearch(body: ResearchRequest, ownerUserId: string): 
     .filter((message) => (message.role === "user" || message.role === "assistant") && (message.message_kind === "chat" || message.message_kind === "deep_research_report"))
     .slice(-4)
     .map((message) => ({ role: message.role as "user" | "assistant", content: String(message.content ?? "") }));
-  // One card per study (a duplicate upload is one study); the planner chooses what to read.
-  const studies = dedupeStudies(context.papers.map(studyOf));
-  const cards = studyCards(studies, prompt);
-  const raw = await callTool(
-    planMessages({
-      question: prompt,
-      scopeLabel: context.scopeLabel,
-      cards,
-      totalStudies: studies.length,
-      webAvailable: true,
-      today: new Date().toISOString().slice(0, 10),
-      history,
-    }),
-    planTool(),
-    "DEEP_RESEARCH_PLAN",
-    { maxTokens: 6_000, timeoutMs: 60_000, reasoningEffort: "low" }
-  );
-  const parsed = parsePlan(raw, { question: prompt, cards, webAvailable: true });
-  // The repository's ranking adds what a card may have hidden (plan.ts).
-  const ranked = rankStudies(studies, [prompt, ...(parsed?.searchTerms ?? [])], LIMITS.rankingTop);
-  const plan = parsed ? { ...parsed, papers: mergeSelection(parsed.papers, ranked, studies) } : fallbackPlan(prompt, ranked, studies);
+  const plan = await planFor(context, prompt, history);
   const planned = await latestPlannedSession(ownerUserId, thread.id);
   await savePlan({
     ownerUserId,

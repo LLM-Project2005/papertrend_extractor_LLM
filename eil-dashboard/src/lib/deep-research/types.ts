@@ -31,26 +31,31 @@ export function isCurrentEngine(
   return (write?.input_payload as { engine?: unknown } | undefined)?.engine === ENGINE;
 }
 
-/** Server-side limits a request cannot raise. */
+/**
+ * Server-side limits a request cannot raise. Measured on the test repository
+ * (2026-10-10): a broad question read 32 papers at 14 facts each for $0.093
+ * and 220 s; twenty papers at ten facts, ten at a time, is about $0.05 and
+ * under 150 s.
+ */
 export const LIMITS = {
   /** Study cards the planner sees; a bigger scope is ranked first. */
   cards: 60,
   /** Papers read in one run, and how many of them whole; the rest in their main sections. */
-  papers: 40,
+  papers: 20,
   wholePapers: 16,
-  /** Papers the ranking adds to the planner's choice, from its top eight. */
-  rankingTop: 8,
-  rankingAdds: 3,
   /** Characters of one paper read whole; a longer one is read in its main sections. */
   wholeChars: 160_000,
   partChars: 24_000,
   /** Facts kept from one paper. */
-  factsPerPaper: 14,
+  factsPerPaper: 10,
   aspects: 8,
   webSearches: 2,
   /** Papers read at once. */
-  concurrency: 6,
+  concurrency: 10,
 } as const;
+
+/** The model Max reads, writes and chooses papers with, as High does (the chat route's model). */
+export const CHAT_MODEL = "openai/gpt-6-luna-20260922";
 
 export interface WebSearch {
   query: string;
@@ -63,21 +68,28 @@ export interface SelectedPaper {
   year: string;
   /** Why it bears on the question, in a few words. */
   reason: string;
-  /** Chosen by the planner, or added from the ranking as a safety net. */
-  via: "planner" | "ranking";
+  /** Chosen by the planner from the study cards, or by High's own evidence selection. */
+  via: "planner" | "high";
+  /** The planner's judgement: central to the question, or bearing on it. */
+  tier: "core" | "related";
 }
 
 export interface ResearchPlan {
   title: string;
   /** "English", "Thai", ... - the language the answer is written in. */
   language: string;
+  /** A question about particular studies or one topic, or about the collection or a wide theme. */
+  breadth: "focused" | "broad";
   /** What to note from each paper: "participants and setting", "how writing was measured". */
   aspects: string[];
   /** Section headings for the answer, in its language. */
   outline: string[];
   /** English keywords, for ranking papers and choosing what to read in a long one. */
   searchTerms: string[];
+  /** The papers read, most relevant first, at most LIMITS.papers. */
   papers: SelectedPaper[];
+  /** How many studies the planner and High's selection found bearing on the question, before the cap. */
+  considered: number;
   web: WebSearch[];
   source: "model" | "fallback";
 }
