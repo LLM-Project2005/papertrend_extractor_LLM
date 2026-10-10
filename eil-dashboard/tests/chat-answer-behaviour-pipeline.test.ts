@@ -624,6 +624,22 @@ test("a plan that explains itself at length, or asks for five steps, is cut to s
   assert.deepEqual(parsed.retrievalQueries.map((query) => query.length), [240, 13]);
 });
 
+test("a follow-up's writer reads the answer it follows, not its first 1,200 characters", async () => {
+  const { ask, task, script, peerFeedback } = await repository();
+  script((call) => (call.taskName === "CHAT_SYNTHESIS" ? { answer: `Peer feedback improved revision quality [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 } : null));
+  const earlier = `${"Two peer feedback studies are compared here. ".repeat(100)}The second study had 49 students.`;
+  const followUp = "Tell me more about the second study";
+  await ask(followUp, {
+    executionPlan: plan("search_evidence", "focused", "What did the second peer feedback study do?"),
+    history: [
+      { role: "user", content: QUESTION },
+      { role: "assistant", content: earlier },
+      { role: "user", content: followUp },
+    ],
+  });
+  assert.ok(text(task("CHAT_SYNTHESIS")[0]).includes("The second study had 49 students."), "the end of a 4,600-character answer is read");
+});
+
 test("two uploads of one paper are one study, whatever their word counts", async () => {
   const { oneCopyEach } = await repository();
   const papers = [

@@ -2543,6 +2543,9 @@ export const AUDIT_EVIDENCE_CHARS = { focused: 250_000, exhaustive: 250_000 } as
 /** Papers a second search may add to the reranker's choice. */
 export const EXPANSION_PAPERS = 4;
 
+/** How much of the previous answer a follow-up's writer reads. */
+export const FOLLOW_UP_ANSWER_CHARS = 8_000;
+
 export function auditEvidence(evidenceText: string, scopeMode: "focused" | "comparative" | "exhaustive"): string {
   const budget = scopeMode === "exhaustive" ? AUDIT_EVIDENCE_CHARS.exhaustive : AUDIT_EVIDENCE_CHARS.focused;
   if (evidenceText.length <= budget) return evidenceText;
@@ -2822,9 +2825,14 @@ async function repositoryQaResult(
   const passageSources: PassageSources = {
     readings: new Map(evidence.readings.map((reading) => [reading.paperId, reading.text])),
   };
-  const history = (input.history ?? []).slice(-8).map((message) => ({
+  // The answer a follow-up asks about ("the second study", "those two") is
+  // read as it was written, up to 8,000 characters; the turns before it stay
+  // short. Every turn was cut to 1,200, a fifth of a typical answer.
+  const recent = (input.history ?? []).slice(-8);
+  const lastAnswer = recent.map((message) => message.role).lastIndexOf("assistant");
+  const history = recent.map((message, index) => ({
     role: message.role,
-    content: message.content.slice(0, 1_200),
+    content: message.content.slice(0, index === lastAnswer ? FOLLOW_UP_ANSWER_CHARS : 1_200),
   }));
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
