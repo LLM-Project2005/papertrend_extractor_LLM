@@ -280,6 +280,9 @@ test("every number a sentence gives must be printed in what it cites, or be a di
   assert.match(codeProblems(unit("Scores rose to 25 [E2]."), CONTEXT)[0], /the number 25 is not in what it cites/);
   assert.deepEqual(codeProblems(unit("L1 Thai learners in both studies improved [E2, E5]."), CONTEXT), [], "\"L1\" is not the number 1");
   assert.deepEqual(codeProblems(unit("Of the 36 studies in scope, 2 bear on it."), CONTEXT), [], "counts of the collection need no source");
+  const withPaperNumbers: CheckContext = { ...CONTEXT, paperNumbers: new Map([["1", [12.5, 18.4, 49, 15]]]) };
+  assert.deepEqual(codeProblems(unit("The 49-student study raised scores to 18.4 [E1]."), withPaperNumbers), [], "the paper's own id carries its checked numbers");
+  assert.match(codeProblems(unit("The 49-student study raised scores to 19.9 [E1]."), withPaperNumbers)[0], /19\.9/);
   assert.match(codeProblems(unit("Scores rose from 12.5 to 18.4."), CONTEXT)[0], /not in what it cites/, "an uncited number has no source");
   assert.equal(numberSupported(0.93, [0.93]), true);
   assert.equal(numberSupported(3.4, [10, 2]), false);
@@ -422,6 +425,7 @@ test("the writer sees each paper as read - whole or in part - its checked facts,
   assert.match(messages[0].content, /one compact Markdown table, one row per study the question is about - never a row for a study a paper only cites/);
   assert.match(messages[0].content, /how many took part, the design, and the main result with its statistic/);
   assert.match(messages[0].content, /Length: 450 to 900 words - never more than 900/, "a focused question gets an answer High's length");
+  assert.match(messages[0].content, /when there is a table, the prose does not repeat its numbers; each ## section is one or two short paragraphs; at most four ## sections/);
   assert.match(messages[0].content, /the 2 or 3 most important things the question asks that the papers read do not report\b[^.]*\. Never a list of every missing detail/);
   assert.doesNotMatch(messages[0].content, /how many of the studies that bear on the question were read/, "nothing was left unread, so no coverage count");
   // A broad question past the cap: a longer answer, and it says how many were read of how many.

@@ -217,6 +217,8 @@ export interface CheckContext {
   lastSection: number;
   /** The years of the papers read: "the 2020 study" names a paper, it does not claim a number. */
   years?: number[];
+  /** Each paper's checked numbers: a sentence citing the paper itself may give any of them. */
+  paperNumbers?: Map<string, number[]>;
 }
 
 /** What code alone can say is wrong with a sentence; empty when nothing is. */
@@ -224,7 +226,10 @@ export function codeProblems(unit: Pick<ReportUnit, "text" | "cites" | "opening"
   const problems: string[] = [];
   const cited = unit.cites.map((id) => context.evidence.get(id)).filter((item): item is Evidence => Boolean(item));
   const plain = unit.text.replace(CITE_GROUP, " ");
-  const printed = cited.flatMap((item) => valuesIn(`${item.title} ${item.year} ${item.text} ${item.statement ?? ""}`));
+  const printed = cited.flatMap((item) => [
+    ...valuesIn(`${item.title} ${item.year} ${item.text} ${item.statement ?? ""}`),
+    ...(item.record ? context.paperNumbers?.get(item.sourceId) ?? [] : []),
+  ]);
   const papersCited = new Set(cited.map((item) => item.sourceId)).size;
   const bad = digitNumbers(plain).filter((number) => {
     if (context.years?.includes(number)) return false;
@@ -361,7 +366,13 @@ export async function checkAnswer(input: {
   const evidence = new Map(input.evidence.map((item) => [item.id, item]));
   const parsed = parseReport(expandCitationRanges(input.draft));
   const years = [...new Set(input.evidence.filter((item) => item.kind === "paper").map((item) => Number(item.year)).filter((year) => Number.isInteger(year) && year > 1900))];
-  const context: CheckContext = { evidence, counts: input.counts, lastSection: Math.max(parsed.sections - 1, 1), years };
+  // Every checked number of a paper, for a sentence that cites the paper itself.
+  const paperNumbers = new Map<string, number[]>();
+  for (const item of input.evidence) {
+    if (item.kind !== "paper" || item.record) continue;
+    paperNumbers.set(item.sourceId, [...(paperNumbers.get(item.sourceId) ?? []), ...valuesIn(`${item.text} ${item.statement ?? ""}`)]);
+  }
+  const context: CheckContext = { evidence, counts: input.counts, lastSection: Math.max(parsed.sections - 1, 1), years, paperNumbers };
   const audit = emptyAudit();
   const replacements = new Map<string, string>();
   const changes: CheckedSentence[] = [];

@@ -243,7 +243,7 @@ export async function runResearchSession(input: {
       draft,
       evidence,
       language: plan.language,
-      counts: [studies.length, context.papers.length, records.length, relevant.length, records.filter((record) => record.whole).length],
+      counts: [studies.length, context.papers.length, plan.considered ?? records.length, records.length, relevant.length, records.filter((record) => record.whole).length],
       model,
     });
     const final = finalizeReport(checked.report, new Map(evidence.map((item) => [item.id, item])));
