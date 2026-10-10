@@ -57,7 +57,7 @@ const MORE = [
   {
     Icon: SearchIcon,
     title: "Thinking effort",
-    copy: "Slide the effort under the text box from Low to Max. Each step up reads more widely and thinks longer; at Max the question is split into two to five parts, shown as its thinking while it reads the papers first and the web only where they cannot answer, and Gemini 3.8 Flash, a different model family from the writer, checks every sentence. About 40 seconds; stop it at any time.",
+    copy: "Slide the effort under the text box from Low to Max. Each step up reads more widely and thinks longer; at Max it chooses the papers that bear on the question and reads each one in full, going to the web only where they cannot answer; every fact is quoted from its paper, and every number in the answer must be printed in what it cites. About one and a half to two minutes; stop it at any time.",
   },
   {
     Icon: RefreshIcon,

@@ -14,8 +14,9 @@ import { citationLabel } from "@/lib/answer-citations";
 import { attachCitationPassages } from "@/lib/citation-passages";
 import type { RepositoryCitation } from "@/lib/repository-chat";
 import type { Evidence } from "@/lib/deep-research/types";
+import { expandCitationRanges } from "@/lib/deep-research/verify";
 
-/** The parts retrieve.ts files a passage under; "text" is the body, which has no one name. */
+/** Lower-case part names, as deep research v2 filed passages; a paper's own headings pass through. */
 const SECTION_NAMES: Record<string, string> = {
   abstract: "Abstract",
   methods: "Methods",
@@ -24,17 +25,18 @@ const SECTION_NAMES: Record<string, string> = {
 };
 
 /**
- * Each paper's gathered passages, laid out as an answer's reading is: a
- * heading per passage and "[…]" between them, since they are not adjacent in
+ * Each paper's quoted sentences, laid out as an answer's reading is: a
+ * heading per quote and "[…]" between them, since they are not adjacent in
  * the paper. A passage trimmed to length ends in "…", which is not the paper's.
+ * A paper's own entry (cited for what it does not report) has no passage.
  */
 function evidenceReadings(evidence: Map<string, Evidence>): Map<string, string> {
   const readings = new Map<string, string[]>();
   for (const item of evidence.values()) {
-    if (item.kind !== "paper") continue;
+    if (item.kind !== "paper" || item.record) continue;
     const text = item.text.replace(/…\s*$/, "").trim();
     if (!text) continue;
-    const section = item.section ? SECTION_NAMES[item.section] : undefined;
+    const section = item.section ? SECTION_NAMES[item.section] ?? item.section.replace(/^#+\s*/, "").trim() : undefined;
     readings.set(item.sourceId, [...(readings.get(item.sourceId) ?? []), `${section ? `### ${section}\n` : "### Text\n"}${text}`]);
   }
   return new Map([...readings].map(([paperId, parts]) => [paperId, parts.join("\n[…]\n")]));
@@ -74,7 +76,7 @@ export function finalizeReport(report: string, evidence: Map<string, Evidence>):
     }
     return labelFor(clean);
   };
-  const text = report.replace(CITE_GROUP, (_whole, inner: string) => {
+  const text = expandCitationRanges(report).replace(CITE_GROUP, (_whole, inner: string) => {
     const labels: string[] = [];
     for (const id of inner.split(/\s*[,;]\s*/)) {
       const item = evidence.get(id);

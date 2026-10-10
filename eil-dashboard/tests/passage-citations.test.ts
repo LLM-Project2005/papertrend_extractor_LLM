@@ -202,8 +202,8 @@ test("web pages and papers whose text was not read are left as they are", () => 
 
 test("a research report's citations quote the passages it was written from", () => {
   const evidence: Evidence[] = [
-    { id: "E1", kind: "paper", sourceId: "101", title: PEER.title, year: "2021", section: "results", text: "The experimental group's mean writing score rose from 21.4 to 29.8, while the control group's rose from 21.9 to 24.1. Students also reported more…", questionId: "Q1" },
-    { id: "E2", kind: "paper", sourceId: "101", title: PEER.title, year: "2021", section: "abstract", text: "Sixty second-year students took part over one semester.", questionId: "Q1" },
+    { id: "E1", kind: "paper", sourceId: "101", title: PEER.title, year: "2021", section: "results", text: "The experimental group's mean writing score rose from 21.4 to 29.8, while the control group's rose from 21.9 to 24.1. Students also reported more…" },
+    { id: "E2", kind: "paper", sourceId: "101", title: PEER.title, year: "2021", section: "abstract", text: "Sixty second-year students took part over one semester." },
   ];
   const final = finalizeReport("Peer feedback raised writing scores from 21.4 to 29.8 [E1]. The sample was sixty students [E2].", new Map(evidence.map((item) => [item.id, item])));
   const [citation] = final.citations;

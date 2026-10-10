@@ -1,19 +1,28 @@
 /*
- * Web pages for a sub-question the plan sends to the web.
+ * Web pages for a search the plan asks for (only where the papers cannot
+ * answer: current policy, recent developments).
  *
  * OpenRouter's web plugin always searches before the model answers; the pages
  * it returns (address, title and the passages Exa drew from them) become
- * evidence like a paper's passages, read by the same findings step. The
+ * evidence the answer may cite as coming from outside the collection. The
  * model's own reply here is discarded: only what the search returned is kept.
  */
 import { createChatCompletionResult } from "@/lib/openai";
 import { webSourcesFromAnnotations } from "@/lib/repository-chat-web";
-import { trimPassage } from "@/lib/deep-research/retrieve";
 
 export interface WebPage {
   url: string;
   title: string;
   text: string;
+}
+
+/** A page's text cut to a length a reader can check, at a sentence end where one is near. */
+export function trimPassage(text: string, max = 1_100): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+  return end > max * 0.6 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : max)}…`;
 }
 
 export async function searchWeb(query: string, question: string, today: string): Promise<{ pages: WebPage[]; failed: boolean }> {
