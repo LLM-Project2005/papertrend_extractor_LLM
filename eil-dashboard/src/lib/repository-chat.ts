@@ -1858,7 +1858,7 @@ function topicResult(
   };
 }
 
-interface SelectedEvidence {
+export interface SelectedEvidence {
   text: string;
   papers: RepositoryPaper[];
   /** What the answer is given of each paper, which its citations quote from. */
@@ -2284,7 +2284,8 @@ export function expansionIsPossible(selectedIds: string[], scopedPaperCount: num
   return new Set(selectedIds).size < scopedPaperCount;
 }
 
-async function selectEvidence(
+/** The papers an answer reads, chosen as High chooses them; Max starts from the same choice. */
+export async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
   model?: string,
