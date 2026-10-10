@@ -47,9 +47,20 @@ export function readingText(paper: StudyPaper, whole: boolean, terms: string[]):
   return { text: reading.text, whole: reading.whole && whole };
 }
 
+/**
+ * ".93" and "p < .05" written "0.93" and "0.05". Papers print APA decimals
+ * without the zero, and the word splitter read ".93" as 93: a study's means
+ * were dropped because a statement's ".93" did not match its quote's "0.93"
+ * (2026-10-10). Every number check reads text through this; quotes are kept
+ * as the paper prints them.
+ */
+export function decimals(text: string): string {
+  return text.replace(/(^|[^\p{N}])\.(\p{N})/gu, "$10.$2");
+}
+
 /** The paper's text as a quote is checked against: its title and parts, references left out. */
 export function checkableText(paper: StudyPaper): CheckableText {
-  return checkable([paper.title, ...paperParts(paper).map((part) => part.text)].join("\n\n"));
+  return checkable(decimals([paper.title, ...paperParts(paper).map((part) => part.text)].join("\n\n")));
 }
 
 const KINDS = ["finding", "method", "participants", "measure", "context", "limitation", "recommendation"] as const;
@@ -156,7 +167,7 @@ export function asksAboutEarlierWork(question: string): boolean {
 
 /** The numbers written in digits in a statement; "two groups" and "L1" are words. */
 export function digitNumbers(text: string): number[] {
-  const words = wordsOf(text);
+  const words = wordsOf(decimals(text));
   return numbersIn(words)
     .filter((token) => /\d/.test(words[token.start] ?? ""))
     .map((token) => token.value);
@@ -193,8 +204,8 @@ export function checkRecord(
     // What a paper says about the studies it cites is kept only when the question asks about earlier
     // work: told to leave such studies out, the writer still made them rows of a comparison (2026-10-10).
     if (item.own === false && !options.keepCited) continue;
-    const found = given.filter((quote) => quoteInText(quote, text));
-    const quoted = found.flatMap((quote) => numbersIn(wordsOf(quote)).map((token) => token.value));
+    const found = given.filter((quote) => quoteInText(decimals(quote), text));
+    const quoted = found.flatMap((quote) => numbersIn(wordsOf(decimals(quote))).map((token) => token.value));
     // A number from outside the quotes - a scale's "100-point", a course's
     // "17-week" - is allowed when the paper prints it, two at most; on the test
     // repository the strict rule dropped a study's means and another's sample
@@ -204,7 +215,7 @@ export function checkRecord(
     // not a whole number, which some pair of numbers in a table row always makes ("48" and ".001" make 49).
     const arithmetic = (number: number) => !Number.isInteger(number) && numberSupported(number, quoted);
     const outside = found.length
-      ? digitNumbers(statement).filter((number) => !exempt.has(number) && !found.some((quote) => numberInQuote(number, quote, text)) && !arithmetic(number))
+      ? digitNumbers(statement).filter((number) => !exempt.has(number) && !found.some((quote) => numberInQuote(number, decimals(quote), text)) && !arithmetic(number))
       : [];
     const missing = outside.length <= OUTSIDE_NUMBERS ? outside.filter((number) => !numberInPaper(number, text)) : outside;
     if (found.length === 0 || missing.length > 0) {

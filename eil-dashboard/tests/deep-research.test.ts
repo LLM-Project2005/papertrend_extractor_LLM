@@ -186,7 +186,7 @@ test("a fact is kept only when its quote is in the paper and every number in it 
   assert.equal(record.unverified, 2, "a number not in its quote, and a quote not in the paper, are dropped");
   assert.equal(record.facts[3].own, false, "what a paper says about another study is marked so");
   assert.deepEqual(record.notReported, ["delayed post-test"]);
-  assert.deepEqual(digitNumbers("L1 Thai learners, 49 of them, scored 3.30 (p < .05)"), [49, 3.3, 5], "\"L1\" is a word, not the number 1");
+  assert.deepEqual(digitNumbers("L1 Thai learners, 49 of them, scored 3.30 (p < .05)"), [49, 3.3, 0.05], "\"L1\" is a word, not the number 1; .05 is 0.05");
 });
 
 test("a fact may rest on up to three quotes; each number must be printed in one of them", () => {
@@ -254,6 +254,18 @@ test("a fact may give a difference of its quoted numbers; a paper's account of a
   assert.equal(checkRecord({ relevant: true, facts, notReported: [] }, DA, true, undefined, { keepCited: true }).facts.length, 2);
   assert.equal(asksAboutEarlierWork("What earlier studies do these papers review?"), true);
   assert.equal(asksAboutEarlierWork("Compare the intervention studies that tried to improve writing"), false);
+});
+
+test("a decimal printed without its zero is the same number: .93 is 0.93, never 93", async () => {
+  const { decimals } = await import("../src/lib/deep-research/read");
+  assert.equal(decimals("F(2,13) = 83.54, p < .05, partial eta-squared = .93; scores 12.5"), "F(2,13) = 83.54, p < 0.05, partial eta-squared = 0.93; scores 12.5");
+  assert.deepEqual(digitNumbers("partial eta-squared .93, p < .001"), [0.93, 0.001]);
+  const apa = paper("8", "Group Dynamic Assessment", "## Results\nThe effect was significant, F(2,13) = 83.54, p < .05, partial eta-squared = .93. Scores rose from 49.93 to 69.47.\n\n## Methods\nFifteen students took part.\n\n## Conclusion\nIt helped.");
+  const facts = [{ aspect: "results", kind: "finding", own: true, section: "Results", statement: "The effect was significant (p < 0.05, partial eta-squared 0.93); scores rose from 49.93 to 69.47, a 19.54-point gain.", quotes: ["The effect was significant, F(2,13) = 83.54, p < .05, partial eta-squared = .93.", "Scores rose from 49.93 to 69.47."] }];
+  const record = checkRecord({ relevant: true, facts, notReported: [] }, apa, true);
+  assert.equal(record.facts.length, 1, "0.93 and 0.05 are in the quotes as .93 and .05; 19.54 is their difference");
+  assert.equal(record.facts[0].quote, "The effect was significant, F(2,13) = 83.54, p < .05, partial eta-squared = .93. … Scores rose from 49.93 to 69.47.", "the quote is kept as printed");
+  assert.deepEqual(codeProblems(unit("Partial eta-squared was 0.93 [E9]."), { ...CONTEXT, evidence: new Map([["E9", { id: "E9", kind: "paper", sourceId: "8", title: "G", year: "2025", text: "partial eta-squared = .93" }]]) }), []);
 });
 
 test("only a paper read whole may be said not to report something", () => {

@@ -18,7 +18,7 @@
 import { numbersIn, wordsOf } from "@/lib/chart-reading";
 import type { ChatMessage } from "@/lib/openai";
 import { callTool } from "@/lib/deep-research/model";
-import { digitNumbers, numberSupported } from "@/lib/deep-research/read";
+import { decimals, digitNumbers, numberSupported } from "@/lib/deep-research/read";
 import type { AuditResult, Evidence } from "@/lib/deep-research/types";
 
 export interface ReportUnit {
@@ -190,7 +190,7 @@ export function saysNotReported(text: string): boolean {
 }
 
 function valuesIn(text: string): number[] {
-  return numbersIn(wordsOf(text)).map((token) => token.value);
+  return numbersIn(wordsOf(decimals(text))).map((token) => token.value);
 }
 
 export { numberSupported };
