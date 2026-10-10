@@ -57,3 +57,16 @@ test("a mark stops where the sentence stops inside a line", () => {
   assert.ok(found && found.trim.start > 0.2 && found.trim.start < 0.4, `starts partway in (${found?.trim.start})`);
   assert.ok(found && found.trim.end > 0.95, "and runs to the end of that run");
 });
+
+test("a word split across runs, or a page with no spaces, is still found", () => {
+  const quote = "A total of 60 learners were involved in the research: 30 Thai B1-level learners and 30 Thai C1-level EFL learners.";
+  // pdf.js gives a word as two runs where the font or kerning changes.
+  const split = [page("Method"), page("A total of 60 lear", "ners were involved in the research: 30 Thai B1-level", "learners and 30 Thai C1-level EFL learners.", "Instruments")];
+  const found = locateEvidence(split, quote);
+  assert.equal(found?.page, 1);
+  assert.deepEqual(found?.runs, [0, 1, 2]);
+  // Some PDFs place each word by position and give no spaces at all.
+  const unspaced = [page("Atotalof60learnerswereinvolvedintheresearch:30ThaiB1-level", "learnersand30ThaiC1-levelEFLlearners.")];
+  assert.deepEqual(locateEvidence(unspaced, quote)?.runs, [0, 1]);
+  assert.equal(locateEvidence([page("Forty teachers took part in the survey of schools.")], quote), null, "a different sentence is still not found");
+});

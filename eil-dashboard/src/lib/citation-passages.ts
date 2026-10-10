@@ -283,7 +283,17 @@ export function citedClaims(
     const end = index + match[0].length;
     const start = sentenceStart(text, index);
     let claim = withoutMarkers(text.slice(Math.max(start, previousEnd), index));
-    if (termsOf(claim).length < 3) claim = withoutMarkers(text.slice(start, sentenceEnd(text, end)));
+    if (termsOf(claim).length < 3) {
+      // The answer writer puts its citations after the full stop: "... for all
+      // learners. (Title, 2024)". Such a marker closes the sentences before it
+      // on its line, back to the marker before; only one inside an unfinished
+      // sentence ("According to [1], ...") stands for its whole sentence. Every
+      // live answer's claims were empty, so no citation had a quote (the pilot, 2026-10-11).
+      const trailing = !withoutMarkers(text.slice(start, index)).trim();
+      const before = text.slice(previousEnd, index);
+      const line = withoutMarkers(before.slice(before.lastIndexOf("\n") + 1));
+      claim = trailing && termsOf(line).length >= 3 ? line : withoutMarkers(text.slice(start, sentenceEnd(text, end)));
+    }
     const paperIds = [
       ...new Set(
         match[1]
@@ -321,6 +331,10 @@ export function attachCitationPassages<
   };
 
   const byPaper = new Map<string, MarkerPassage[]>();
+  // A paper's own quote comes from a claim about it alone where there is one:
+  // an answer's opening cites every paper at once, and its passage for each
+  // paper was the weakest (the pilot, 2026-10-11).
+  const alone = new Map<string, MarkerPassage>();
   const claims = citedClaims(
     answer,
     citations.map((citation) => ({ paperId: citationPaperId(citation), title: citation.title, year: citation.year, href: citation.href }))
@@ -329,7 +343,9 @@ export function attachCitationPassages<
     for (const paperId of claim.paperIds) {
       const paper = windowsFor(paperId);
       const found = paper ? bestPassage(claim.claim, paper) : null;
-      if (found) byPaper.set(paperId, [...(byPaper.get(paperId) ?? []), { at: claim.at, ...found }]);
+      if (!found) continue;
+      byPaper.set(paperId, [...(byPaper.get(paperId) ?? []), { at: claim.at, ...found }]);
+      if (claim.paperIds.length === 1 && !alone.has(paperId)) alone.set(paperId, { at: claim.at, ...found });
     }
   }
 
@@ -337,7 +353,7 @@ export function attachCitationPassages<
     if (citation.sourceType === "web") return citation;
     const paperId = citationPaperId(citation);
     const passages = byPaper.get(paperId) ?? [];
-    let primary: CitationPassage | null = passages[0] ?? null;
+    let primary: CitationPassage | null = alone.get(paperId) ?? passages[0] ?? null;
     if (!primary) {
       const about = (sources.claims?.get(paperId) ?? []).join("\n").trim();
       const paper = about ? windowsFor(paperId) : null;
