@@ -123,7 +123,7 @@ export function getRunStageMessage(run: RunLike): string {
     case "labeling_topics":
       return "Labeling topic trends";
     case "classifying_tracks":
-      return "Classifying research categories";
+      return "Placing it in research areas";
     case "classifying_typology":
       return "Classifying research typology";
     case "extracting_facets":

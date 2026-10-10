@@ -82,19 +82,24 @@ test("the chat page does not load the dashboard's data, and starts on the open r
   assert.doesNotMatch(noRepository, /Searching Assessment studies/, "with none open, it does not pick one");
 
   // The count works: the dashboard asks.
-  await dashboard("overview");
+  await dashboard("area_analysis");
   assert.ok((globalThis.__bootsecDashboardDataCalls ?? 0) > 0);
 });
 
 /* ------------------------------------------------------------ the dashboard */
 
 test("only the tab the dashboard opens on is drawn; the others wait until they are visited", async () => {
-  const overview = await dashboard("overview");
-  assert.match(visible(overview), /What this repository studies/);
-  assert.doesNotMatch(overview, /<div hidden="">/, "the open tab is shown");
-  assert.match(visible(overview), /Copy link/);
-  const trends = await dashboard("trend_analysis");
-  assert.doesNotMatch(visible(trends), /What this repository studies/, "the overview was never visited, so it is not drawn");
+  // Every tab's code loads when it is opened, so a first static render may show
+  // its placeholder: draw once, let the code arrive, then draw what is checked.
+  await dashboard("area_analysis");
+  await import("../src/components/tabs/AreaAnalysis");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const area = await dashboard("area_analysis");
+  assert.match(visible(area), /Gaining and losing ground/);
+  assert.doesNotMatch(area, /<div hidden="">/, "the open tab is shown");
+  assert.match(visible(area), /Copy link/);
+  const keywords = await dashboard("keyword_explorer");
+  assert.doesNotMatch(visible(keywords), /Gaining and losing ground/, "Area Analysis was never visited, so it is not drawn");
 });
 
 /** Each chart's CSV, by the name its file is given. */
@@ -117,7 +122,6 @@ function valueListsWithoutCsv(html: string) {
 
 test("every chart on the dashboard's tabs offers its data as CSV, and every list of values has its CSV", async () => {
   const tabs = {
-    Overview: (await import("../src/components/tabs/Overview")).default,
     TrendAnalysis: (await import("../src/components/tabs/TrendAnalysis")).default,
     TrackAnalysis: (await import("../src/components/tabs/TrackAnalysis")).default,
     KeywordExplorer: (await import("../src/components/tabs/KeywordExplorer")).default,
@@ -129,9 +133,8 @@ test("every chart on the dashboard's tabs offers its data as CSV, and every list
   assert.deepEqual(
     Object.fromEntries(Object.entries(drawn).map(([name, html]) => [name, csvNames(html)])),
     {
-      Overview: ["What this repository studies", "Papers published per year", "Category distribution", "Category overlap"],
       TrendAnalysis: ["Themes by year", "Gaining ground 2018–2020 to 2021–2023", "Losing ground 2018–2020 to 2021–2023"],
-      TrackAnalysis: ["Papers per category per year", "Category co-occurrence", "Topics in EL", "Topics in ELI"],
+      TrackAnalysis: ["Papers per research area per year", "Research area co-occurrence", "Topics in EL", "Topics in ELI"],
       KeywordExplorer: ["Keywords used by the most papers", "Themes across years", "Theme sizes", "Themes and what they gather", "Compare themes over time"],
     }
   );

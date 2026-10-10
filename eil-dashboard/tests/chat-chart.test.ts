@@ -84,7 +84,7 @@ test("titles and captions read as English", () => {
   const byCategory = ask({ rows: "category" });
   assert.ok("insight" in byCategory);
   if (!("insight" in byCategory)) return;
-  assert.equal(byCategory.insight.question, "Papers by category", "not 'Categorys'");
+  assert.equal(byCategory.insight.question, "Papers by research area", "not 'Research areas' mangled into a plural of a plural");
   assert.doesNotMatch(byCategory.insight.basis, /more than one/, "a paper has one category");
 });
 
@@ -108,7 +108,7 @@ test("a question the model cannot map says what can be charted", async () => {
   // No model configured here: the step reports that and offers the menu.
   const outcome = await chatChartResult({ corpus: corpus(), question: "Plot the sample sizes", scopeLabel: "Test" });
   assert.equal(outcome.chart, null);
-  assert.match(outcome.answer, /theme, method, category, contribution, kind of study, aim or year/);
+  assert.match(outcome.answer, /theme, method, research area, contribution, kind of study, aim or year/);
 });
 
 // That chat's chart step is this question engine - one forced build_view call

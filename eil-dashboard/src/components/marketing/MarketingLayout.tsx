@@ -12,6 +12,13 @@ interface MarketingNavProps {
   wide?: boolean;
 }
 
+/** The pages about Papertrend itself, beside the features and the docs. */
+const ABOUT_LINKS = [
+  { slug: "how-it-works", label: "How it works", href: "/how-it-works" },
+  { slug: "team", label: "Team", href: "/team" },
+];
+const [HOW_IT_WORKS, TEAM] = ABOUT_LINKS;
+
 function navLinkClass(active: boolean) {
   return `rounded-full px-3 py-1.5 text-sm transition-colors duration-150 ${
     active ? "bg-subtle font-medium text-ink" : "text-body hover:text-ink"
@@ -28,6 +35,14 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
         </Link>
 
         <nav aria-label="Main" className="hidden min-w-0 items-center gap-0.5 md:flex">
+          {/* How it works leads: the page that explains the rest. */}
+          <Link
+            href={HOW_IT_WORKS.href}
+            aria-current={activeSlug === HOW_IT_WORKS.slug ? "page" : undefined}
+            className={navLinkClass(activeSlug === HOW_IT_WORKS.slug)}
+          >
+            {HOW_IT_WORKS.label}
+          </Link>
           {marketingFeatures.map((feature) => (
             <Link
               key={feature.slug}
@@ -38,8 +53,16 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
               {feature.navLabel}
             </Link>
           ))}
-          <Link href="/docs" aria-current={activeSlug === "docs" ? "page" : undefined} className={navLinkClass(activeSlug === "docs")}>
+          <Link href="/docs/getting-started" aria-current={activeSlug === "docs" ? "page" : undefined} className={navLinkClass(activeSlug === "docs")}>
             Docs
+          </Link>
+          {/* Room for this only from a laptop width; below it, it is in the footer and the menu. */}
+          <Link
+            href={TEAM.href}
+            aria-current={activeSlug === TEAM.slug ? "page" : undefined}
+            className={`hidden lg:inline-block ${navLinkClass(activeSlug === TEAM.slug)}`}
+          >
+            {TEAM.label}
           </Link>
         </nav>
 
@@ -59,20 +82,22 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
               aria-label="Mobile"
               className="absolute right-0 top-11 z-50 w-64 origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
             >
-              {marketingFeatures.map((feature) => (
+              {[
+                HOW_IT_WORKS,
+                ...marketingFeatures.map((feature) => ({ slug: feature.slug, label: feature.navLabel, href: `/features/${feature.slug}` })),
+                { slug: "docs", label: "Docs", href: "/docs/getting-started" },
+                TEAM,
+              ].map((link) => (
                 <Link
-                  key={feature.slug}
-                  href={`/features/${feature.slug}`}
+                  key={link.slug}
+                  href={link.href}
                   className={`block rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    activeSlug === feature.slug ? "bg-subtle font-medium text-ink" : "text-body hover:bg-subtle hover:text-ink"
+                    activeSlug === link.slug ? "bg-subtle font-medium text-ink" : "text-body hover:bg-subtle hover:text-ink"
                   }`}
                 >
-                  {feature.navLabel}
+                  {link.label}
                 </Link>
               ))}
-              <Link href="/docs" className="block rounded-lg px-3 py-2.5 text-sm text-body transition-colors hover:bg-subtle hover:text-ink">
-                Docs
-              </Link>
               <div className="mt-1.5 border-t border-hairline p-1.5 pt-3">
                 <MarketingCTA className="w-full" />
               </div>
@@ -94,6 +119,7 @@ const FOOTER_GROUPS: Array<{ title: string; links: Array<{ label: string; href: 
       { label: "Troubleshooting", href: "/docs/troubleshooting" },
     ],
   },
+  { title: "About", links: ABOUT_LINKS.map(({ label, href }) => ({ label, href })) },
   {
     title: "Account",
     links: [
@@ -125,7 +151,7 @@ export function MarketingFooter() {
           footer read as a row of disabled form controls. A list of links looks
           like a list of links; the padding keeps a generous hit area.
         */}
-        <nav aria-label="Footer" className="grid gap-8 sm:grid-cols-3">
+        <nav aria-label="Footer" className="grid grid-cols-2 gap-8 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
           {FOOTER_GROUPS.map((group) => (
             <div key={group.title}>
               <p className="text-sm font-medium text-ink">{group.title}</p>

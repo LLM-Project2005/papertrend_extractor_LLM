@@ -69,11 +69,11 @@ export function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisD
     lines.push(`- Possible copy of: "${extracted.duplicateOf.title}"`);
   }
 
-  lines.push("", "## Category");
+  lines.push("", "## Research area");
   if (detail.classification) {
     const classification = detail.classification;
     lines.push(`- Profile: ${classification.taxonomyName}`);
-    lines.push(`- Primary category: ${classification.primaryCategory}`);
+    lines.push(`- Main research area: ${classification.primaryCategory}`);
     if (classification.additionalCategories.length > 0) {
       lines.push(`- Also: ${classification.additionalCategories.join(", ")}`);
     }
@@ -84,7 +84,7 @@ export function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisD
       lines.push("- Why:", quoteMarkdown(classification.rationale));
     }
   } else if (detail.tracksSingle.length > 0) {
-    lines.push(...detail.tracksSingle.map((track) => `- Primary category: ${track}`));
+    lines.push(...detail.tracksSingle.map((track) => `- Main research area: ${track}`));
     lines.push(...detail.tracksMulti.map((track) => `- Also: ${track}`));
   } else {
     lines.push("- Classification is not enabled for this repository.");

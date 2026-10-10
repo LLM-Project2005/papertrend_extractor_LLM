@@ -27,17 +27,17 @@ export function Takeaway({ children }: { children: ReactNode }) {
 export function CategoriesOffNotice({ compact = false }: { compact?: boolean }) {
   return (
     <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
-      <h3 className="text-base font-semibold text-slate-900 dark:text-white">Categories are off for this repository</h3>
+      <h3 className="text-base font-semibold text-slate-900 dark:text-white">Research areas are off for this repository</h3>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-[#bdbdbd]">
         {compact
-          ? "This repository uses General Research, which groups papers by theme but does not sort them into categories."
-          : "This repository uses General Research, which groups papers by theme but does not sort them into categories. Choose EIL Tracks or your own categories and this tab will show how papers divide between them, how that changes by year, and which themes lead each category."}
+          ? "This repository uses General Research, which groups papers by theme but does not sort them into research areas."
+          : "This repository uses General Research, which groups papers by theme but does not sort them into research areas. Choose EIL Tracks or your own research areas and this tab will show how papers divide between them, how that changes by year, and which themes lead each research area."}
       </p>
       <Link
         href="/workspace/settings?section=analysis"
         className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-[#e5e5e5] dark:hover:border-[#3a3a3a] dark:hover:text-white"
       >
-        Choose categories in Settings
+        Choose research areas in Settings
       </Link>
     </section>
   );

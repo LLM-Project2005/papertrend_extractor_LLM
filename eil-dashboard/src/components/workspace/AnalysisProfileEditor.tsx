@@ -64,7 +64,7 @@ function updateDraft(
 }
 
 export function profileSummary(profile: ProjectAnalysisProfile): string {
-  if (!profile.classificationEnabled) return "General Research - no forced categories";
+  if (!profile.classificationEnabled) return "General Research - no forced research areas";
   return `${profile.taxonomyName} - ${profile.categories.map((item) => item.label).filter(Boolean).join(", ")}`;
 }
 
@@ -80,7 +80,7 @@ export default function AnalysisProfileEditor({
       {
         id: "general" as const,
         name: "General Research",
-        description: "Recommended for most disciplines. Extracts research signals without forcing a category.",
+        description: "Recommended for most disciplines. Extracts research signals without forcing a research area.",
       },
       {
         id: "eil" as const,
@@ -90,7 +90,7 @@ export default function AnalysisProfileEditor({
       {
         id: "custom" as const,
         name: "Custom Taxonomy",
-        description: "Create 2-12 categories tailored to this repository.",
+        description: "Create 2-12 research areas tailored to this repository.",
       },
     ],
     []
@@ -100,11 +100,11 @@ export default function AnalysisProfileEditor({
     const normalizedLabels = value.categories.map((category) => category.label.trim().toLocaleLowerCase());
     return value.categories.map((category, index) => ({
       label: !category.label.trim()
-        ? "Enter a category name."
+        ? "Enter a research area name."
         : normalizedLabels.filter((label) => label && label === normalizedLabels[index]).length > 1
-          ? "Category names must be unique."
+          ? "Research area names must be unique."
           : null,
-      description: !category.description.trim() ? "Explain what evidence belongs in this category." : null,
+      description: !category.description.trim() ? "Explain what evidence belongs in this research area." : null,
     }));
   }, [value]);
 
@@ -178,7 +178,7 @@ export default function AnalysisProfileEditor({
 
       {value.mode === "eil" ? (
         <div className="rounded-xl bg-subtle px-4 py-4">
-          <p className="text-sm font-medium text-ink">Official EIL categories</p>
+          <p className="text-sm font-medium text-ink">Official EIL research areas</p>
           <dl className="mt-3 grid gap-3 text-sm md:grid-cols-3">
             {value.categories.map((category) => (
               <div key={category.key}>
@@ -239,7 +239,7 @@ export default function AnalysisProfileEditor({
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-ink">Categories</p>
+                <p className="text-sm font-medium text-ink">Research areas</p>
                 <p className="mt-1 text-xs text-mute">Other / Unclassified is always available automatically.</p>
               </div>
               <span className="text-xs tabular-nums text-mute">{value.categories.length}/{MAX_CUSTOM_CATEGORIES}</span>
@@ -247,20 +247,20 @@ export default function AnalysisProfileEditor({
             {value.categories.map((category, index) => (
               <div key={index} className="grid min-w-0 gap-3 rounded-xl border border-hairline bg-surface p-3 md:grid-cols-[minmax(130px,0.65fr)_minmax(220px,1.35fr)_auto]">
                 <label className="grid min-w-0 gap-1.5">
-                  <span className="sr-only">Category {index + 1} name</span>
+                  <span className="sr-only">Research area {index + 1} name</span>
                   <input
                     aria-invalid={Boolean(categoryIssues[index]?.label)}
                     aria-describedby={categoryIssues[index]?.label ? `category-${index}-name-error` : undefined}
                     value={category.label}
                     onChange={(event) => updateCategory(index, { label: event.target.value })}
-                    placeholder="Category name"
+                    placeholder="Research area name"
                     maxLength={80}
                     className={`${fieldClass} min-w-0 aria-[invalid=true]:border-red-500`}
                   />
                   {categoryIssues[index]?.label ? <span id={`category-${index}-name-error`} className="text-xs text-red-700 dark:text-red-300">{categoryIssues[index].label}</span> : null}
                 </label>
                 <label className="grid min-w-0 gap-1.5">
-                  <span className="sr-only">Category {index + 1} description</span>
+                  <span className="sr-only">Research area {index + 1} description</span>
                   <input
                     aria-invalid={Boolean(categoryIssues[index]?.description)}
                     aria-describedby={categoryIssues[index]?.description ? `category-${index}-description-error` : undefined}
@@ -273,9 +273,9 @@ export default function AnalysisProfileEditor({
                   {categoryIssues[index]?.description ? <span id={`category-${index}-description-error`} className="text-xs text-red-700 dark:text-red-300">{categoryIssues[index].description}</span> : null}
                 </label>
                 <div className="flex items-center justify-end gap-1">
-                  <button type="button" disabled={index === 0} onClick={() => moveCategory(index, -1)} className={iconButtonClass("lg", "disabled:opacity-30")} aria-label="Move category up" title="Move up"><ChevronDownIcon className="h-4 w-4 rotate-180" /></button>
-                  <button type="button" disabled={index === value.categories.length - 1} onClick={() => moveCategory(index, 1)} className={iconButtonClass("lg", "disabled:opacity-30")} aria-label="Move category down" title="Move down"><ChevronDownIcon className="h-4 w-4" /></button>
-                  <button type="button" disabled={value.categories.length <= MIN_CUSTOM_CATEGORIES} onClick={() => onChange(updateDraft(value, { categories: value.categories.filter((_, itemIndex) => itemIndex !== index) }))} className={iconButtonClass("lg", "hover:text-red-700 disabled:opacity-30 dark:hover:text-red-300")} aria-label={`Remove ${category.label || `category ${index + 1}`}`} title="Remove category"><TrashIcon className="h-4 w-4" /></button>
+                  <button type="button" disabled={index === 0} onClick={() => moveCategory(index, -1)} className={iconButtonClass("lg", "disabled:opacity-30")} aria-label="Move research area up" title="Move up"><ChevronDownIcon className="h-4 w-4 rotate-180" /></button>
+                  <button type="button" disabled={index === value.categories.length - 1} onClick={() => moveCategory(index, 1)} className={iconButtonClass("lg", "disabled:opacity-30")} aria-label="Move research area down" title="Move down"><ChevronDownIcon className="h-4 w-4" /></button>
+                  <button type="button" disabled={value.categories.length <= MIN_CUSTOM_CATEGORIES} onClick={() => onChange(updateDraft(value, { categories: value.categories.filter((_, itemIndex) => itemIndex !== index) }))} className={iconButtonClass("lg", "hover:text-red-700 disabled:opacity-30 dark:hover:text-red-300")} aria-label={`Remove ${category.label || `research area ${index + 1}`}`} title="Remove research area"><TrashIcon className="h-4 w-4" /></button>
                 </div>
               </div>
             ))}
@@ -286,7 +286,7 @@ export default function AnalysisProfileEditor({
               className={buttonClass("secondary", "sm")}
             >
               <PlusIcon className="h-3.5 w-3.5" />
-              Add category
+              Add research area
             </button>
           </div>
           <label className="grid gap-1.5 text-sm font-medium text-ink">

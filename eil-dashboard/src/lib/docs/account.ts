@@ -115,12 +115,12 @@ export const accountCategory: DocsCategoryBase = {
           id: "repository-analysis",
           title: "Repository > Analysis & classification",
           body: [
-            "The repository's analysis profile, which decides how its papers are categorized, and the tools to bring existing papers up to date after a change. [Analysis profiles](/docs/analysis-profiles) explains each profile and what reclassifying does.",
+            "The repository's analysis profile, which decides how its papers are sorted into research areas, and the tools to bring existing papers up to date after a change. [Analysis profiles](/docs/analysis-profiles) explains each profile and what reclassifying does.",
             "Leaving this section with unsaved changes asks whether to discard them.",
           ],
           figure: {
             shot: "settings-analysis",
-            alt: "Settings > Analysis & classification with the EIL Tracks profile selected and its three official categories.",
+            alt: "Settings > Analysis & classification with the EIL Tracks profile selected and its three official research areas.",
           },
         },
         {
@@ -156,7 +156,7 @@ export const accountCategory: DocsCategoryBase = {
             columns: ["What", "Where"],
             rows: [
               ["Your PDFs", "A private Google Cloud Storage bucket. Files go there straight from your browser over a link that lasts 30 minutes; previews and downloads use links that last an hour."],
-              ["Everything else", "A PostgreSQL database: your profile, repositories, the text extracted from each paper, keywords, topics, categories, chat conversations and usage counters."],
+              ["Everything else", "A PostgreSQL database: your profile, repositories, the text extracted from each paper, keywords, topics, research areas, chat conversations and usage counters."],
               ["Your sign-in", "Firebase Authentication, which holds your email, provider links and, for password accounts, a password hash."],
               ["This browser", "Your theme, last repository and page, and the progress tray. Not cleared when you sign out."],
             ],

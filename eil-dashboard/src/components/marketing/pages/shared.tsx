@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { marketingFeatures, type FeatureSlug } from "@/components/marketing/marketing-content";
 import { arrowLinkClass, leadClass, sectionTitleClass } from "@/components/marketing/styles";
@@ -20,11 +21,22 @@ export function Crumb({ label }: { label: string }) {
   );
 }
 
+/** A small pill above a centred headline, with a dot that breathes. */
+export function LiveBadge({ children }: { children: ReactNode }) {
+  return (
+    <p className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-3.5 py-1.5 font-mono text-[12px] uppercase tracking-[0.04em] text-body">
+      <span className="live-dot" aria-hidden="true" />
+      {children}
+    </p>
+  );
+}
+
 /**
  * The end of every feature page: one invitation, then the other parts of the
- * product, each with the line that says what its page holds.
+ * product, each with the line that says what its page holds. Pages that are
+ * not a feature list all four.
  */
-export function FeatureEnd({ slug, title, copy }: { slug: FeatureSlug; title: string; copy: string }) {
+export function FeatureEnd({ slug, title, copy }: { slug?: FeatureSlug; title: string; copy: string }) {
   const others = marketingFeatures.filter((item) => item.slug !== slug);
   return (
     <>
@@ -48,7 +60,7 @@ export function FeatureEnd({ slug, title, copy }: { slug: FeatureSlug; title: st
       <section className="border-t border-hairline px-4 py-20 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-lg font-medium text-ink">More of Papertrend</h2>
-          <ul className="mt-6 grid grid-cols-1 gap-x-10 gap-y-2 md:grid-cols-3">
+          <ul className={`mt-6 grid grid-cols-1 gap-x-10 gap-y-2 ${others.length > 3 ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
             {others.map((item) => (
               <li key={item.slug}>
                 <Link href={`/features/${item.slug}`} className="group block border-t border-hairline py-5">

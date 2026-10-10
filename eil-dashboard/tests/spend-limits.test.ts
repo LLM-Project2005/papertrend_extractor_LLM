@@ -158,6 +158,7 @@ const MODEL_CALLERS: Record<string, string> = {
   "src/app/api/chat/route.ts": "recordAnswerSpend -> persistAiTokenUsage (chat)",
   "src/app/api/workspace/insights/route.ts": "persistAiTokenUsage (insights)",
   "src/app/api/workspace/insights/ask/route.ts": "persistAiTokenUsage (insights-ask)",
+  "src/app/api/workspace/insights/suggestions/route.ts": "persistAiTokenUsage (insights)",
   "src/lib/chat-chart.ts": "inside the chat request's tracking",
   "src/lib/repository-chat.ts": "inside the chat request or chat job's tracking",
   "src/lib/repository-chat-web.ts": "inside the chat request or chat job's tracking",

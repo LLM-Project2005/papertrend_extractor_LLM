@@ -50,7 +50,7 @@ export interface DocsSearchItem {
 const papersCategory: DocsCategoryBase = {
   id: "papers",
   label: "Papers and analysis",
-  description: "Adding papers, what the analysis reads and finds, and sorting papers into categories.",
+  description: "Adding papers, what the analysis reads and finds, and sorting papers into research areas.",
   pages: [uploadingPapersPage, analysisPipelinePage, readingAPaperPage, analysisProfilesPage],
 };
 
@@ -73,7 +73,6 @@ export const docsCategories: DocsCategory[] = rawDocsCategories.map((category) =
 
 export const docsPages: DocsPage[] = docsCategories.flatMap((category) => category.pages);
 
-export const popularDocsPages = docsPages.filter((page) => page.popular);
 
 export function getDocsPage(slug: string) {
   return docsPages.find((page) => page.slug === slug) ?? null;

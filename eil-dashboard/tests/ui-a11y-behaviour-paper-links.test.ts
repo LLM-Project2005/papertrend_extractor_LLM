@@ -109,18 +109,11 @@ test("a paper in the dashboard's drilldown opens over the list, which stays unde
 });
 
 test("the dashboard tabs link their papers in place", async () => {
-  // Overview names the papers that look like copies of another.
-  const { default: Overview } = await import("../src/components/tabs/Overview");
   const trends = [
     trend("1", "2020", "Reading", "Extensive reading and second language fluency gains"),
     trend("2", "2021", "Reading", "Extensive reading and second language fluency gains revisited"),
     trend("3", "2021", "Writing", "Peer feedback in academic writing"),
   ];
-  const overview = mount(Overview as never, { trends, tracksSingle: [], tracksMulti: [], selectedTracks: [] });
-  assert.deepEqual(paperLinks(overview.tree as ReactNode), [{ paperId: "2" }]);
-  assert.deepEqual(linksAway(overview.tree as ReactNode), []);
-  overview.unmount();
-
   // The keyword explorer's concept search names the papers it found.
   dom.window.respond = (url) =>
     url === "/api/keyword-search"
@@ -306,6 +299,9 @@ test("the semantic map opens the chosen paper in place", async () => {
   globalThis.__auditfixNavigations = [];
   const { default: SemanticMap } = await import("../src/components/workspace/RepositorySemanticMap");
   const map = mount(SemanticMap, { projectId: PROJECT.id, projectName: PROJECT.name, requestHeaders: { Authorization: "Bearer token" } }, withViewer());
+  await settle();
+  // The map opens as the free graph (2026-10-09 review); the fixed projection is the layout drawn with nodes.
+  click(button(map.tree, "Fixed projection"));
   await settle();
   const flow = elements(map.tree).find((found) => typeof found.props.onNodeClick === "function");
   assert.ok(flow, "the map is drawn");

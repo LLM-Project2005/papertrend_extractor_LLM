@@ -8,8 +8,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readFileSync } from "node:fs";
-import { faqs, marketingFeatures, productDetails } from "../src/components/marketing/marketing-content";
-import { docsPages, popularDocsPages } from "../src/lib/docs-content";
+import { faqs, marketingFeatures } from "../src/components/marketing/marketing-content";
+import { docsPages } from "../src/lib/docs-content";
 
 function read(relative: string): string {
   return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
@@ -34,8 +34,7 @@ test("no build note ships as a reason to choose the product", () => {
   // on the public landing page. Every selling point is something a reader
   // could check in the product.
   const copy = [
-    ...marketingFeatures.flatMap((feature) => [feature.description, feature.homeSummary, feature.inside, ...feature.homeBullets]),
-    ...productDetails.map((item) => item.detail),
+    ...marketingFeatures.flatMap((feature) => [feature.description, feature.homeSummary, feature.inside]),
     ...faqs.map((item) => item.answer),
   ];
   for (const line of copy) {
@@ -46,7 +45,7 @@ test("no build note ships as a reason to choose the product", () => {
 test("the public copy does not claim what the product does not show", () => {
   // Year confidence is stored but never shown, and the answer check is skipped
   // for clean, confident drafts (repository-chat.ts), so neither may be promised.
-  const copy = JSON.stringify({ marketingFeatures, productDetails, faqs });
+  const copy = JSON.stringify({ marketingFeatures, faqs });
   assert.equal(/confidence/i.test(copy), false, "year confidence is not shown to readers");
   assert.equal(/every answer is (?:audited|checked)/i.test(copy), false);
   assert.equal(/12 analysis stages/.test(copy), false, "the graph has 13 steps");
@@ -62,13 +61,12 @@ test("documentation search takes its query from the address", () => {
   assert.match(search, /new URLSearchParams\(window\.location\.search\)\.get\("q"\)/);
 });
 
-test("the popular documentation list is a shortlist, not the whole shelf", () => {
-  // Nine of thirteen pages carried popular: true - 69%, so the label curated
-  // nothing, and the same pages were listed again grouped immediately below.
-  const popular = popularDocsPages.length;
-  const pages = docsPages.length;
-  assert.ok(popular > 0, "the shortlist should not be empty");
-  assert.ok(popular <= Math.ceil(pages / 3), `${popular} of ${pages} pages flagged popular is not a shortlist`);
+test("the documentation opens on Getting started, and nothing links to the retired index", () => {
+  // The index page was removed after the 2026-10-09 review: /docs redirects to
+  // Getting started, whose sidebar lists every page.
+  assert.equal(exists("src/app/docs/page.tsx"), false);
+  assert.match(read("next.config.mjs"), /source: "\/docs", destination: "\/docs\/getting-started"/);
+  assert.ok(docsPages.some((page) => page.slug === "getting-started"));
 });
 
 /* ------------------------------------------------------------- dead source */

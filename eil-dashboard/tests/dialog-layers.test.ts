@@ -243,6 +243,8 @@ test("the dashboard's filter sheet is a dialog layer below xl", async () => {
     data: { trends, tracksSingle: [], tracksMulti: [], categoryAssignments: [], useMock: false, diagnostics: {} },
   };
   globalThis.__auditfixPathname = "/workspace/dashboard";
+  // The filters belong to the chart tabs; the dashboard opens on the semantic map.
+  globalThis.__auditfixSearch = "tab=area_analysis";
   const { default: DashboardClient } = await import("../src/components/DashboardClient");
   for (const narrow of [true, false]) {
     globalThis.__profiledashNarrow = narrow;
@@ -260,6 +262,7 @@ test("the dashboard's filter sheet is a dialog layer below xl", async () => {
     dashboard.unmount();
   }
   globalThis.__profiledashNarrow = undefined;
+  globalThis.__auditfixSearch = undefined;
 });
 
 test("the chat's full research report is a dialog layer, under a paper opened from it", async () => {

@@ -93,10 +93,10 @@ const STEPS: Step[] = [
   },
   {
     id: "classify",
-    label: "Category",
+    label: "Research area",
     col: 8,
     row: 2,
-    note: "Places the paper in your repository’s categories: one main and up to two more, each with a written reason. Skipped in a General repository.",
+    note: "Places the paper in your repository’s research areas: one main and up to two more, each with a written reason. Skipped in a General repository.",
   },
   {
     id: "typology",

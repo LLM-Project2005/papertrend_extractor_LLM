@@ -58,7 +58,7 @@ export const chatPage: DocsPageBase = {
       bullets: [
         "Attached papers replace the scope: the message searches only them.",
         "Papers that are not analyzed yet are left out without a message; the answer's scope label counts only the analyzed ones, such as `3 selected papers`.",
-        "In a normal answer, attachments apply to one message and are cleared once it is answered. Chart mode and Deep research keep them.",
+        "In a normal answer, attachments apply to one message and are cleared once it is answered. Chart mode and Max effort keep them.",
         "Up to 50 papers are sent with a message.",
         "From the dashboard's Semantic Map, selecting two or more papers and choosing **Compare**, **Ask about papers** or **Explain in chat** opens Chat with them attached. That hand-off expires after 15 minutes.",
         "**+** then **Upload a paper** opens the usual upload window and attaches the new papers; ask once their analysis has finished.",
@@ -90,12 +90,12 @@ export const chatPage: DocsPageBase = {
       title: "Chart mode",
       body: [
         "Open **+** and turn on **Chart mode** to get a chart built from the repository's data. Describe the chart you want in your own words, or send an empty box for the strongest pattern in the papers. Typing chart words in a normal message (in English, or กราฟ and แผนภูมิ in Thai) offers **Use Chart mode**.",
-        "The chart is worked out from your question and drawn from the same themes, methods and categories as the dashboard, with a likely duplicate upload counted once. Its title, numbers and caption are computed, not written by a model. Press a bar or cell to list the papers behind it; each opens in place.",
+        "The chart is worked out from your question and drawn from the same themes, methods and research areas as the dashboard, with a likely duplicate upload counted once. Its title, numbers and caption are computed, not written by a model. Press a bar or cell to list the papers behind it; each opens in place.",
       ],
       table: {
         columns: ["You can ask for", "For example"],
         rows: [
-          ["How the papers divide by theme, method, category, contribution, kind of study, aim or year", "\"Papers per year\", \"Which methods are used most?\""],
+          ["How the papers divide by theme, method, research area, contribution, kind of study, aim or year", "\"Papers per year\", \"Which methods are used most?\""],
           ["Any two of those crossed", "\"Which methods are used for which themes?\""],
           ["Narrowed to a subject, or two values compared", "\"What do the writing papers set out to produce?\", \"Writing compared with reading\""],
           ["How shares changed from the earlier papers to the later", "\"Is qualitative research becoming more common?\""],
@@ -105,7 +105,7 @@ export const chatPage: DocsPageBase = {
       bullets: [
         "A question the papers' data cannot answer, such as authors, citations or sample sizes, gets a reason and what can be charted instead, not a chart of something else.",
         "Charts cannot be downloaded. For more views, use the [dashboard](/docs/dashboard).",
-        "Chart mode and Deep research cannot be on together; turning one on turns the other off.",
+        "Chart mode goes up to **High** effort: a chart is counted from the papers, not researched, so turning Chart mode on brings **Max** down to High.",
         "Web search does not apply to charts.",
       ],
     },
@@ -156,14 +156,14 @@ export const chatPage: DocsPageBase = {
       id: "models",
       title: "Models",
       body: [
-        "Answers are planned, written and checked by **GPT-6 Luna**, named under the text box. Chart mode and Deep research choose their own models.",
+        "Answers are planned, written and checked by **GPT-6 Luna**, named under the text box. Chart mode and Max effort choose their own models.",
       ],
     },
     {
       id: "stop",
       title: "Stopping an answer",
       body: [
-        "While an answer is being written, **Send** becomes **Stop**, and pressing Enter in the text box also stops it. Your question stays in the conversation. A deep research run cannot be stopped once started.",
+        "While an answer is being written, **Send** becomes **Stop**, and pressing Enter in the text box also stops it. Your question stays in the conversation. A Max answer is stopped with **Stop** on its thinking line.",
       ],
     },
     {
@@ -182,7 +182,7 @@ export const chatPage: DocsPageBase = {
         rows: [
           ["Chat tokens", "1,000,000 tokens a day, counted from the answers you receive", "00:00 UTC (07:00 in Thailand)"],
           ["Web searches", "40 a day; each answer with web search on uses one", "Midnight UTC"],
-          ["Deep research", "10 runs a day; starting a run counts, planning and retrying do not", "Midnight UTC"],
+          ["Max effort", "10 a day; starting one counts, planning and retrying do not", "Midnight UTC"],
           ["Message length", "12,000 characters; longer messages are shortened in the middle", "Not applicable"],
         ],
       },
@@ -232,7 +232,7 @@ export const chatPage: DocsPageBase = {
           ["This answer took longer than the public gateway allows.", "The answer may still arrive. Reopen the conversation in a minute before asking again."],
           ["I could not finish this answer.", "Evidence was found but the answer could not be written and checked. The papers found are listed; ask again."],
           ["This chat request exceeded its safe context limit.", "The page is out of date or a message is too long. Refresh and try again."],
-          ["Daily AI usage limit reached.", "The day's 10 deep research requests are used."],
+          ["Daily AI usage limit reached.", "The day's 10 Max effort answers are used."],
         ],
       },
     },
@@ -240,88 +240,96 @@ export const chatPage: DocsPageBase = {
 };
 
 export const deepResearchPage: DocsPageBase = {
+  // The address stays "deep-research": Max effort is what deep research became (2026-10-10).
   slug: "deep-research",
-  title: "Deep research",
+  title: "Thinking effort",
   description:
-    "A planned investigation that reads the full text of every paper in scope, searches the web only where the papers cannot answer, and writes a report in which every claim is checked against its source.",
-  tags: ["deep research", "report", "plan", "sources", "agent"],
+    "How hard an answer works, from Low to Max. Max reads the full text of every paper in scope, searches the web only where the papers cannot answer, and checks every claim against its source.",
+  tags: ["thinking effort", "max", "deep research", "low", "high", "sources"],
   related: ["chat", "dashboard", "troubleshooting"],
   sections: [
     {
       id: "when-to-use",
-      title: "When to use it",
+      title: "Choosing an effort",
       body: [
-        "A normal answer reads the passages most relevant to one question. **Deep research** breaks a broader question into up to five parts, searches the full text of every paper in scope for each, writes a report from what it found, and then checks every claim in the report against the passage it cites. It takes a few minutes.",
-        "Use it for questions such as \"How is dynamic assessment used to support Thai EFL learners, and what do the studies find?\". For a fact, a count or one paper's method, a normal answer is faster.",
+        "The **thinking effort** under the text box sets how hard the next answer works. Open it and slide from **Low** to **Max**; your choice is remembered on this browser, and one conversation can mix efforts.",
       ],
+      table: {
+        columns: ["Effort", "What it does", "Use it for"],
+        rows: [
+          ["Low", "Reads the few papers that matter most and thinks briefly", "A quick fact or a follow-up"],
+          ["Medium", "The usual answer: reads the papers that bear on the question", "Most questions"],
+          ["High", "Reads more widely, thinks longer, and checks every claim against the papers", "A question that spans several papers"],
+          ["Max", "Splits the question into up to five parts, reads every paper in full for each, and checks every claim. About a minute", "A broad question, such as \"How is dynamic assessment used to support Thai EFL learners, and what do the studies find?\""],
+        ],
+      },
     },
     {
       id: "plan-and-start",
-      title: "Plan, then start",
+      title: "Max, step by step",
       steps: [
-        "In Chat, open **+** and turn on **Deep research**.",
-        "Write your question and send it. You get a **plan**, not yet a report: the parts of the question it will research, and for each whether it uses your papers, the web, or both.",
-        "Read the plan. **Edit** puts your question back in the text box to change it; sending it again replaces the plan. **Cancel** drops it. **Start** begins the run.",
+        "Slide the thinking effort to **Max**, then write your question and send it.",
+        "It starts at once: first it splits the question into the parts it will look into, and for each whether it uses your papers, the web, or both.",
+        "While it works, one line under your question says what it is doing and for how long. **Show steps** lists the parts; **Stop** stops it, and **Resume** carries on from where it stopped.",
       ],
       body: [],
       callout: {
         tone: "info",
-        title: "One run, one request",
-        body: "You have 10 deep research runs a day. Planning is free of that count (it uses a little of the daily token limit); **Start** uses one. Retrying a run that failed, or resuming one you stopped, uses none.",
+        title: "Ten a day",
+        body: "You have 10 Max answers a day, and each question asked at **Max** uses one. Retrying one that failed, or resuming one you stopped, uses none. Chart mode goes up to **High**: a chart is counted from the papers, not researched.",
       },
     },
     {
       id: "while-it-runs",
-      title: "While it runs",
+      title: "While it thinks",
       body: [
-        "Each part of the plan shows what it is doing and then what it found, such as `Found 6 passages in 4 papers.` or `Not found in the 39 papers searched.` Then the report is written, and then every claim is checked.",
+        "Each part shows what it is doing and then what it found, such as `Found 6 passages in 4 papers.` or `Not found in the 39 papers searched.` Then the answer is written, and then every claim is checked.",
       ],
       bullets: [
-        "It uses the papers that have finished analysis; papers still being analysed are named in the report's limits rather than waited for.",
-        "You can leave and come back: the run carries on without the page, and picks up where it stopped if it is interrupted.",
-        "**Stop research** stops a run. **Resume** carries on from the last finished step; **Retry** does the same after a failure.",
+        "It uses the papers that have finished analysis; papers still being analysed are named in the answer's last section rather than waited for.",
+        "You can leave and come back: it carries on without the page, and picks up where it stopped if it is interrupted.",
       ],
     },
     {
       id: "how-it-checks",
-      title: "How it checks itself",
-      body: ["Every run has the same limits, and the same checks, so its answer can be relied on as far as its sources go."],
+      title: "How Max checks itself",
+      body: ["Every Max answer has the same limits, and the same checks, so it can be relied on as far as its sources go."],
       table: {
         columns: ["Step", "What happens"],
         rows: [
           ["Search", "The full text of every paper in scope, for each part of the question, with reference lists left out"],
           ["Evidence", "Only passages a finding actually rests on are kept and cited; at most 8 per part"],
           ["Web", "Only for parts the papers cannot answer, at most 4 searches, each page cited by its address"],
-          ["Numbers", "Every number in the report must appear in the passage it cites"],
+          ["Numbers", "Every number in the answer must appear in the passage it cites"],
           ["Claims", "A second model checks each sentence against its source; what the source does not support is corrected or removed"],
         ],
       },
       bullets: [
-        "When the papers do not cover something, the report says the papers searched do not address it; it does not call it a gap in the literature.",
+        "When the papers do not cover something, the answer says the papers searched do not address it; it does not call it a gap in the literature.",
         "Text inside papers and web pages is treated as evidence, never as instructions.",
         "The models are chosen for you: GPT-6 Luna plans, reads and writes; Gemini 3.8 Flash checks the claims, so the model that wrote a sentence is not the one that judges it.",
       ],
     },
     {
       id: "the-report",
-      title: "Reading the report",
+      title: "Reading a Max answer",
       body: [
-        "The report appears in the conversation, in the language you asked in. Its citations are numbered like a normal answer's: a paper opens in place on its evidence, and a web page opens its address.",
-        "The plan card above records what was searched and, once finished, how many claims were checked, corrected and removed. **Copy report** and **Download (.md)** give you the text with a numbered source list.",
+        "The answer appears in the conversation like any other, in the language you asked in, with its citations numbered: a paper opens in place on its evidence, and a web page opens its address.",
+        "A line above it says how long it thought, how many parts and papers it read and how many claims it checked; click it to see the steps. **Copy** and **Download (.md)** give you the text with a numbered source list.",
       ],
       callout: {
         tone: "info",
         title: "Read the sources before relying on it",
-        body: "The report is only as complete as the papers in scope. Use it to find what the papers say and where, then read the cited passages before drawing conclusions.",
+        body: "An answer is only as complete as the papers in scope. Use it to find what the papers say and where, then read the cited passages before drawing conclusions.",
       },
     },
     {
       id: "limits",
       title: "Limits and good to know",
       bullets: [
-        "Deep research counts toward the daily chat token limit like any other answer, and each run toward the 10 daily runs.",
-        "Each new question in a research conversation gets its own plan and report; earlier reports stay in the conversation.",
-        "Deleting the conversation deletes its research.",
+        "Every effort counts toward the daily chat token limit; High uses more of it than Medium, and each Max answer also counts toward the 10 a day.",
+        "Each new question at Max gets its own parts and answer; earlier answers stay in the conversation.",
+        "Deleting the conversation deletes its answers and their steps.",
       ],
       body: [],
     },

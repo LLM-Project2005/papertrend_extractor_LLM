@@ -242,28 +242,6 @@ textarea {
   pointer-events: none;
 }
 
-/*
- * A figure that has just changed (src/components/MetricCard.tsx): each
- * character rises into place in turn, so a new number reads as new.
- */
-.digit-pop {
-  display: inline-block;
-  animation: digit-pop 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes digit-pop {
-  from {
-    opacity: 0;
-    transform: translateY(0.3em);
-    filter: blur(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
-}
-
 /* Recharts tooltip */
 .recharts-tooltip-wrapper {
   @apply !outline-none;
@@ -436,6 +414,297 @@ html:focus-within {
 
 .dark .evidence-mark {
   background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+}
+
+/*
+ * The How it works and Team pages. A dotted field behind the hero, a dot that
+ * breathes beside a live label, pulses that travel a connector while its
+ * figure plays, a ring of light, and entrances that replay each time a stage
+ * is shown (an element leaving display:none restarts its animation). Each
+ * moving part stops with its figure; the global reduced-motion rule leaves
+ * every one at its end state.
+ */
+.dot-field {
+  background-image: radial-gradient(rgb(var(--hairline-strong)) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+}
+
+.live-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(var(--accent));
+}
+
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: live-ping 1.8s var(--ease-out-expo) infinite;
+}
+
+@keyframes live-ping {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+.flow-line {
+  position: relative;
+}
+
+.flow-line > i {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(var(--accent));
+  opacity: 0;
+}
+
+.flow-line[data-on="true"] > i {
+  animation: flow-x 2.4s linear infinite;
+}
+
+.flow-line > i:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.flow-line > i:nth-child(3) {
+  animation-delay: 1.6s;
+  background: rgb(234 179 8);
+}
+
+@media (max-width: 1023.98px) {
+  .flow-line > i {
+    top: 0;
+    left: -3px;
+  }
+  .flow-line[data-on="true"] > i {
+    animation-name: flow-y;
+  }
+}
+
+@keyframes flow-x {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% - 7px);
+    opacity: 0;
+  }
+}
+
+@keyframes flow-y {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 7px);
+    opacity: 0;
+  }
+}
+
+@property --sweep {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@property --arc {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: false;
+}
+
+/* A 1.5px frame: the element's padding shows a conic arc over a hairline. */
+.glow-ring {
+  --arc: 1;
+  padding: 1.5px;
+  background:
+    conic-gradient(
+      from var(--sweep),
+      transparent 0deg,
+      rgb(var(--accent) / var(--arc)) 60deg,
+      rgb(234 179 8 / calc(var(--arc) * 0.8)) 110deg,
+      transparent 170deg,
+      transparent 360deg
+    ),
+    rgb(var(--hairline-strong));
+}
+
+.glow-ring[data-on="true"] {
+  animation: sweep-turn 3.2s linear infinite;
+}
+
+/* The team's cards: the arc goes round once, then fades to a hairline. */
+.ring-once {
+  --arc: 0;
+  animation: ring-once 2.8s var(--ease-out-expo) both;
+}
+
+.ring-once:hover {
+  --arc: 1;
+  animation: sweep-turn 3.2s linear infinite;
+}
+
+@keyframes sweep-turn {
+  to {
+    --sweep: 360deg;
+  }
+}
+
+@keyframes ring-once {
+  0% {
+    --sweep: 0deg;
+    --arc: 0;
+  }
+  15%,
+  70% {
+    --arc: 1;
+  }
+  100% {
+    --sweep: 360deg;
+    --arc: 0;
+  }
+}
+
+.mark-sweep {
+  padding: 0 2px;
+  border-radius: 3px;
+  background-image: linear-gradient(rgb(250 204 21 / 0.42), rgb(250 204 21 / 0.42));
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  animation: mark-sweep 0.55s ease-out both;
+}
+
+.dark .mark-sweep {
+  background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+}
+
+@keyframes mark-sweep {
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+.enter-fly {
+  animation: enter-fly 0.6s var(--ease-out-expo) both;
+}
+
+.enter-pop {
+  animation: enter-pop 0.5s var(--ease-out-expo) both;
+}
+
+.enter-up {
+  animation: enter-up 0.6s var(--ease-out-expo) both;
+}
+
+@keyframes enter-fly {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes enter-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A reading line that passes over a page three times, then rests at its foot. */
+.scan-line {
+  animation: scan-line 1.6s ease-in-out 3 alternate both;
+}
+
+@keyframes scan-line {
+  from {
+    top: 0;
+  }
+  to {
+    top: calc(100% - 2px);
+  }
+}
+
+/* A rule being checked: the spinner turns, then gives way to its tick. */
+.check-wait {
+  animation:
+    check-turn 0.8s linear infinite,
+    check-gone 0.2s linear both;
+}
+
+@keyframes check-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes check-gone {
+  to {
+    opacity: 0;
+  }
+}
+
+/* The playing stage's bar fills over the time the stage is shown. */
+.stage-fill {
+  transform-origin: left;
+  animation: stage-fill var(--stage-ms, 7000ms) linear both;
+}
+
+@keyframes stage-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 .modal-backdrop {
@@ -762,4 +1031,132 @@ html:focus-within {
   z-index: 0;
   cursor: default;
   user-select: none;
+}
+
+/* Thinking effort (src/components/chat/ThinkingEffort.tsx). The slider fills up
+   to the chosen level; at Max the fill, the label and the bars carry a moving
+   sheen. The light theme's colours are dark enough to read on white, the dark
+   theme's light enough to read on black; reduced motion keeps them still. */
+:root {
+  --effort-sheen: linear-gradient(90deg, #c2410c, #be185d, #6d28d9, #1d4ed8, #047857, #c2410c);
+}
+.dark {
+  --effort-sheen: linear-gradient(90deg, #fb923c, #f472b6, #a78bfa, #60a5fa, #34d399, #fb923c);
+}
+.effort-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(var(--ink)) var(--effort-fill, 33%), rgb(var(--ink) / 0.14) var(--effort-fill, 33%));
+  cursor: pointer;
+}
+.effort-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgb(var(--ink));
+  border: 3px solid white;
+  box-shadow: 0 0 0 1px rgb(var(--ink) / 0.35), 0 2px 6px rgb(0 0 0 / 0.25);
+}
+.effort-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--ink));
+  border: 3px solid white;
+  box-shadow: 0 0 0 1px rgb(var(--ink) / 0.35), 0 2px 6px rgb(0 0 0 / 0.25);
+}
+.dark .effort-slider::-webkit-slider-thumb {
+  border-color: #0a0a0a;
+}
+.dark .effort-slider::-moz-range-thumb {
+  border-color: #0a0a0a;
+}
+.effort-slider-max {
+  background: var(--effort-sheen);
+  background-size: 200% 100%;
+}
+.effort-slider-max::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgb(167 139 250 / 0.35), 0 0 18px rgb(236 72 153 / 0.45);
+}
+.effort-slider-max::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgb(167 139 250 / 0.35), 0 0 18px rgb(236 72 153 / 0.45);
+}
+.effort-max-text {
+  background: var(--effort-sheen);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.effort-max-bars {
+  color: #6d28d9;
+}
+.dark .effort-max-bars {
+  color: #a78bfa;
+}
+.effort-max-ring {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(rgb(var(--surface, 255 255 255)), rgb(var(--surface, 255 255 255))) padding-box,
+    var(--effort-sheen) border-box;
+  background-size: 100% 100%, 200% 100%;
+}
+.dark .effort-max-ring {
+  background:
+    linear-gradient(#050505, #050505) padding-box,
+    var(--effort-sheen) border-box;
+  background-size: 100% 100%, 200% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .effort-slider-max,
+  .effort-max-text {
+    animation: effort-sheen 2.6s linear infinite;
+  }
+  .effort-max-ring {
+    animation: effort-sheen-ring 2.6s linear infinite;
+  }
+  .effort-max-bars {
+    animation: effort-hue 2.6s linear infinite;
+  }
+  .thinking-shimmer {
+    background: linear-gradient(90deg, currentColor 35%, rgb(var(--ink) / 0.35) 50%, currentColor 65%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: effort-sheen 1.8s linear infinite;
+  }
+}
+@keyframes effort-sheen {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes effort-sheen-ring {
+  from {
+    background-position: 0 0, 0% 0;
+  }
+  to {
+    background-position: 0 0, -200% 0;
+  }
+}
+@keyframes effort-hue {
+  0%,
+  100% {
+    color: #be185d;
+  }
+  33% {
+    color: #6d28d9;
+  }
+  66% {
+    color: #1d4ed8;
+  }
 }

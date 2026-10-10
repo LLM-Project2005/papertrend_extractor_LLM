@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { Takeaway } from "@/components/dashboard/DashboardNotes";
 import { TOPIC_PALETTE } from "@/lib/constants";
+import { categoricalColor } from "@/lib/chart-palette";
 import {
   SHIFT_MIN_PAPERS,
   listOf,
@@ -147,7 +148,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
               />
               <Bar isAnimationActive={chartAnimationActive()}
                 dataKey="earlier"
-                fill={ct.barFillMuted}
+                fill={categoricalColor(0)}
                 radius={[0, 4, 4, 0]}
                 onClick={(entry) => {
                   const row = entry as { topic?: string; paperIds?: string[] };
@@ -157,7 +158,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
               />
               <Bar isAnimationActive={chartAnimationActive()}
                 dataKey="later"
-                fill={ct.barFill}
+                fill={categoricalColor(1)}
                 radius={[0, 4, 4, 0]}
                 onClick={(entry) => {
                   const row = entry as { topic?: string; paperIds?: string[] };

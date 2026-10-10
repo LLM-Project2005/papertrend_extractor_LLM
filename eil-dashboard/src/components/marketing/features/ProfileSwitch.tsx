@@ -135,7 +135,7 @@ export default function ProfileSwitch() {
         <div role="tabpanel" id={`${id}-general-panel`} aria-labelledby={`${id}-general`} hidden={profile !== "general"} className="motion-safe:animate-rise-in">
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <p className="text-[16px] leading-7 text-body">
-              No categories forced on the papers. Each is described by its topics, its methods and its kind of study, and the
+              No research areas forced on the papers. Each is described by its topics, its methods and its kind of study, and the
               dashboard groups them into themes. No classification step runs, so nothing is squeezed into a box it does not fit.
             </p>
             <div className="flex flex-wrap gap-2" aria-hidden="true">
@@ -190,8 +190,8 @@ export default function ProfileSwitch() {
                 ))}
               </div>
               <p className="mt-5 max-w-3xl text-[14px] leading-6 text-mute">
-                Two to twelve categories you name and describe, plus “Other / Unclassified” for what fits none. A paper gets one
-                main category and up to two more, each with its reason.
+                Two to twelve research areas you name and describe, plus “Other / Unclassified” for what fits none. A paper gets one
+                main research area and up to two more, each with its reason.
               </p>
             </>
           ) : null}

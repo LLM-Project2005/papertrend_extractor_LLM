@@ -89,7 +89,7 @@ async function homePage(theme: "light" | "dark" = "light") {
   return renderToStaticMarkup(createElement(LandingPage));
 }
 
-const FEATURE_SLUGS = ["paper-analysis", "research-dashboard", "ai-research-chat", "cloud-queue"];
+const FEATURE_SLUGS = ["paper-analysis", "research-dashboard", "ai-research-chat"];
 
 async function featurePage(slug: string, theme: "light" | "dark" = "light") {
   globalThis.__auditfixTheme = theme;
@@ -141,7 +141,9 @@ async function dashboard(data: Record<string, unknown>, options: { search?: stri
     data: { trends: [], tracksSingle: [], tracksMulti: [], categoryAssignments: [], useMock: false, diagnostics: {}, ...data },
   };
   globalThis.__siteuiDashboardRequests = [];
-  globalThis.__siteuiSearch = options.search ?? "";
+  // These cases read the chart tabs' header, search and filters; the dashboard
+  // opens on the semantic map, which has none of them, so Area Analysis is opened.
+  globalThis.__siteuiSearch = options.search ?? "tab=area_analysis";
   try {
     const { default: DashboardClient } = await import("../src/components/DashboardClient");
     const { AnalysisRunsContext } = await import("../src/components/workspace/AnalysisRunsContext");
@@ -180,9 +182,9 @@ async function settingsAt(section: string, auth: Record<string, unknown> = SIGNE
 }
 
 async function docsPagesDrawn() {
-  const { DocsArticle, DocsHome } = await import("../src/components/docs/DocsFrame");
+  const { DocsArticle } = await import("../src/components/docs/DocsFrame");
   const { docsPages } = await import("../src/lib/docs-content");
-  return [renderToStaticMarkup(createElement(DocsHome)), ...docsPages.map((page) => renderToStaticMarkup(createElement(DocsArticle, { page })))];
+  return docsPages.map((page) => renderToStaticMarkup(createElement(DocsArticle, { page })));
 }
 
 async function signInPage() {
@@ -271,7 +273,7 @@ test("an Adaptive chart draws one quantity in one fill, and writes no colour of 
     const fills = (html: string) =>
       [...html.matchAll(/<span class="block h-full rounded-full ([^"]*)" style="width:/g)].map((match) => match[1]);
     assert.equal(fills(bars).length, 2, "one bar per row");
-    assert.deepEqual([...new Set([...fills(bars), ...fills(pairs)])], ["bg-slate-700 dark:bg-[#d4d4d4]"], "bars and pairs share one fill");
+    assert.deepEqual([...new Set([...fills(bars), ...fills(pairs)])], ["bg-accent"], "bars and pairs share one fill, the accent");
     for (const html of [bars, pairs, ...rest]) {
       assert.doesNotMatch(html, /\s(?:fill|stroke)="#[0-9a-f]{3,8}"/i, "no chart colour is written in");
     }
@@ -310,7 +312,7 @@ test("the public pages show screenshots of the real product, each with its size 
     assert.equal(attribute(image, "height"), String(SHOT_SIZES[name].height), `${name} reserves its height`);
     assert.ok(attribute(image, "alt").length > 20, `${name} says what it shows`);
   }
-  assert.ok(shots.size >= 5, `expected several screenshots, found ${[...shots.keys()].join(", ")}`);
+  assert.ok(shots.size >= 4, `expected several screenshots, found ${[...shots.keys()].join(", ")}`);
   for (const feature of marketingFeatures) {
     assert.ok(shots.has(feature.shot), `${feature.slug}'s ${feature.shot} screenshot is shown`);
   }
@@ -386,19 +388,19 @@ test("each figure on the feature pages is one the product can be counted to have
   assert.equal(/analysis passes|12 analysis stages/.test(analysis), false);
   // The timeline draws the thirteen steps, each a control that opens its note.
   const timeline = analysis.match(/Read the PDF[\s\S]*?Save/)?.[0] ?? "";
-  for (const step of ["Read the PDF", "Clean", "Translate", "Find the sections", "Title and year", "Grounded keywords", "own keywords", "Aims and contributions", "Group into topics", "Name the topics", "Category", "Kind of study"]) {
+  for (const step of ["Read the PDF", "Clean", "Translate", "Find the sections", "Title and year", "Grounded keywords", "own keywords", "Aims and contributions", "Group into topics", "Name the topics", "Research area", "Kind of study"]) {
     assert.ok(timeline.includes(step), step);
   }
   const dashboardPage = text(await featurePage("research-dashboard"));
-  assert.match(dashboardPage, /Six views, six questions\./);
+  assert.match(dashboardPage, /Four views, four questions\./);
   assert.equal(/^Live |4 category views/.test(dashboardPage), false);
 
-  // Six views: the dashboard draws six tabs.
+  // Four views: the dashboard draws four tabs, the semantic map first (2026-10-09 review).
   const html = await dashboard(ANALYSED);
   const tabs = /<nav\b[^>]*aria-label="Tabs"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
   assert.deepEqual(
     [...tabs.matchAll(/<button\b[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]),
-    ["Overview", "Trend Analysis", "Category Analysis", "Keyword Explorer", "Semantic Map", "Adaptive"]
+    ["Semantic Map", "Area Analysis", "Keyword Explorer", "Adaptive"]
   );
   // Not live: the dashboard asks for its data once, with no polling and no refetch on focus.
   const requests = globalThis.__siteuiDashboardRequests ?? [];
@@ -440,8 +442,9 @@ test("no hover or other variant colour on the public pages is fixed to a single 
 
 test("a text link on the public pages is padded to a target taller than its text", async () => {
   // The link under each feature was a 20px target for a 14px line.
+  // One under each of the front page's three parts.
   const links = elementsLabelled(await homePage(), "a", "More on ");
-  assert.ok(links.length >= 4);
+  assert.ok(links.length >= 3);
   for (const link of links) {
     const classes = classesOf(link.open);
     for (const padded of ["-my-2", "py-2", "inline-flex"]) assert.ok(classes.includes(padded), `${padded} on ${text(link.inner)}`);
@@ -704,9 +707,9 @@ test("the dashboard's loading fallback is the workspace's own, and no dashboard 
   assert.ok(darkText(/<th\b[^>]*>2020<\/th>/.exec(heatmap)?.[0] ?? ""), "the column headers have a dark colour");
   assert.ok(darkText(/<td\b[^>]*title="Reading"[^>]*>/.exec(heatmap)?.[0] ?? ""), "the row labels have a dark colour");
 
-  const { default: Overview } = await import("../src/components/tabs/Overview");
-  const overview = draw(Overview, { ...ANALYSED, selectedTracks: TRACKS });
-  for (const [name, html] of [["fallback", fallback], ["Heatmap", heatmap], ["Overview", overview], ["Dashboard", await dashboard(ANALYSED)]]) {
+  const { default: AreaAnalysis } = await import("../src/components/tabs/AreaAnalysis");
+  const area = draw(AreaAnalysis, { ...ANALYSED, selectedTracks: TRACKS });
+  for (const [name, html] of [["fallback", fallback], ["Heatmap", heatmap], ["Area Analysis", area], ["Dashboard", await dashboard(ANALYSED)]]) {
     assert.deepEqual(classNames(html).filter((cls) => /(?:^|:)(?:text|bg|border)-gray-[0-9]/.test(cls)), [], `${name} uses the gray scale, not slate`);
     assert.doesNotMatch(html, /border-blue-500|#dfd5c6/i, name);
   }
@@ -783,7 +786,7 @@ test("a repository with its own categories counts all of them until the reader c
     ["4", "pragmatics", "Pragmatics"],
     ["6", "syntax", "Syntax"],
   ].map(([paper, key, label]) => ({ paper_id: paper, year: "2020", title: `Paper ${paper}`, category_key: key, category_label: label, assignment_type: "single" }));
-  const chip = (html: string) => /(\d+) categor(?:y|ies)</.exec(html)?.[1];
+  const chip = (html: string) => /(\d+) research areas?</.exec(html)?.[1];
   const custom = { ...ANALYSED, categoryAssignments: assignments, classificationEnabled: true };
   assert.equal(chip(await dashboard(custom)), "4", "Phonology, Pragmatics, Syntax and Other, untouched");
   assert.equal(chip(await dashboard(custom, { workspace: { selectedTracks: ["pragmatics"] } })), "1", "once the reader chooses, their choice");

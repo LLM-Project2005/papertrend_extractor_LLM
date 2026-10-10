@@ -179,6 +179,24 @@
               "value": "public, max-age=0, s-maxage=60"
             }
           ]
+        },
+        {
+          "source": "/how-it-works",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=0, s-maxage=60"
+            }
+          ]
+        },
+        {
+          "source": "/team",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=0, s-maxage=60"
+            }
+          ]
         }
       ],
       "rewrites": [
@@ -364,6 +382,24 @@
         },
         {
           "source": "/features/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=0, s-maxage=60"
+            }
+          ]
+        },
+        {
+          "source": "/how-it-works",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=0, s-maxage=60"
+            }
+          ]
+        },
+        {
+          "source": "/team",
           "headers": [
             {
               "key": "Cache-Control",

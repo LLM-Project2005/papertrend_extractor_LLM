@@ -139,8 +139,16 @@ async function scrollDialog(page: Page, deltaY: number | "viewer", margin = 64):
 const SCENES: Scene[] = [
   {
     name: "dashboard-trends",
-    route: "/workspace/dashboard?tab=trend_analysis",
+    route: "/workspace/dashboard?tab=area_analysis",
     settleMs: 7000,
+    // The other tabs load their code on first open; open each once before
+    // recording so the clip shows them, not their loading notes.
+    setup: async (page) => {
+      for (const tab of ["Semantic Map", "Keyword Explorer", "Area Analysis"]) {
+        await page.locator('nav[aria-label="Tabs"] button', { hasText: tab }).click();
+        await wait(page, 4000);
+      }
+    },
     play: async (page) => {
       // The pointer starts and ends over the summary text, off the chart, so
       // no tooltip is open where the loop joins.
@@ -150,14 +158,11 @@ const SCENES: Scene[] = [
         await page.mouse.move(column.x, column.y, { steps: 24 });
         await wait(page, 1100);
       }
-      await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Overview" }));
+      await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Semantic Map" }));
+      await wait(page, 3200);
+      await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Keyword Explorer" }));
       await wait(page, 2600);
-      const overviewBars = page.locator(".recharts-bar-rectangle");
-      if ((await overviewBars.count()) > 2) await pointAt(page, overviewBars.nth(2), 24);
-      await wait(page, 1400);
-      await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Category Analysis" }));
-      await wait(page, 2600);
-      await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Trend Analysis" }));
+      await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Area Analysis" }));
       // Long enough for the bars to finish growing, so the loop's last frame
       // is its first.
       await page.mouse.move(PARKED.x, PARKED.y, { steps: 20 });
@@ -244,7 +249,20 @@ const SCENES: Scene[] = [
   },
   { name: "dashboard", route: "/workspace/dashboard", settleMs: 7000 },
   { name: "dashboard-keywords", route: "/workspace/dashboard?tab=keyword_explorer", settleMs: 7000 },
-  { name: "dashboard-categories", route: "/workspace/dashboard?tab=track_analysis", settleMs: 7000 },
+  {
+    name: "dashboard-categories",
+    route: "/workspace/dashboard?tab=area_analysis",
+    settleMs: 7000,
+    // Research areas are the second half of Area Analysis.
+    prepare: async (page) => {
+      // Put the heading at the top, just under the workspace header.
+      await page.locator("h2", { hasText: "Research areas" }).first().evaluate((heading) => {
+        (heading as HTMLElement).style.scrollMarginTop = "88px";
+        heading.scrollIntoView({ block: "start" });
+      });
+      await wait(page, 1500);
+    },
+  },
   { name: "home", route: "/workspace/home", settleMs: 6000 },
   { name: "library", route: "/workspace/library", settleMs: 5000 },
   { name: "library-papers", route: "/workspace/library", settleMs: 3000, prepare: openRepository },

@@ -33,7 +33,11 @@ import { loadThemeStore } from "@/lib/topic-theme-service";
 import { normalizeTopicKey, type ThemeStore } from "@/lib/topic-themes";
 import { usableAnalysisSql } from "@/lib/usable-analysis";
 import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
+import { MIN_PAPERS } from "@/lib/insights/stats";
 import { reportChatProgress } from "@/lib/chat-progress";
+import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey } from "@/lib/paper-sections";
+import { normalizeTitle } from "@/lib/references/citation";
+import { normalizeEffort, type ChatEffort } from "@/lib/chat-effort";
 import {
   ANSWER_FORMAT_RULES,
   formatConstraintInstruction,
@@ -75,9 +79,11 @@ export interface RepositoryDataChart {
   chartType: "bar" | "line" | "pie" | "table";
   title: string;
   scopeLabel: string;
-  metric: "word_count" | "top_topics" | "topic_trend";
+  metric: "word_count" | "top_topics" | "topic_trend" | "keyword_frequency";
   xKey: "label";
   yKeys: string[];
+  /** Series drawn end to end in one bar per row, when they are parts of a whole. */
+  stacked?: boolean;
   data: Array<Record<string, string | number>>;
   planner: {
     source: "llm" | "fallback";
@@ -260,6 +266,42 @@ export const STEP_BUDGETS = {
   documentAnalysis: (papers: number) => ({ maxTokens: Math.min(10_000, 3_000 + papers * 550) }),
 };
 
+/** What each thinking effort (chat-effort.ts) changes. Medium is exactly the answer as it was before efforts. */
+export const EFFORT_SETTINGS: Record<
+  ChatEffort,
+  {
+    /** Papers read for a focused question, and candidates ranked to choose them. */
+    focusedSources: number;
+    rerank: number;
+    candidates: number;
+    /** A second search when the first falls short. */
+    widenSearch: boolean;
+    synthesis: { maxTokens: number; reasoningEffort?: "low" | "medium" | "high" };
+    /** Check every claim against the papers, not only answers that look doubtful. */
+    alwaysAudit: boolean;
+  }
+> = {
+  low: { focusedSources: 6, rerank: 12, candidates: 32, widenSearch: false, synthesis: { maxTokens: 4_000, reasoningEffort: "low" }, alwaysAudit: false },
+  medium: { focusedSources: 10, rerank: 24, candidates: 48, widenSearch: true, synthesis: STEP_BUDGETS.synthesis, alwaysAudit: false },
+  // GPT-6 Luna's reasoning counts against max_tokens (STEP_BUDGETS): more of it needs more room.
+  high: { focusedSources: 16, rerank: 32, candidates: 64, widenSearch: true, synthesis: { maxTokens: 12_000, reasoningEffort: "high" }, alwaysAudit: true },
+};
+
+/**
+ * A writing step's budget at an effort: as it is at Medium, reasoning briefly at
+ * Low, and at length - with room for it - at High. For the steps that write a
+ * whole-repository summary or a per-paper analysis; the pilot sent a High
+ * question down the summary path, which the effort did not reach (2026-10-10).
+ */
+export function writingBudget<T extends { maxTokens: number; reasoningEffort?: "low" | "medium" | "high" }>(
+  base: T,
+  effort: ChatEffort
+): T & { reasoningEffort?: "low" | "medium" | "high" } {
+  if (effort === "low") return { ...base, reasoningEffort: "low" };
+  if (effort === "high") return { ...base, maxTokens: Math.round(base.maxTokens * 1.5), reasoningEffort: "high" };
+  return base;
+}
+
 export interface RepositoryChatInput {
   ownerUserId: string;
   threadId?: string | null;
@@ -271,6 +313,8 @@ export interface RepositoryChatInput {
   prompt: string;
   model?: string;
   forceChart?: boolean;
+  /** How hard to think; medium when absent. */
+  effort?: ChatEffort;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   jobCallbackBaseUrl?: string;
   bypassAsyncJob?: boolean;
@@ -1414,10 +1458,191 @@ function totalWordCountResult(
   };
 }
 
+/** The sections each paper's record keeps, with the characters stored for each (nodes/dataset_builder.py). */
+const STORED_SECTIONS: Array<{ key: "abstract" | "methods" | "results" | "conclusion"; label: string; labelTh: string; cap: number }> = [
+  { key: "abstract", label: "Abstract", labelTh: "บทคัดย่อ", cap: 12_000 },
+  { key: "methods", label: "Methods", labelTh: "วิธีวิจัย", cap: 20_000 },
+  { key: "results", label: "Results", labelTh: "ผลการวิจัย", cap: 20_000 },
+  { key: "conclusion", label: "Conclusion", labelTh: "สรุป", cap: 12_000 },
+];
+
+/**
+ * "Count the words in each section": the reader means the paper's parts, not
+ * the word "section". The planner read such a request as a count of the term
+ * "section" and charted a row of zeros (found in the test account's chat,
+ * 2026-10-09).
+ */
+export function asksForSectionWordCounts(question: string, terms: string[]): boolean {
+  // The planner passed the request's own words as the term ("section word count").
+  const generic = terms.every((term) =>
+    /^(?:(?:sections?|words?|counts?|numbers?|parts?|of|in|per|each|the)\s*)+$|^(?:ส่วน|บท|คำ|จำนวนคำ)$/i.test(term.trim())
+  );
+  const asks =
+    /\b(?:each|every|per|by|all|the)\s+(?:sections?|parts?)\b|\bsections?\b[^.?!]*\bwords?\b|\bwords?\b[^.?!]*\bsections?\b|(?:แต่ละ|ทุก)(?:ส่วน|บท)/i.test(
+      question
+    );
+  return generic && asks;
+}
+
+interface PaperSectionCounts {
+  paper: RepositoryPaper;
+  parts: Array<{ key: PaperSectionKey; words: number }>;
+  /** "headings": read from the headings printed in the paper; "stored": the four parts the analysis keeps. */
+  source: "headings" | "stored";
+  capped: boolean;
+}
+
+/** Words in each part of one paper: its printed headings when they can be read, else the stored parts. */
+export function paperSectionCounts(paper: RepositoryPaper): PaperSectionCounts {
+  const sections = paper.contentSource === "full_text" ? splitPaperSections(paper.content) : null;
+  if (sections) {
+    return {
+      paper,
+      parts: sections.map((section) => ({ key: section.key, words: buildRepositoryTermCounts(section.text).totalWords })),
+      source: "headings",
+      capped: false,
+    };
+  }
+  return {
+    paper,
+    parts: STORED_SECTIONS.map((section) => ({ key: section.key, words: buildRepositoryTermCounts(paper[section.key]).totalWords })),
+    source: "stored",
+    capped: STORED_SECTIONS.some((section) => paper[section.key].length >= section.cap),
+  };
+}
+
+/** The whole paper's words; the parts' sum when the paper has no word index. */
+function wholePaper(row: PaperSectionCounts): number {
+  return row.paper.totalWords || row.parts.reduce((sum, part) => sum + part.words, 0);
+}
+
+/** One row per paper: a second upload of the same paper is counted once. */
+function distinctPapers(papers: RepositoryPaper[]): RepositoryPaper[] {
+  const seen = new Set<string>();
+  return papers.filter((paper) => {
+    const key = `${normalizeTitle(paper.title)}\u0000${paper.totalWords}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sectionWordCountResult(
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan
+): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
+  const thai = answerLanguageIsThai(plan.answerLanguage);
+  const label = (key: PaperSectionKey) => (thai ? SECTION_LABELS[key].th : SECTION_LABELS[key].en);
+  const papers = distinctPapers(context.papers);
+  const repeats = context.papers.length - papers.length;
+  const rows = papers.map(paperSectionCounts);
+  const fallback = rows.filter((row) => row.source === "stored").length;
+  const single = rows.length === 1;
+  const lines: string[] = [thai ? "## จำนวนคำในแต่ละส่วน" : "## Words in each section"];
+
+  if (single) {
+    const [{ paper, parts }] = rows;
+    const total = wholePaper(rows[0]);
+    lines.push(
+      thai
+        ? `“${paper.title}” มีทั้งหมด ${total.toLocaleString()} คำ`
+        : `“${paper.title}” has ${total.toLocaleString()} words.`,
+      "",
+      thai ? "| ส่วน | จำนวนคำ | สัดส่วน |" : "| Section | Words | Share |",
+      "| --- | ---: | ---: |",
+      ...parts.map(
+        (part) =>
+          `| ${label(part.key)} | ${part.words.toLocaleString()} | ${total > 0 ? Math.round((part.words / total) * 100) : 0}% |`
+      ),
+      thai ? `| **ทั้งฉบับ** | **${total.toLocaleString()}** | |` : `| **Whole paper** | **${total.toLocaleString()}** | |`
+    );
+  } else {
+    const keys = SECTION_ORDER.filter((key) => rows.some((row) => row.parts.some((part) => part.key === key)));
+    lines.push(
+      thai ? `นับใน **${context.scopeLabel}**` : `Counted across **${context.scopeLabel}**.`,
+      "",
+      `| ${thai ? "เอกสาร" : "Paper"} | ${keys.map(label).join(" | ")} | ${thai ? "ทั้งฉบับ" : "Whole paper"} |`,
+      `| --- | ${keys.map(() => "---:").join(" | ")} | ---: |`,
+      ...rows.map((row) => {
+        const cells = keys.map((key) => {
+          const part = row.parts.find((candidate) => candidate.key === key);
+          return part ? part.words.toLocaleString() : "–";
+        });
+        return `| ${row.paper.title.replace(/\|/g, "-")} | ${cells.join(" | ")} | ${wholePaper(row).toLocaleString()} |`;
+      })
+    );
+  }
+  const notes = [
+    rows.length > fallback
+      ? thai
+        ? "แบ่งส่วนตามหัวข้อที่พิมพ์ไว้ในเอกสาร ส่วน “ชื่อเรื่องและผู้แต่ง” คือข้อความก่อนหัวข้อแรก ไม่นับคำในหัวข้อเอง"
+        : "Sections follow the headings printed in the paper; “Title and authors” is the text before the first heading. The headings' own words are not counted, so the parts add up to slightly less than the whole."
+      : "",
+    fallback > 0
+      ? thai
+        ? `อ่านหัวข้อของเอกสาร ${fallback} ฉบับไม่ได้ จึงนับเฉพาะส่วนที่การวิเคราะห์เก็บไว้ (บทคัดย่อ วิธีวิจัย ผลการวิจัย สรุป)`
+        : `The headings of ${fallback === 1 ? (single ? "this paper" : "one paper") : `${fallback} papers`} could not be read, so only the parts the analysis stored are counted there (abstract, methods, results, conclusion).`
+      : "",
+    repeats > 0
+      ? thai
+        ? `มีเอกสารที่อัปโหลดซ้ำ ${repeats} ฉบับ นับเพียงครั้งเดียว`
+        : `${repeats === 1 ? "One paper was" : `${repeats} papers were`} uploaded twice and ${repeats === 1 ? "is" : "are"} counted once.`
+      : "",
+  ].filter(Boolean);
+  const answer = [...lines, "", ...notes].join("\n");
+
+  const keys = SECTION_ORDER.filter((key) => rows.some((row) => row.parts.some((part) => part.key === key)));
+  // A chart only when asked for, or for one paper, where it is the clearest view.
+  const charts: RepositoryChartPayload[] = !plan.needsChart && !single ? [] : [
+    single
+      ? {
+          chartType: "bar",
+          title: `${thai ? "จำนวนคำในแต่ละส่วน" : "Words in each section"}: ${shortLabel(rows[0].paper.title, 80)}`,
+          scopeLabel: context.scopeLabel,
+          metric: "word_count",
+          xKey: "label",
+          yKeys: [thai ? "จำนวนคำ" : "words"],
+          data: rows[0].parts.map((part) => ({ label: label(part.key), [thai ? "จำนวนคำ" : "words"]: part.words })),
+          planner: { source: plan.source, reason: "Words counted under each heading of the paper.", confidence: "high", warnings: [] },
+        }
+      : {
+          chartType: "bar",
+          title: thai ? "จำนวนคำในแต่ละส่วน แยกตามเอกสาร" : "Words in each section, by paper",
+          scopeLabel: context.scopeLabel,
+          metric: "word_count",
+          xKey: "label",
+          yKeys: keys.map(label),
+          stacked: true,
+          data: rows.map(({ paper, parts }) => ({
+            label: shortLabel(paper.title),
+            ...Object.fromEntries(keys.map((key) => [label(key), parts.find((part) => part.key === key)?.words ?? 0])),
+          })),
+          planner: { source: plan.source, reason: "Words counted under each heading of each paper.", confidence: "high", warnings: [] },
+        },
+  ];
+  const limitations: string[] = [];
+  if (rows.some((row) => row.capped)) {
+    limitations.push(
+      thai
+        ? "บางส่วนยาวเกินกว่าที่เก็บไว้ จึงนับได้เพียงส่วนแรกของส่วนนั้น"
+        : "Some sections are longer than the part of them that is stored, so their counts cover only the opening of that section."
+    );
+  }
+  return {
+    answer,
+    citations: rows.map(({ paper, parts }) =>
+      citationForPaper(paper, parts.map((part) => `${SECTION_LABELS[part.key].en}: ${part.words.toLocaleString()} words`).join("; "))
+    ),
+    charts,
+    limitations,
+  };
+}
+
 export function wordCountResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan
 ): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
+  if (asksForSectionWordCounts(plan.refinedQuestion, plan.terms)) return sectionWordCountResult(context, plan);
   // No specific term means the reader is asking how long the papers are, not how
   // often a word appears. Answer that directly instead of demanding a term.
   if (plan.terms.length === 0) return totalWordCountResult(context, plan);
@@ -1857,8 +2082,10 @@ function candidatePrompt(candidate: RepositoryRetrievalCandidate): string {
 
 function retrievalBudgets(
   mode: RepositoryRetrievalMode,
-  paperCount: number
+  paperCount: number,
+  effort: ChatEffort = "medium"
 ): { candidateLimit: number; rerankLimit: number; sourceLimit: number } {
+  const settings = EFFORT_SETTINGS[effort];
   if (mode === "exhaustive") {
     return {
       candidateLimit: Math.min(Math.max(paperCount, 1), 256),
@@ -1868,15 +2095,15 @@ function retrievalBudgets(
   }
   if (mode === "comparative") {
     return {
-      candidateLimit: Math.min(Math.max(paperCount, 1), 64),
-      rerankLimit: Math.min(Math.max(paperCount, 1), 24),
-      sourceLimit: Math.min(Math.max(paperCount, 1), 12),
+      candidateLimit: Math.min(Math.max(paperCount, 1), Math.max(64, settings.candidates)),
+      rerankLimit: Math.min(Math.max(paperCount, 1), settings.rerank),
+      sourceLimit: Math.min(Math.max(paperCount, 1), settings.focusedSources + 2),
     };
   }
   return {
-    candidateLimit: Math.min(Math.max(paperCount, 1), 48),
-    rerankLimit: Math.min(Math.max(paperCount, 1), 24),
-    sourceLimit: Math.min(Math.max(paperCount, 1), 10),
+    candidateLimit: Math.min(Math.max(paperCount, 1), settings.candidates),
+    rerankLimit: Math.min(Math.max(paperCount, 1), settings.rerank),
+    sourceLimit: Math.min(Math.max(paperCount, 1), settings.focusedSources),
   };
 }
 
@@ -1990,10 +2217,11 @@ export function expansionIsPossible(selectedIds: string[], scopedPaperCount: num
 async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
-  model?: string
+  model?: string,
+  effort: ChatEffort = "medium"
 ): Promise<SelectedEvidence> {
   const queries = [plan.refinedQuestion, ...plan.retrievalQueries, ...plan.evidenceNeeds];
-  const budgets = retrievalBudgets(plan.retrievalMode, context.papers.length);
+  const budgets = retrievalBudgets(plan.retrievalMode, context.papers.length, effort);
   const hybridEnabled =
     getDatabaseProvider() === "cloud-sql" &&
     process.env.REPOSITORY_HYBRID_RETRIEVAL_ENABLED === "true";
@@ -2098,7 +2326,7 @@ async function selectEvidence(
     const selectedCandidates = selectedIds
       .map((paperId) => candidateById.get(paperId))
       .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
-    const canExpand = expansionIsPossible(selectedIds, context.papers.length);
+    const canExpand = EFFORT_SETTINGS[effort].widenSearch && expansionIsPossible(selectedIds, context.papers.length);
     console.info(
       "chat_sufficiency_decision",
       JSON.stringify({ skipped: !canExpand, selected: selectedIds.length, scoped: context.papers.length })
@@ -2500,7 +2728,8 @@ async function repositoryQaResult(
   plan: RepositoryPromptPlan
 ): Promise<RepositoryQaOutput> {
   reportChatProgress("retrieving");
-  const evidence = await selectEvidence(context, plan, input.model);
+  const effort = normalizeEffort(input.effort);
+  const evidence = await selectEvidence(context, plan, input.model, effort);
   reportChatProgress(
     "reading_evidence",
     evidence.papers.length === 1 ? "1 paper" : `${evidence.papers.length} papers`
@@ -2552,7 +2781,7 @@ async function repositoryQaResult(
       0.2,
       input.model,
       "CHAT_SYNTHESIS",
-      STEP_BUDGETS.synthesis
+      EFFORT_SETTINGS[effort].synthesis
     );
     const parsed = GroundedAnswerSchema.safeParse(extractJsonObject(completion?.content ?? ""));
     if (parsed.success) {
@@ -2602,7 +2831,8 @@ async function repositoryQaResult(
   // Recorded so the reason an eight-second audit was needed is visible, rather
   // than having to guess which condition failed.
   console.info("chat_audit_decision", JSON.stringify({ skipped: skipBlocker === null, blocker: skipBlocker }));
-  if (skipBlocker === null) {
+  // High effort has every answer's claims checked, not only doubtful ones.
+  if (skipBlocker === null && !EFFORT_SETTINGS[effort].alwaysAudit) {
     reportChatProgress("formatting");
     const cleanCited = validation.citedPaperIds
       .map((paperId) => paperById.get(paperId))
@@ -2718,8 +2948,28 @@ export function plainLimitation(reason: string): string {
     .replace(/\bexcerpts?\b/gi, "papers searched");
 }
 
-export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean): RepositoryOperation[] {
-  return operations.includes("analyze_text") && hasTerms ? ["analyze_text", "visualize"] : ["visualize"];
+/**
+ * Whether a message asks to be told something rather than shown a count:
+ * "explain this paper", "what did they find". In Chart mode such a question was
+ * answered with a chart alone, or refused (the test account's chat, 2026-10-09).
+ */
+export function asksForExplanation(prompt: string): boolean {
+  if (promptRequestsChart(prompt) || requestsTotalWordCount(prompt) || asksForSectionWordCounts(prompt, [])) return false;
+  return /\b(?:explain|summari[sz]e|describe|tell me about|discuss|interpret|why|what (?:is|are|does|do|did)|how (?:does|do|did))\b|อธิบาย|สรุป|คืออะไร|ทำไม/i.test(prompt);
+}
+
+/**
+ * The operations Chart mode runs. A chart of counts runs alone; a question that
+ * asks for an explanation is answered first and charted after.
+ */
+export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean, prompt = ""): RepositoryOperation[] {
+  if (operations.includes("analyze_text") && hasTerms) return ["analyze_text", "visualize"];
+  const answer = operations.find(
+    (operation) => operation === "search_evidence" || operation === "analyze_each_document" || operation === "aggregate_corpus"
+  );
+  // The planner may offer no answering step for it ("explain this paper" came back as a chart alone on the pilot).
+  if (asksForExplanation(prompt)) return [answer ?? "search_evidence", "visualize"];
+  return ["visualize"];
 }
 
 export function fallbackExecutionPlan(
@@ -2765,7 +3015,7 @@ export function fallbackExecutionPlan(
     operations.push("analyze_each_document");
   }
   if (forceChart) {
-    operations = chartModeOperations(operations, quoted.length > 0);
+    operations = chartModeOperations(operations, quoted.length > 0, prompt);
     operation = operations[0];
   }
   return {
@@ -2901,7 +3151,7 @@ export async function planRepositoryExecution(
       operations = operations.filter((operation) => operation !== "converse");
     }
     if (input.forceChart) {
-      operations = chartModeOperations(operations, parsed.data.terms.length > 0);
+      operations = chartModeOperations(operations, parsed.data.terms.length > 0, input.prompt);
     }
     // With web search on, only small talk goes unsearched: live, "what does
     // recent research outside these papers say" was answered as conversation,
@@ -2979,12 +3229,94 @@ const OPERATION_LABELS: Record<RepositoryOperation, string> = {
  * be one of three fixed charts - top raw topics, raw topics by year, or word
  * counts - whatever the question was.
  */
+/**
+ * A chart for one or two papers. The chart engine compares papers (by theme,
+ * method, year), which needs at least MIN_PAPERS, so a chart of one attached
+ * paper used to be refused. With fewer, the chart is drawn from each paper's
+ * own record: its sections' lengths when those are asked for, otherwise how
+ * often its keywords appear (2026-10-09 review).
+ */
+export function smallScopeChartResult(
+  prompt: string,
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan
+): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations"> {
+  const thai = answerLanguageIsThai(plan.answerLanguage);
+  const papers = context.papers;
+  const sectionsAsked = asksForSectionWordCounts(prompt, []) || /sections?|ส่วน/i.test(prompt);
+  const ranked = papers.map((paper) => [...paper.keywords.entries()].filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+  if (sectionsAsked || ranked.every((list) => list.length === 0)) {
+    return { ...sectionWordCountResult(context, { ...plan, needsChart: true }), coverage: completeCoverage(context, papers.length) };
+  }
+  const note = thai
+    ? `แผนภูมิที่เปรียบเทียบงานวิจัยตามหัวข้อ วิธีวิจัย หรือปี ต้องมีงานวิจัยอย่างน้อย ${MIN_PAPERS} ฉบับในขอบเขต เมื่อมีน้อยกว่านั้นจึงแสดงสิ่งที่อยู่ในงานวิจัยแต่ละฉบับแทน ลองถามว่า "จำนวนคำในแต่ละส่วน" เพื่อดูอีกมุมหนึ่ง`
+    : `A chart that compares papers (by theme, method or year) needs at least ${MIN_PAPERS} in scope, so with ${papers.length === 1 ? "one" : "two"} it shows what ${papers.length === 1 ? "the paper itself contains" : "each paper contains"}. Ask for "words in each section" for another view.`;
+  let chart: RepositoryDataChart;
+  let lead: string;
+  if (papers.length === 1) {
+    const top = ranked[0].slice(0, 10);
+    chart = {
+      chartType: "bar",
+      title: `${thai ? "คำสำคัญที่ปรากฏบ่อยที่สุด" : "How often its keywords appear"}: ${shortLabel(papers[0].title, 80)}`,
+      scopeLabel: context.scopeLabel,
+      metric: "keyword_frequency",
+      xKey: "label",
+      yKeys: [thai ? "จำนวนครั้ง" : "times"],
+      data: top.map(([keyword, count]) => ({ label: keyword, [thai ? "จำนวนครั้ง" : "times"]: count })),
+      planner: { source: plan.source, reason: "Keyword counts stored with the paper.", confidence: "high", warnings: [] },
+    };
+    const [first, second, third] = top;
+    lead = thai
+      ? `“${papers[0].title}” ใช้คำว่า “${first[0]}” บ่อยที่สุด (${first[1]} ครั้ง)${second ? ` รองลงมาคือ “${second[0]}” (${second[1]})` : ""}${third ? ` และ “${third[0]}” (${third[1]})` : ""}`
+      : `“${papers[0].title}” uses “${first[0]}” most often (${first[1]} times)${second ? `, then “${second[0]}” (${second[1]})` : ""}${third ? ` and “${third[0]}” (${third[1]})` : ""}.`;
+  } else {
+    const combined = new Map<string, number>();
+    ranked.forEach((list) => list.forEach(([keyword, count]) => combined.set(keyword, (combined.get(keyword) ?? 0) + count)));
+    const keywords = [...combined.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8).map(([keyword]) => keyword);
+    const names = papers.map((paper) => shortLabel(paper.title, 40));
+    chart = {
+      chartType: "bar",
+      title: thai ? "คำสำคัญที่ปรากฏบ่อยที่สุด เทียบสองฉบับ" : "How often their keywords appear, side by side",
+      scopeLabel: context.scopeLabel,
+      metric: "keyword_frequency",
+      xKey: "label",
+      yKeys: names,
+      data: keywords.map((keyword) => ({ label: keyword, ...Object.fromEntries(papers.map((paper, index) => [names[index], paper.keywords.get(keyword) ?? 0])) })),
+      planner: { source: plan.source, reason: "Keyword counts stored with each paper.", confidence: "high", warnings: [] },
+    };
+    const shared = keywords.filter((keyword) => papers.every((paper) => (paper.keywords.get(keyword) ?? 0) > 0));
+    lead = thai
+      ? shared.length > 0
+        ? `ทั้งสองฉบับใช้คำว่า ${shared.slice(0, 3).map((keyword) => `“${keyword}”`).join(", ")}`
+        : "ทั้งสองฉบับไม่มีคำสำคัญที่พบบ่อยร่วมกัน"
+      : shared.length > 0
+        ? `Both papers use ${shared.slice(0, 3).map((keyword) => `“${keyword}”`).join(", ")}; the chart shows how often each does.`
+        : "The two papers share none of their most frequent keywords; the chart shows each paper's own.";
+  }
+  return {
+    answer: `${lead}
+
+${note}`,
+    citations: papers.map((paper) => citationForPaper(paper, "Keyword counts stored with the paper.")),
+    charts: [chart],
+    coverage: completeCoverage(context, papers.length),
+    limitations: [],
+  };
+}
+
 async function visualizeResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
   execution: RepositoryExecutionPlan
 ): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
   reportChatProgress("charting");
+  if (context.papers.length > 0 && context.papers.length < MIN_PAPERS) {
+    return smallScopeChartResult(input.prompt, context, legacyPlanForExecution(execution, input.prompt));
+  }
+  if (asksForSectionWordCounts(input.prompt, [])) {
+    const plan = legacyPlanForExecution(execution, input.prompt);
+    return { ...sectionWordCountResult(context, { ...plan, needsChart: true }), coverage: completeCoverage(context, context.papers.length) };
+  }
   const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
   const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
   try {
@@ -3279,7 +3611,7 @@ async function generateDocumentAnalysisBatch(
         0.15,
         input.model,
         attempt === 0 ? "CHAT_DOCUMENT_ANALYSIS" : "CHAT_DOCUMENT_ANALYSIS_REPAIR",
-        STEP_BUDGETS.documentAnalysis(papers.length)
+        writingBudget(STEP_BUDGETS.documentAnalysis(papers.length), normalizeEffort(input.effort))
       );
       raw = completion?.content?.trim() ?? "";
       const parsed = DocumentAnalysisBatchSchema.safeParse(extractJsonObject(raw));
@@ -3317,6 +3649,65 @@ export function papersNamedIn(text: string, papers: RepositoryPaper[]): Reposito
     // be quoted, which would read badly.
     return hits >= 2;
   });
+}
+
+/**
+ * Papers a question names by their title: "from this paper, Thailand's Exported
+ * Food Product Brand Naming ... (2012), count the words in each section" was
+ * counted across the whole repository (the test account's chat, 2026-10-09).
+ * Stricter than papersNamedIn: most of a title's distinctive words must appear,
+ * so a question about a subject that shares a few words with a title does not
+ * narrow the scope to that paper.
+ */
+export function papersNamedInQuestion(question: string, papers: RepositoryPaper[]): RepositoryPaper[] {
+  const present = new Set(normalizeTitle(question).split(" ").filter(Boolean));
+  return papers.filter((paper) => {
+    const words = [...new Set(normalizeTitle(paper.title).split(" ").filter((word) => word.length >= 4))];
+    if (words.length < 3) return false;
+    const hits = words.filter((word) => present.has(word)).length;
+    return hits >= 3 && hits / words.length >= 0.7;
+  });
+}
+
+function labelCounts(papers: RepositoryPaper[], pick: (paper: RepositoryPaper) => Map<string, number>) {
+  const counts = new Map<string, { paperCount: number; mentions: number }>();
+  papers.forEach((paper) =>
+    pick(paper).forEach((mentions, label) => {
+      const entry = counts.get(label) ?? { paperCount: 0, mentions: 0 };
+      counts.set(label, { paperCount: entry.paperCount + 1, mentions: entry.mentions + mentions });
+    })
+  );
+  return [...counts.entries()]
+    .map(([label, entry]) => ({ label, ...entry }))
+    .sort((left, right) => right.paperCount - left.paperCount || right.mentions - left.mentions || left.label.localeCompare(right.label));
+}
+
+/**
+ * The scope cut to the papers a counting or charting question names, or null
+ * when it names none (or all) of them. Questions answered from the text keep
+ * their scope: "papers like X" names X to compare against, not to read alone.
+ */
+export function namedPaperContext(
+  prompt: string,
+  execution: RepositoryExecutionPlan | undefined,
+  context: RepositoryContext
+): RepositoryContext | null {
+  const counting =
+    requestsTotalWordCount(prompt) ||
+    // A queued job's stored plan can lack its operations.
+    Boolean(Array.isArray(execution?.operations) && execution.operations.every((operation) => operation === "analyze_text" || operation === "visualize"));
+  if (!counting || context.papers.length < 2) return null;
+  const named = papersNamedInQuestion(prompt, context.papers);
+  if (named.length === 0 || named.length === context.papers.length) return null;
+  const distinctTitles = new Set(named.map((paper) => normalizeTitle(paper.title))).size;
+  return {
+    ...context,
+    papers: named,
+    scopeLabel: distinctTitles === 1 ? `“${shortLabel(named[0].title, 90)}”` : `the ${distinctTitles} papers named`,
+    topicCounts: labelCounts(named, (paper) => paper.topics),
+    keywordCounts: labelCounts(named, (paper) => paper.keywords),
+    totalWords: named.reduce((sum, paper) => sum + paper.totalWords, 0),
+  };
 }
 
 /**
@@ -3623,7 +4014,7 @@ async function aggregateCorpusResult(
         role: "user",
         content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, countsEvidence, "Use these counts for any claim about how often or how many - prefer the themes, which are what the dashboard shows; the batch findings below are for what the papers say.", ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
-    ], 0.15, input.model, "CHAT_CORPUS_REDUCE", STEP_BUDGETS.corpusReduce);
+    ], 0.15, input.model, "CHAT_CORPUS_REDUCE", writingBudget(STEP_BUDGETS.corpusReduce, normalizeEffort(input.effort)));
     const answer = completion?.content?.trim();
     if (answer) {
       const allowed = context.papers.map((paper) => paper.paperId);
@@ -3756,6 +4147,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       [...context.selectedRunIds].sort().join(","),
       `model:${input.model ?? ""}`,
       `web:${input.allowWeb ? 1 : 0}`,
+      `effort:${normalizeEffort(input.effort)}`,
     ].join("|"),
     question: input.prompt,
   };
@@ -3814,6 +4206,9 @@ async function runRepositoryChatWithContext(
   // Every request is planned as typed operations (chat v2); the planner before
   // it was removed (docs/32, long-term health).
   const execution = input.executionPlan ?? await planRepositoryExecution(input, context);
+  // A count or chart of a paper named in the question covers that paper alone.
+  const named = namedPaperContext(input.prompt, execution, context);
+  if (named) return runRepositoryChatWithContext({ ...input, executionPlan: execution }, named);
   const plan = legacyPlanForExecution(execution, input.prompt);
   const diagnostics = {
     projectId: context.projectId,
@@ -3876,7 +4271,15 @@ async function runRepositoryChatWithContext(
     }
   }
   if (requestsTotalWordCount(input.prompt) && context.papers.length > 0) {
-    const lengthPlan: RepositoryPromptPlan = { ...plan, intent: "word_count", terms: [] };
+    // This shortcut runs before the planned steps, so it draws the chart the
+    // planner added: "count the words in each section and show in a bar chart"
+    // came back as a table alone (the test account's chat, 2026-10-09).
+    const lengthPlan: RepositoryPromptPlan = {
+      ...plan,
+      intent: "word_count",
+      terms: [],
+      needsChart: plan.needsChart || Boolean(execution?.operations?.includes("visualize")) || promptRequestsChart(input.prompt, input.forceChart),
+    };
     const result = wordCountResult(context, lengthPlan);
     return {
       handled: true,

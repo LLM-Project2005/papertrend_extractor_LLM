@@ -98,7 +98,7 @@ export default function DocsSearchClient() {
     <div className="mx-auto max-w-3xl px-4 pb-24 pt-32 sm:px-6 sm:pt-36">
       <header>
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-mute">
-          <Link href="/docs" className="transition-colors hover:text-ink">
+          <Link href="/docs/getting-started" className="transition-colors hover:text-ink">
             Docs
           </Link>
           <span aria-hidden="true">/</span>

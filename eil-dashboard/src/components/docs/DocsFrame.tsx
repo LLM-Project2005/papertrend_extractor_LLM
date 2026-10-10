@@ -3,7 +3,6 @@ import {
   docsCategories,
   docsPages,
   getRelatedDocs,
-  popularDocsPages,
   type DocsCallout,
   type DocsPage,
   type DocsSection,
@@ -319,7 +318,7 @@ export function DocsArticle({ page }: { page: DocsPage }) {
 
         <header className="border-b border-hairline pb-8">
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-mute">
-            <Link href="/docs" className="transition-colors hover:text-ink">
+            <Link href="/docs/getting-started" className="transition-colors hover:text-ink">
               Docs
             </Link>
             <span aria-hidden="true">/</span>
@@ -411,89 +410,6 @@ export function DocsArticle({ page }: { page: DocsPage }) {
           <DocsOnThisPage sections={page.sections} />
         </div>
       </aside>
-    </div>
-  );
-}
-
-export function DocsHome() {
-  return (
-    <div className="mx-auto max-w-[1080px] px-4 pb-24 pt-32 sm:px-6 sm:pt-36">
-      <header className="max-w-2xl">
-        <h1 className="text-4xl font-semibold leading-[1.08] tracking-[-0.035em] text-ink sm:text-5xl">
-          Documentation
-        </h1>
-        <p className="mt-5 text-lg leading-8 text-body">
-          How Papertrend reads your papers, what each screen shows, and what to do when something
-          does not go as expected.
-        </p>
-        {/* A plain GET form: it works before any script has loaded. */}
-        <form action="/docs/search" method="get" className="mt-8" role="search">
-          <label htmlFor="docs-home-search" className="sr-only">
-            Search the documentation
-          </label>
-          <div className="flex items-center gap-2 rounded-xl border border-hairline bg-surface p-1.5 pl-4 shadow-raise transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15">
-            <SearchIcon className="h-4 w-4 flex-none text-mute" />
-            <input
-              id="docs-home-search"
-              name="q"
-              type="search"
-              placeholder="Search: upload failed, unknown year, deep research…"
-              className="min-w-0 flex-1 bg-transparent py-2 text-base text-ink outline-none placeholder:text-mute focus-visible:outline-none"
-            />
-            <button
-              type="submit"
-              className="h-9 flex-none rounded-lg bg-ink px-4 text-sm font-medium text-canvas transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
-            >
-              Search
-            </button>
-          </div>
-        </form>
-      </header>
-
-      <section className="mt-16" aria-labelledby="docs-popular">
-        <h2 id="docs-popular" className="text-sm font-medium text-mute">
-          Most read
-        </h2>
-        <ul className="mt-4 grid gap-x-10 border-t border-hairline sm:grid-cols-2">
-          {popularDocsPages.map((page) => (
-            <li key={page.slug} className="border-b border-hairline">
-              <Link href={`/docs/${page.slug}`} className="group flex items-start justify-between gap-4 py-4">
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-medium text-ink">{page.title}</span>
-                  <span className="mt-1 block text-sm leading-6 text-body">{plainDocsText(page.description)}</span>
-                </span>
-                <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <div className="mt-16 space-y-14">
-        {docsCategories.map((category) => (
-          <section key={category.id} aria-labelledby={`docs-cat-${category.id}`} className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-12">
-            <div>
-              <h2 id={`docs-cat-${category.id}`} className="text-lg font-semibold tracking-tight text-ink">
-                {category.label}
-              </h2>
-              <p className="mt-1.5 text-sm leading-6 text-body">{category.description}</p>
-            </div>
-            <ul className="divide-y divide-hairline border-y border-hairline">
-              {category.pages.map((page) => (
-                <li key={page.slug}>
-                  <Link href={`/docs/${page.slug}`} className="group flex items-start justify-between gap-4 py-3.5">
-                    <span className="min-w-0">
-                      <span className="block text-[15px] font-medium text-ink">{page.title}</span>
-                      <span className="mt-0.5 block text-sm leading-6 text-body">{plainDocsText(page.description)}</span>
-                    </span>
-                    <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
     </div>
   );
 }

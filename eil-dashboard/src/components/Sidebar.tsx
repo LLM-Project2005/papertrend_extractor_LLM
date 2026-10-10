@@ -207,7 +207,7 @@ export default function Sidebar({
         {showCategories ? <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-              Categories
+              Research areas
             </h3>
             <button
               type="button"
@@ -242,7 +242,7 @@ export default function Sidebar({
                           : "text-slate-500 dark:text-[#8f8f8f]"
                       }`}
                     >
-                      {category.isOther ? "Fallback category" : category.key}
+                      {category.isOther ? "Fallback research area" : category.key}
                     </span>
                   </span>
                   <span

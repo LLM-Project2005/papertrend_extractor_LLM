@@ -106,7 +106,7 @@ const DOC_ITEMS: Array<{
     id: "docs-home",
     label: "Documentation",
     description: "Open the public Papertrend documentation home.",
-    href: "/docs",
+    href: "/docs/getting-started",
     icon: FileIcon,
     keywords: ["docs", "documentation", "guide", "manual", "help", "product docs"],
   },

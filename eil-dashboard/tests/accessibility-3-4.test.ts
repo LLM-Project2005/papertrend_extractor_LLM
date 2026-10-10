@@ -63,7 +63,6 @@ async function tabs() {
   const common = { trends: TRENDS, tracksSingle: TRACKS, tracksMulti: TRACKS, selectedTracks: [] as string[] };
   const categoryOptions = buildCategoryOptions({ categoryAssignments: ASSIGNMENTS });
   return {
-    Overview: [(await import("../src/components/tabs/Overview")).default, common],
     TrendAnalysis: [(await import("../src/components/tabs/TrendAnalysis")).default, { trends: TRENDS }],
     TrackAnalysis: [(await import("../src/components/tabs/TrackAnalysis")).default, { ...common, categoryAssignments: ASSIGNMENTS, categoryOptions }],
     KeywordExplorer: [(await import("../src/components/tabs/KeywordExplorer")).default, { trends: TRENDS }],
@@ -81,7 +80,7 @@ function drawTab(component: ComponentType<Record<string, unknown>>, props: Recor
 test("every chart that opens papers on a click has a keyboard path to the same papers", async () => {
   // Each chart's bars or slices are mouse-only; beside each sits a list of its
   // values, each a button opening what its bar opens (DASH-3, A11Y-4).
-  const expected: Record<string, number> = { Overview: 2, TrendAnalysis: 3, TrackAnalysis: 3, KeywordExplorer: 1 };
+  const expected: Record<string, number> = { TrendAnalysis: 3, TrackAnalysis: 3, KeywordExplorer: 1 };
   for (const [name, [component, props]] of Object.entries(await tabs())) {
     const opened: Target[] = [];
     const { html, lists } = drawTab(component, { ...props, onDrilldown: (target: Target) => opened.push(target) });
@@ -292,16 +291,57 @@ test("the chat's tools say whether they are on (CHAT-10)", async () => {
     const chat = mount(ChatClient, {});
     const openMenu = () => click(only(chat.tree, { "aria-label": "Open attachment and tool menu" }));
     const tool = (label: string) => elements(chat.tree).find((found) => found.type === "button" && textOf(found.props.children as ReactNode).startsWith(label))!;
+    // Thinking effort is one slider beside the model, in every mode (2026-10-10), not a tool.
+    const { default: ThinkingEffort } = await import("../src/components/chat/ThinkingEffort");
+    const effort = () => elements(chat.tree).find((found) => found.type === ThinkingEffort)!;
+    const choose = (level: string) => (effort().props.onChange as (level: string) => void)(level);
+    assert.equal(effort().props.value, "medium");
+    choose("max");
+    assert.equal(effort().props.value, "max", "Max is chosen");
+    assert.equal(effort().props.maxUnavailable, null);
+    choose("medium");
     openMenu();
-    for (const label of ["Chart mode", "Web search", "Deep research"]) assert.equal(tool(label).props["aria-pressed"], false, label);
+    assert.equal(tool("Deep research"), undefined);
+    for (const label of ["Chart mode", "Web search"]) assert.equal(tool(label).props["aria-pressed"], false, label);
     click(tool("Web search"));
     openMenu();
     assert.equal(tool("Web search").props["aria-pressed"], true);
     assert.equal(tool("Chart mode").props["aria-pressed"], false);
     click(tool("Chart mode"));
     openMenu();
-    assert.deepEqual(["Chart mode", "Web search", "Deep research"].map((label) => tool(label).props["aria-pressed"]), [true, true, false]);
+    assert.deepEqual(["Chart mode", "Web search"].map((label) => tool(label).props["aria-pressed"]), [true, true]);
+    // Chart mode keeps the slider, up to High: a chart is counted, not researched.
+    assert.ok(effort(), "Chart mode keeps the thinking effort");
+    assert.match(String(effort().props.maxUnavailable), /Chart mode goes up to High/);
     chat.unmount();
+  });
+});
+
+test("the thinking effort is a slider from Low to Max, read out by name", async () => {
+  await withDom(async () => {
+    const { default: ThinkingEffort } = await import("../src/components/chat/ThinkingEffort");
+    const chosen: string[] = [];
+    const slider = mount(ThinkingEffort, { value: "medium", onChange: (level: string) => void chosen.push(level) });
+    const trigger = () => only(slider.tree, { "aria-haspopup": "dialog" });
+    assert.equal(trigger().props["aria-label"], "Thinking effort: Medium");
+    assert.equal(trigger().props["aria-expanded"], false);
+    click(trigger());
+    assert.equal(trigger().props["aria-expanded"], true, "it opens");
+    const range = () => elements(slider.tree).find((found) => found.type === "input" && found.props.type === "range")!;
+    assert.equal(range().props["aria-valuetext"], "Medium", "a screen reader hears the level, not a number");
+    assert.deepEqual([range().props.min, range().props.max, range().props.step], [0, 3, 1]);
+    (range().props.onChange as (event: unknown) => void)({ target: { value: "3" } });
+    assert.deepEqual(chosen, ["max"]);
+    slider.unmount();
+
+    // In Chart mode the top stop is held back, and the slider says why.
+    const capped: string[] = [];
+    const chart = mount(ThinkingEffort, { value: "high", onChange: (level: string) => void capped.push(level), maxUnavailable: "Chart mode goes up to High." });
+    click(only(chart.tree, { "aria-haspopup": "dialog" }));
+    (elements(chart.tree).find((found) => found.type === "input" && found.props.type === "range")!.props.onChange as (event: unknown) => void)({ target: { value: "3" } });
+    assert.deepEqual(capped, ["high"]);
+    assert.ok(elements(chart.tree).some((found) => textOf(found.props.children as ReactNode) === "Chart mode goes up to High."));
+    chart.unmount();
   });
 });
 

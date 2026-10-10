@@ -428,7 +428,7 @@ export async function runResearchSession(input: {
     let evidence = output<Evidence[]>(writeStep, "evidence");
     let facts = output<ComputedFact[]>(writeStep, "facts") ?? [];
     if (!draft || !evidence) {
-      await saveStep(ownerUserId, writeStep.id, "processing", { summary: thai ? "กำลังเขียนรายงาน" : "Writing the report." });
+      await saveStep(ownerUserId, writeStep.id, "processing", { summary: thai ? "กำลังเขียนคำตอบ" : "Writing the answer." });
       const numbered = numberEvidence(gathered);
       evidence = numbered.evidence;
       // Counts across the collection help only a question about how it divides

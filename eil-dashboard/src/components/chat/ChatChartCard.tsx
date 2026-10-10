@@ -10,6 +10,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Line,
   LineChart,
   Pie,
@@ -21,7 +22,53 @@ import {
 } from "recharts";
 import { chartAnimationActive } from "@/lib/chart-theme";
 import { TOPIC_PALETTE } from "@/lib/constants";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
+
+/** Splits a label into at most two lines of `chars` characters; a cut label ends in an ellipsis. */
+export function wrapLabel(label: string, chars: number): string[] {
+  const words = label.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  let used = 0;
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length <= chars) {
+      line = next;
+      used += 1;
+      continue;
+    }
+    if (line) lines.push(line);
+    if (lines.length === 2) break;
+    line = word.length > chars ? `${word.slice(0, chars - 1)}…` : word;
+    used += 1;
+  }
+  if (line && lines.length < 2) lines.push(line);
+  const cut = used < words.length || lines.some((text) => text.endsWith("…"));
+  if (cut && lines.length > 0) {
+    const last = lines[lines.length - 1].replace(/…$/, "");
+    lines[lines.length - 1] = `${last.slice(0, Math.max(1, chars - 1))}…`;
+  }
+  return lines.slice(0, 2);
+}
+
+/** A category tick on the label axis: two lines at most, with the whole label on hover. */
+function LabelTick({ x, y, payload, chars }: { x?: number; y?: number; payload?: { value: string }; chars: number }) {
+  const label = String(payload?.value ?? "");
+  const lines = wrapLabel(label, chars);
+  return (
+    <g transform={`translate(${x ?? 0},${y ?? 0})`}>
+      <title>{label}</title>
+      <text textAnchor="end" fill="currentColor" fontSize={12} dy={lines.length > 1 ? -3 : 4}>
+        {lines.map((text, index) => (
+          <tspan key={index} x={-6} dy={index === 0 ? 0 : 14}>
+            {text}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+}
 
 const chatChartTooltipTheme = {
   contentStyle: {
@@ -45,15 +92,34 @@ const chatChartTooltipTheme = {
 };
 
 export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
+  const narrow = useIsNarrow();
   const chartData = chart.data ?? [];
   const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
   const primaryKey = yKeys[0] ?? "value";
+  // Stacked parts of a whole (a paper's sections) share one bar per row.
+  const stacked = Boolean(chart.stacked) && yKeys.length > 1;
   const maxValue = Math.max(
     ...chartData.flatMap((row) =>
-      yKeys.map((key) => Number(row[key]) || 0)
+      stacked
+        ? [yKeys.reduce((sum, key) => sum + (Number(row[key]) || 0), 0)]
+        : yKeys.map((key) => Number(row[key]) || 0)
     ),
     0
   );
+
+  // Bars run sideways, names on the left, whenever a name is long or there are
+  // many: upright bars gave each name a few pixels, and long paper titles were
+  // drawn over one another (the test account's chat, 2026-10-09). The chart
+  // grows with its rows instead of squeezing them into a fixed height.
+  const longestLabel = Math.max(0, ...chartData.map((row) => String(row.label ?? "").length));
+  const sideways = stacked || chartData.length > 6 || longestLabel > 14;
+  const column = labelColumn(narrow, {
+    width: Math.min(240, Math.max(96, Math.min(longestLabel, 34) * 6.6)),
+    chars: Math.min(34, Math.max(14, longestLabel)),
+  });
+  const series = yKeys.length;
+  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : 38;
+  const barHeight = sideways ? Math.max(200, Math.min(760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
@@ -105,7 +171,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
           </table>
         </div>
       ) : (
-        <div className="h-[320px] px-3 py-4 text-slate-600 dark:text-[#a3a3a3]">
+        <div className="px-3 py-4 text-slate-600 dark:text-[#a3a3a3]" style={{ height: chart.chartType === "bar" ? barHeight : 320 }}>
           <ResponsiveContainer width="100%" height="100%">
             {chart.chartType === "line" ? (
               <LineChart data={chartData} margin={{ left: 6, right: 18, top: 8, bottom: 8 }}>
@@ -146,26 +212,40 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
             ) : (
               <BarChart
                 data={chartData}
-                layout={chartData.length > 6 ? "vertical" : "horizontal"}
-                margin={{ left: chartData.length > 6 ? 30 : 6, right: 18, top: 8, bottom: 8 }}
+                layout={sideways ? "vertical" : "horizontal"}
+                margin={{ left: 6, right: 18, top: 8, bottom: 8 }}
+                barCategoryGap={series > 1 ? "18%" : "24%"}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" horizontal={!sideways} vertical={sideways} />
                 <XAxis
-                  type={chartData.length > 6 ? "number" : "category"}
-                  dataKey={chartData.length > 6 ? undefined : "label"}
+                  type={sideways ? "number" : "category"}
+                  dataKey={sideways ? undefined : "label"}
                   tick={{ fill: "currentColor", fontSize: 12 }}
-                  domain={chartData.length > 6 ? [0, Math.ceil(maxValue)] : undefined}
+                  domain={sideways ? [0, Math.ceil(maxValue)] : undefined}
+                  allowDecimals={false}
+                  interval={0}
                 />
                 <YAxis
-                  type={chartData.length > 6 ? "category" : "number"}
-                  dataKey={chartData.length > 6 ? "label" : undefined}
-                  width={chartData.length > 6 ? 120 : undefined}
+                  type={sideways ? "category" : "number"}
+                  dataKey={sideways ? "label" : undefined}
+                  width={sideways ? column.width : undefined}
                   allowDecimals={false}
-                  tick={{ fill: "currentColor", fontSize: 12 }}
+                  interval={0}
+                  tick={sideways ? <LabelTick chars={column.chars} /> : { fill: "currentColor", fontSize: 12 }}
                 />
                 <Tooltip {...chatChartTooltipTheme} />
+                {series > 1 ? <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} /> : null}
                 {yKeys.map((key, keyIndex) => (
-                  <Bar isAnimationActive={chartAnimationActive()} key={key} dataKey={key} radius={[4, 4, 0, 0]}>
+                  <Bar
+                    isAnimationActive={chartAnimationActive()}
+                    key={key}
+                    dataKey={key}
+                    stackId={stacked ? "parts" : undefined}
+                    fill={TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]}
+                    // Only the outer end of a stacked bar is rounded.
+                    radius={stacked && keyIndex < yKeys.length - 1 ? 0 : sideways ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                    maxBarSize={sideways ? 28 : 64}
+                  >
                     {chartData.map((row, index) => (
                       <Cell
                         key={`${String(row.label)}-${key}-${index}`}

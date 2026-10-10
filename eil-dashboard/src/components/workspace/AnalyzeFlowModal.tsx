@@ -493,7 +493,7 @@ export default function AnalyzeFlowModal({
               <li className="flex gap-3">
                 <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-slate-900 motion-safe:animate-pulse dark:border-white" />
                 <span className="text-slate-700 dark:text-[#d4d4d4]">
-                  Analysis: title, year, topics, methods and category. This usually takes a few minutes
+                  Analysis: title, year, topics, methods and research area. This usually takes a few minutes
                   per paper, and larger batches run one paper after another.
                 </span>
               </li>
@@ -734,7 +734,7 @@ export default function AnalyzeFlowModal({
                   <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">
                     {activeAnalysisProfile.classificationEnabled
                       ? "Every paper in this upload is classified with it."
-                      : "Papers are analyzed without being sorted into categories."}
+                      : "Papers are analyzed without being sorted into research areas."}
                   </p>
                   {previousProfileCount > 0 ? (
                     <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
@@ -801,7 +801,7 @@ export default function AnalyzeFlowModal({
               </li>
               <li className="flex gap-3">
                 <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">2</span>
-                <span>Each paper is read for its title, year, topics, methods and category, usually in a few minutes. You can keep working meanwhile.</span>
+                <span>Each paper is read for its title, year, topics, methods and research area, usually in a few minutes. You can keep working meanwhile.</span>
               </li>
               <li className="flex gap-3">
                 <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">3</span>

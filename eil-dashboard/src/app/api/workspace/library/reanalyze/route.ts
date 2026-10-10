@@ -3,7 +3,7 @@ import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { triggerWorkerQueueWithRetries } from "@/lib/worker-queue-start";
-import { REANALYSIS_COST_PER_PAPER_USD } from "@/lib/reanalysis";
+import { REANALYSIS_TOKENS_PER_PAPER } from "@/lib/reanalysis";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import {
   createGeneralAnalysisProfile,
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       queuedRunIds: queued,
       queuedCount: queued.length,
-      estimatedCostUsd: Number((queued.length * REANALYSIS_COST_PER_PAPER_USD).toFixed(2)),
+      estimatedTokens: queued.length * REANALYSIS_TOKENS_PER_PAPER,
       workerStarted: start.started || start.alreadyRunning,
       progressMessage: start.progressMessage,
     });

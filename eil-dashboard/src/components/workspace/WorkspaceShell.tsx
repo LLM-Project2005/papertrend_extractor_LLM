@@ -558,9 +558,9 @@ export default function WorkspaceShell({
           <div className="ml-auto flex items-center gap-2">
             <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
             <Link
-              href="/docs"
+              href="/docs/getting-started"
               prefetch={false}
-              onClick={() => handleNavigate("/docs")}
+              onClick={() => handleNavigate("/docs/getting-started")}
               className="hidden h-9 items-center justify-center gap-2 rounded-lg px-2.5 text-sm font-medium text-body transition-colors duration-150 hover:bg-subtle hover:text-ink sm:inline-flex"
               aria-label="Docs"
             >
