@@ -26,8 +26,8 @@ import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import PaperLink from "@/components/workspace/PaperLink";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
 
-/** Splits a label into at most two lines of `chars` characters; a cut label ends in an ellipsis. */
-export function wrapLabel(label: string, chars: number): string[] {
+/** Splits a label into at most `maxLines` lines of `chars` characters; a cut label ends in an ellipsis. */
+export function wrapLabel(label: string, chars: number, maxLines = 2): string[] {
   const words = label.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = "";
@@ -40,23 +40,23 @@ export function wrapLabel(label: string, chars: number): string[] {
       continue;
     }
     if (line) lines.push(line);
-    if (lines.length === 2) break;
+    if (lines.length === maxLines) break;
     line = word.length > chars ? `${word.slice(0, chars - 1)}…` : word;
     used += 1;
   }
-  if (line && lines.length < 2) lines.push(line);
+  if (line && lines.length < maxLines) lines.push(line);
   const cut = used < words.length || lines.some((text) => text.endsWith("…"));
   if (cut && lines.length > 0) {
     const last = lines[lines.length - 1].replace(/…$/, "");
     lines[lines.length - 1] = `${last.slice(0, Math.max(1, chars - 1))}…`;
   }
-  return lines.slice(0, 2);
+  return lines.slice(0, maxLines);
 }
 
-/** A category tick on the label axis: two lines at most, with the whole label on hover. */
-function LabelTick({ x, y, payload, chars }: { x?: number; y?: number; payload?: { value: string }; chars: number }) {
+/** A category tick on the label axis: two lines at most, or one when rows are many, with the whole label on hover. */
+function LabelTick({ x, y, payload, chars, maxLines = 2 }: { x?: number; y?: number; payload?: { value: string }; chars: number; maxLines?: number }) {
   const label = String(payload?.value ?? "");
-  const lines = wrapLabel(label, chars);
+  const lines = wrapLabel(label, chars, maxLines);
   return (
     <g transform={`translate(${x ?? 0},${y ?? 0})`}>
       <title>{label}</title>
@@ -164,8 +164,12 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
     chars: Math.min(34, Math.max(14, longestLabel)),
   });
   const series = yKeys.length;
-  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : 38;
-  const barHeight = sideways ? Math.max(200, Math.min(760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
+  // Many rows - a value read from each of 34 papers - get one-line labels and
+  // a taller chart: squeezed into 760 pixels, two-line titles ran into each
+  // other (the pilot, 2026-10-11).
+  const dense = sideways && chartData.length > 16;
+  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : dense ? 26 : 38;
+  const barHeight = sideways ? Math.max(200, Math.min(dense ? 1_400 : 760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
@@ -277,7 +281,7 @@ export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                   width={sideways ? column.width : undefined}
                   allowDecimals={false}
                   interval={0}
-                  tick={sideways ? <LabelTick chars={column.chars} /> : { fill: "currentColor", fontSize: 12 }}
+                  tick={sideways ? <LabelTick chars={column.chars} maxLines={dense ? 1 : 2} /> : { fill: "currentColor", fontSize: 12 }}
                 />
                 <Tooltip {...chatChartTooltipTheme} />
                 {series > 1 ? <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} /> : null}
