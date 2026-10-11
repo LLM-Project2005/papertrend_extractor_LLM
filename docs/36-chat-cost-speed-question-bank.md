@@ -1,6 +1,6 @@
 # Chat: High and Max cheaper and faster, and a question bank for every kind of question (2026-10-11)
 
-Two aims: make High and Max answers cheaper and faster with the same or better answers, and test the chat - every feature, Chart mode included - on many kinds of question rather than a handful. Measured on the test repository (41 uploads, 36 distinct studies) with GPT-6 Luna. OpenRouter credit was low, so every model reply was cached on disk and re-runs paid only for what a change touched; answers were judged by reading them, not by a model judge. Evaluation spend for the round: about $0.60.
+Two aims: make High and Max answers cheaper and faster with the same or better answers, and test the chat - every feature, Chart mode included - on many kinds of question rather than a handful. Measured on the test repository (41 uploads, 36 distinct studies) with GPT-6 Luna. OpenRouter credit was low, so every model reply was cached on disk and re-runs paid only for what a change touched; answers were judged by reading them, not by a model judge. Evaluation spend for the round: $0.55 of OpenRouter credit.
 
 ## 1. Where the money went, and the provider's cache
 
