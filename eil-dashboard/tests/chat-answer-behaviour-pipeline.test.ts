@@ -796,3 +796,22 @@ test("a chart of some of the papers checks every paper once and reads only those
   assert.match(none.answer, /None of the 3 studies .* is about feedback studies, so there is nothing to chart/);
   assert.equal(task("CHAT_CHART_EXTRACT").length, before, "nothing is read when no paper matches");
 });
+
+test("a list of the papers that match covers the whole scope, so it does not offer to ask about 'the other papers'", async () => {
+  const { followUpSuggestions } = await import("../src/lib/chat-guidance");
+  const { ask, script } = await repository();
+  script((call) => {
+    if (call.taskName === "CHAT_EXECUTION_PLAN") return { ...plan("screen_papers", "complete", "studies that looked at feedback"), outputFormat: "list" };
+    if (call.taskName === "CHAT_SCREEN") {
+      const label = user(call).split("\n").find((line) => line.includes("Peer feedback in second-language writing"))?.match(/^\[(P\d+)\]/)?.[1];
+      return { matches: [{ paper: label, detail: "Peer feedback in second-language writing - revision improved", quote: "" }] };
+    }
+    return null;
+  });
+  const result = await ask("Which studies looked at feedback?");
+  assert.equal(result.coverage?.complete, true, "every paper was checked");
+  assert.match(result.answer, /\(2021\) - revision improved/, "the repeated title is dropped from the detail");
+  const client = (await import("node:fs")).readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8");
+  assert.match(client, /if \(coverage\?\.complete === true\) return 0;/, "no 'other papers' to ask about after a complete answer");
+  assert.deepEqual(followUpSuggestions({ citedPaperCount: 1, scopedPaperCount: 0 }), []);
+});

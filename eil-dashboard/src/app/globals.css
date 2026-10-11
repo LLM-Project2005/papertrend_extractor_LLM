@@ -1112,10 +1112,28 @@ html:focus-within {
     var(--effort-sheen) border-box;
   background-size: 100% 100%, 200% 100%;
 }
+/* Max on the effort track (ThinkingEffort.tsx): the sheen, with stars that twinkle across it. */
+.effort-fill-max {
+  background: var(--effort-sheen);
+  background-size: 200% 100%;
+}
+.effort-star {
+  position: absolute;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 4px 1px rgb(255 255 255 / 0.75);
+  opacity: 0.75;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: no-preference) {
   .effort-slider-max,
-  .effort-max-text {
+  .effort-max-text,
+  .effort-fill-max {
     animation: effort-sheen 2.6s linear infinite;
+  }
+  .effort-star {
+    animation: effort-twinkle 2.4s ease-in-out infinite;
   }
   .effort-max-ring {
     animation: effort-sheen-ring 2.6s linear infinite;
@@ -1130,6 +1148,21 @@ html:focus-within {
     background-clip: text;
     -webkit-text-fill-color: transparent;
     animation: effort-sheen 1.8s linear infinite;
+  }
+}
+@keyframes effort-twinkle {
+  0%,
+  100% {
+    opacity: 0.1;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  45% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  60% {
+    opacity: 0.85;
+    transform: translate(-50%, calc(-50% - 1px)) scale(1);
   }
 }
 @keyframes effort-sheen {

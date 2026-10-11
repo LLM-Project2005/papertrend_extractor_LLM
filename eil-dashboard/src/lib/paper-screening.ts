@@ -120,7 +120,7 @@ async function screenBatch(
       const quote = match.quote.trim();
       matches.push({
         paperId: batch[index].paperId,
-        detail: match.detail.replace(/\s+/g, " ").trim().slice(0, 300),
+        detail: withoutTitle(match.detail, batch[index].title),
         // A sentence the paper does not contain is dropped; the match stands on its detail.
         quote: quote && quoteInText(quote, checkable(texts[index])) ? quote.slice(0, 400) : "",
       });
@@ -184,12 +184,34 @@ async function fillDetails(
     if (!parsed.success) return;
     for (const item of parsed.data.details) {
       const index = Number(item.paper.replace(/\D/g, "")) - 1;
-      const detail = item.detail.replace(/\s+/g, " ").trim().slice(0, 300);
+      const detail = index >= 0 && index < chosen.length ? withoutTitle(item.detail, chosen[index].title) : "";
       if (index >= 0 && index < thin.length && detail) thin[index].detail = detail;
     }
   } catch {
     // The short read's detail stands.
   }
+}
+
+/**
+ * A detail without the paper's title in front of it. Told never to repeat it,
+ * the model still wrote "Effects of Integrated Performance Assessment Modules
+ * on English Speaking Ability of Thai" as one study's detail, beside the same
+ * title (production, 2026-10-11).
+ */
+export function withoutTitle(detail: string, title: string): string {
+  const text = detail.replace(/\s+/g, " ").trim();
+  const fold = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const words = text.split(" ");
+  const wanted = fold(title);
+  // The longest run of the detail's opening words that is the title, or the title cut short.
+  let cut = 0;
+  for (let count = 1; count <= words.length; count += 1) {
+    const opening = fold(words.slice(0, count).join(" "));
+    if (!opening || !wanted.startsWith(opening)) break;
+    cut = count;
+  }
+  if (cut === 0 || fold(words.slice(0, cut).join(" ")).length < 20) return text.slice(0, 300);
+  return words.slice(cut).join(" ").replace(/^[\s,;:.\-–—]+/, "").trim().slice(0, 300);
 }
 
 /** Checks every paper against the condition; papers are taken in the order given. */

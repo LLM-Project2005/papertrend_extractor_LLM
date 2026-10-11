@@ -4252,7 +4252,8 @@ async function screenPapersResult(
     answer: [lead, "", ...lines, "", how].join("\n").trim(),
     citations: matched.map(({ match, paper }) => citationForPaper(paper, match.quote ? `“${match.quote}”` : match.detail || "Matches the question.")),
     charts: [],
-    coverage: { ...completeCoverage(context, matched.length), processedPapers: checked },
+    // Every paper was checked, whatever matched: the reply covers the scope.
+    coverage: { ...completeCoverage(context, matched.length), processedPapers: checked + copies, complete: screened.failed.length === 0 },
     limitations,
     passageSources: { readings: screened.readings, claims },
   };

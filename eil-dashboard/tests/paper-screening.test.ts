@@ -128,3 +128,12 @@ test("a word that names what to count is not itself counted, unless the reader q
   assert.deepEqual(countableTerms(["Terms", "motivation", " "], "Which terms appear, and how often does motivation?"), ["motivation"]);
   assert.deepEqual(countableTerms(["keywords"], "How often does the word 'keywords' appear?"), ["keywords"]);
 });
+
+test("a detail that repeats the paper's title loses it, whole or cut short", async () => {
+  const { withoutTitle } = await import("../src/lib/paper-screening");
+  const title = "Effects of Integrated Performance Assessment Modules on English Speaking Ability of Thai EFL Undergraduate Students";
+  assert.equal(withoutTitle("Effects of Integrated Performance Assessment Modules on English Speaking Ability of Thai", title), "", "only the title, cut short");
+  assert.equal(withoutTitle(`${title} — used a one-group pretest-posttest design.`, title), "used a one-group pretest-posttest design.");
+  assert.equal(withoutTitle("Used a one-group pretest-posttest design with 33 students.", title), "Used a one-group pretest-posttest design with 33 students.");
+  assert.equal(withoutTitle("Effects were large (r = .62).", title), "Effects were large (r = .62).", "a detail that only starts like the title keeps its words");
+});
