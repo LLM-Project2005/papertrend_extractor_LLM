@@ -345,6 +345,37 @@ test("the thinking effort is a slider from Low to Max, read out by name", async 
   });
 });
 
+test("the model and the effort are one control: reset goes to Medium, and the model's name opens the list of models", async () => {
+  await withDom(async () => {
+    const { default: ThinkingEffort } = await import("../src/components/chat/ThinkingEffort");
+    const levels: string[] = [];
+    const models: string[] = [];
+    const picker = mount(ThinkingEffort, {
+      value: "high",
+      onChange: (level: string) => void levels.push(level),
+      models: [
+        { value: "a", label: "GPT-6 Luna", description: "By OpenAI." },
+        { value: "b", label: "Another", description: "" },
+      ],
+      model: "a",
+      onModelChange: (model: string) => void models.push(model),
+    });
+    const trigger = () => only(picker.tree, { "aria-haspopup": "dialog" });
+    assert.equal(trigger().props["aria-label"], "GPT-6 Luna, thinking effort: High");
+    click(trigger());
+    click(only(picker.tree, { "aria-label": "Reset to default (Medium)" }));
+    assert.deepEqual(levels, ["medium"], "reset sets the default, Medium");
+    click(only(picker.tree, { "aria-label": "Model: GPT-6 Luna. Choose a model" }));
+    assert.ok(elements(picker.tree).some((found) => textOf(found.props.children as ReactNode) === "Select model"));
+    const choices = elements(picker.tree).filter((found) => found.type === "button" && "aria-pressed" in found.props);
+    assert.deepEqual(choices.map((found) => found.props["aria-pressed"]), [true, false], "the current model is marked");
+    click(choices[1]);
+    assert.deepEqual(models, ["b"]);
+    assert.ok(elements(picker.tree).some((found) => found.type === "input" && found.props.type === "range"), "choosing a model goes back to the effort");
+    picker.unmount();
+  });
+});
+
 test("chart colours go by position, never by a hash, and years by order (A11Y-5)", async () => {
   assert.equal(CATEGORICAL_PALETTE.length, 8);
   assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map(categoricalColor), [...CATEGORICAL_PALETTE]);

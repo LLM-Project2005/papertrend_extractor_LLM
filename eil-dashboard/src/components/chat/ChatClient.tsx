@@ -4297,51 +4297,7 @@ export default function ChatClient() {
 
                     </div>
 
-                    {!deepResearchEnabled && !chartModeEnabled && MODEL_OPTIONS.length === 1 ? (
-                      // One model: named, not offered as a choice.
-                      <span className="inline-flex h-9 items-center gap-1.5 px-2 text-xs font-medium text-slate-600 dark:text-[#b4b4b4]">
-                        {(() => {
-                          const only = MODEL_OPTIONS[0];
-                          return (
-                            <>
-                              <only.Mark className="h-3.5 w-3.5" />
-                              {only.label}
-                            </>
-                          );
-                        })()}
-                      </span>
-                    ) : null}
-
-                    {!deepResearchEnabled && !chartModeEnabled && MODEL_OPTIONS.length > 1 ? (
-                      <Select
-                        value={selectedModel}
-                        onChange={setSelectedModel}
-                        label="Model"
-                        placement="top"
-                        size="sm"
-                        panelClassName="w-64"
-                        options={MODEL_OPTIONS.map((option) => ({
-                          value: option.value,
-                          label: option.label,
-                          description: option.description,
-                          icon: <option.Mark className="h-3.5 w-3.5" />,
-                        }))}
-                      />
-                    ) : null}
-
                     <UsageMeter requestHeaders={requestHeaders} refreshKey={`${messages.length}:${loading}`} />
-
-                    {/* How hard to think (2026-10-10): one slider from Low to Max,
-                        shown in every mode. Chart mode counts rather than
-                        researches, so it goes up to High. */}
-                    <ThinkingEffort
-                      value={effort}
-                      onChange={(level) => {
-                        setEffort(level);
-                        if (level === "max") setChartModeEnabled(false);
-                      }}
-                      maxUnavailable={chartModeEnabled ? "Chart mode goes up to High: a chart is counted from the papers, not researched. Turn Chart mode off to use Max." : null}
-                    />
 
                     {chartModeEnabled && !deepResearchEnabled ? (
                       <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]">
@@ -4385,6 +4341,20 @@ export default function ChatClient() {
                     {/* The generation parameters (temperature, top P...) were removed from
                         here: answers run through the repository pipeline, which never read
                         them, so the panel changed nothing. */}
+                    {/* The model and how hard it thinks, one control beside Send
+                        (2026-10-11): Low to Max in every mode; Chart mode counts
+                        rather than researches, so it goes up to High. */}
+                    <ThinkingEffort
+                      value={effort}
+                      onChange={(level) => {
+                        setEffort(level);
+                        if (level === "max") setChartModeEnabled(false);
+                      }}
+                      maxUnavailable={chartModeEnabled ? "Chart mode goes up to High: a chart is counted from the papers, not researched. Turn Chart mode off to use Max." : null}
+                      models={MODEL_OPTIONS}
+                      model={selectedModel}
+                      onModelChange={setSelectedModel}
+                    />
                     <button
                       type="submit"
                       disabled={
