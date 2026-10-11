@@ -827,7 +827,10 @@ function missingEvidenceNeedsFromMetadata(metadata?: Record<string, unknown> | n
 
 /** How many papers the answer actually drew on, for widening suggestions. */
 function coveredPaperCount(metadata?: Record<string, unknown> | null): number {
-  const coverage = metadata?.repositoryCoverage as { eligiblePapers?: unknown } | null;
+  const coverage = metadata?.repositoryCoverage as { eligiblePapers?: unknown; complete?: unknown } | null;
+  // An answer that went through every paper leaves no "other papers" to ask about:
+  // a list of the 12 studies that match offered "What do the other 29 papers say?" (2026-10-11).
+  if (coverage?.complete === true) return 0;
   return typeof coverage?.eligiblePapers === "number" ? coverage.eligiblePapers : 0;
 }
 
