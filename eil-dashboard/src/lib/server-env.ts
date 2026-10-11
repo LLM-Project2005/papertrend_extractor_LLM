@@ -160,6 +160,8 @@ const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   // needs, and finding one fact in a whole paper, take the answer model.
   CHAT_CHART_PLAN: "openai/gpt-6-luna-20260922",
   CHAT_CHART_EXTRACT: "openai/gpt-6-luna-20260922",
+  // Checking every paper against a question's condition (paper-screening.ts).
+  CHAT_SCREEN: "openai/gpt-6-luna-20260922",
   // Max effort's research engine (src/lib/deep-research): every step - the
   // plan, reading each paper, the answer and its corrections - runs on Luna;
   // code checks quotes and numbers against the papers, so the second model

@@ -175,6 +175,7 @@ export const PLANNER_OPERATIONS: Array<{ key: string; when: string; how: string;
   { key: "analyze_text", when: "How often a word or phrase appears", how: "Counted in the stored text.", model: "no model" },
   { key: "search_evidence", when: "A focused question", how: "Search, choose, write from the passages, check when in doubt.", model: "model" },
   { key: "analyze_each_document", when: "“Summarise each paper”", how: "A short analysis of every paper, a batch at a time.", model: "model" },
+  { key: "screen_papers", when: "Which papers, or how many, meet a condition", how: "Every paper checked, twelve at a time; each match quoted from the paper.", model: "model" },
   { key: "aggregate_corpus", when: "A question about the whole repository", how: "One answer from every paper, with exact counts.", model: "model" },
   { key: "visualize", when: "A chart, in Chart mode", how: "A small model picks the measures; code computes every number.", model: "small model" },
 ];

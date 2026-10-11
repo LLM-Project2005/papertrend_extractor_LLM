@@ -1,0 +1,877 @@
+{
+ "repository": "The test repository: 41 uploads of 36 studies (2011-2025), English-language education research, mostly Thai learners. Facts in expect.facts are regular expressions the answer must match; ops are the planner operations accepted.",
+ "chat": [
+  {
+   "id": "C01",
+   "category": "single-paper fact",
+   "prompt": "How many students took part in the study on the vocabulary size of Thai freshmen, and how many universities were they from?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "484",
+     "seven|7"
+    ],
+    "notes": "484 freshmen from 4 public + 3 private universities"
+   }
+  },
+  {
+   "id": "C02",
+   "category": "single-paper method",
+   "prompt": "What data collection instruments did the portfolio assessment study with Thai first-year university students use?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "names the instruments the paper reports (questionnaire, portfolios, interviews etc.)"
+   }
+  },
+  {
+   "id": "C03",
+   "category": "single-paper summary",
+   "prompt": "Summarise the paper on English plosive consonants produced by Thai speakers.",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "analyze_each_document"
+    ],
+    "facts": [
+     "49",
+     "VOT|voice onset time"
+    ],
+    "notes": "49 seventh-grade students; consistent vs inconsistent groups"
+   }
+  },
+  {
+   "id": "C04",
+   "category": "named paper explain",
+   "prompt": "Explain the main findings of \"Avoidance of the English Passive Construction by L1 Chinese Learners\".",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "analyze_each_document"
+    ],
+    "facts": [
+     "thirty|30"
+    ],
+    "notes": "30 L1 Chinese intermediate learners; whether avoidance emerged (FNAH)"
+   }
+  },
+  {
+   "id": "C05",
+   "category": "cross-paper synthesis",
+   "prompt": "What did the dynamic assessment studies find?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "group dynamic|G-DA",
+     "computeri[sz]ed|CDRA",
+     "vocabulary"
+    ],
+    "notes": "G-DA writing (15 sophomores), CDRA reading (30), DA+VLS academic vocabulary"
+   }
+  },
+  {
+   "id": "C06",
+   "category": "comparison",
+   "prompt": "Compare the two studies on working memory and L2 processing by Thai learners.",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "seventy|70",
+     "thirty|30"
+    ],
+    "notes": "past participles RC/PRRC (70 advanced) vs subject-verb agreement linear distance (30 NNSs)"
+   }
+  },
+  {
+   "id": "C07",
+   "category": "method across papers",
+   "prompt": "Which studies used a pretest-posttest design?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence",
+     "aggregate_corpus",
+     "analyze_each_document"
+    ],
+    "notes": "several intervention studies: corpus verbal complements, CDRA, LOA reading, IPA speaking, GWIMBLE, G-DA, genre analysis, debate flipped, PBL blended oral, oracy"
+   }
+  },
+  {
+   "id": "C08",
+   "category": "population filter",
+   "prompt": "Which papers studied school students rather than university students?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence",
+     "aggregate_corpus",
+     "analyze_each_document"
+    ],
+    "notes": "VOT grade 7, oracy 14-15 yrs, debate grade 10-12, genre analysis M6, learner autonomy grade 5, EIL PBL China grade 6, corpus verbal complements young learners"
+   }
+  },
+  {
+   "id": "C09",
+   "category": "count by topic",
+   "prompt": "How many papers in this repository are about language assessment?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "aggregate_corpus",
+     "inspect_scope",
+     "search_evidence"
+    ],
+    "notes": "a count with the basis stated; roughly 10-14 studies (DA x3, LOA, IPA, portfolio, teacher beliefs/assessment, assessment literacy, agency/policy, ICAO/TOEIC, web-based test)"
+   }
+  },
+  {
+   "id": "C10",
+   "category": "repository stats",
+   "prompt": "How many papers are in this repository and what years do they cover?",
+   "expect": {
+    "ops": [
+     "inspect_scope"
+    ],
+    "facts": [
+     "41|35",
+     "2011",
+     "2025"
+    ],
+    "notes": "41 uploads (35 distinct studies), 2011-2025"
+   }
+  },
+  {
+   "id": "C11",
+   "category": "year extremes",
+   "prompt": "Which year has the most papers?",
+   "expect": {
+    "ops": [
+     "inspect_scope"
+    ],
+    "facts": [
+     "2022"
+    ]
+   }
+  },
+  {
+   "id": "C12",
+   "category": "listing",
+   "prompt": "List all the papers in this repository.",
+   "expect": {
+    "ops": [
+     "list_documents"
+    ],
+    "notes": "complete list"
+   }
+  },
+  {
+   "id": "C13",
+   "category": "per-paper analysis",
+   "prompt": "For each paper, give its research design in one line.",
+   "expect": {
+    "ops": [
+     "analyze_each_document"
+    ],
+    "notes": "one line per paper, all papers"
+   }
+  },
+  {
+   "id": "C14",
+   "category": "term frequency",
+   "prompt": "How many times does the word 'motivation' appear across the papers?",
+   "expect": {
+    "ops": [
+     "analyze_text"
+    ],
+    "notes": "exact count, computed"
+   }
+  },
+  {
+   "id": "C15",
+   "category": "trend over time",
+   "prompt": "How has the research focus in this collection changed over time?",
+   "expect": {
+    "ops": [
+     "aggregate_corpus"
+    ],
+    "notes": "corpus-wide trend with years"
+   }
+  },
+  {
+   "id": "C16",
+   "category": "research gaps",
+   "prompt": "What research gaps do these papers point to?",
+   "expect": {
+    "ops": [
+     "aggregate_corpus",
+     "search_evidence"
+    ],
+    "notes": "gaps the papers themselves state"
+   }
+  },
+  {
+   "id": "C17",
+   "category": "definition",
+   "prompt": "How do these papers define dynamic assessment?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "zone of proximal development|ZPD|mediation"
+    ],
+    "notes": "Lantolf & Poehner; ZPD; mediation"
+   }
+  },
+  {
+   "id": "C18",
+   "category": "quote request",
+   "prompt": "Quote what the learner autonomy study says about its participants.",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "37|Grade 5"
+    ],
+    "notes": "Grade 5/2, 37 students, ten focal participants, 4 teachers"
+   }
+  },
+  {
+   "id": "C19",
+   "category": "numeric results",
+   "prompt": "What were the pretest and posttest results in the debate instruction flipped learning study?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "24"
+    ],
+    "notes": "24 students grade 10-12; 23 of 24 gained; mean scores"
+   }
+  },
+  {
+   "id": "C20",
+   "category": "unanswerable",
+   "prompt": "What do these papers say about machine translation quality for medical texts?",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "converse"
+    ],
+    "notes": "should say the papers do not cover it (the amplifiers translation paper is not medical / not MT)"
+   }
+  },
+  {
+   "id": "C21",
+   "category": "general knowledge",
+   "prompt": "What is the capital of Australia?",
+   "expect": {
+    "ops": [
+     "converse"
+    ],
+    "notes": "brief, polite; may answer Canberra and steer back"
+   }
+  },
+  {
+   "id": "C22",
+   "category": "small talk",
+   "prompt": "Hi! What can you do?",
+   "expect": {
+    "ops": [
+     "converse"
+    ],
+    "notes": "explains capabilities briefly"
+   }
+  },
+  {
+   "id": "C23",
+   "category": "ambiguous",
+   "prompt": "What were the results?",
+   "expect": {
+    "ops": [
+     "aggregate_corpus",
+     "search_evidence",
+     "converse"
+    ],
+    "notes": "handles vagueness sensibly: asks which or gives corpus-level results"
+   }
+  },
+  {
+   "id": "C24",
+   "category": "recommendation",
+   "prompt": "What teaching approaches do these papers suggest for improving Thai students' English speaking?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "integrated performance|IPA",
+     "project-based|communication strateg"
+    ],
+    "notes": "IPA modules, PBL blended + CS instruction, oracy blended, debate flipped"
+   }
+  },
+  {
+   "id": "C25",
+   "category": "critique",
+   "prompt": "What are the limitations of the genre-based writing instructional module study in a blended learning environment?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "limitations stated by the GWIMBLE paper (35 students, one university, etc.)"
+   }
+  },
+  {
+   "id": "C26",
+   "category": "agreement across studies",
+   "prompt": "Do the studies agree that blended learning improves Thai learners' English?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "GWIMBLE, oracy blended, PBL blended, debate flipped; notes designs without control groups"
+   }
+  },
+  {
+   "id": "C27",
+   "category": "instruments across papers",
+   "prompt": "Which instruments were used to measure English speaking ability?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "IPA speaking tests/rubrics, oral communication tests (PBL), oracy tests"
+   }
+  },
+  {
+   "id": "C28",
+   "category": "theory",
+   "prompt": "Which theoretical frameworks or hypotheses do the second language acquisition studies draw on?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence",
+     "aggregate_corpus"
+    ],
+    "notes": "Linear Distance Hypothesis, FNAH / Avoidance Behaviour Hypothesis, usage-based/frequency, salience, ..."
+   }
+  },
+  {
+   "id": "C29",
+   "category": "multi-part",
+   "prompt": "Which studies looked at Chinese learners, what did they investigate, and how many participants did each have?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence"
+    ],
+    "facts": [
+     "passive",
+     "irregular past|past tense",
+     "102|Grade 6|grade 6"
+    ],
+    "notes": "passive avoidance (30), irregular past tense (60), EIL PBL China (102 pupils + 3 teachers)"
+   }
+  },
+  {
+   "id": "C30",
+   "category": "format: bullets",
+   "prompt": "In three bullet points, what does the vocabulary size study conclude?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "exactly three bullets"
+   }
+  },
+  {
+   "id": "C31",
+   "category": "format: table",
+   "prompt": "Make a table of the intervention studies on writing with their participants and duration.",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence",
+     "visualize"
+    ],
+    "notes": "markdown table; GWIMBLE 35/12 weeks, G-DA 15, genre analysis 10, Pen to Pixels, ..."
+   }
+  },
+  {
+   "id": "C32",
+   "category": "year-scoped",
+   "prompt": "What did the papers published from 2023 onward study?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "aggregate_corpus",
+     "analyze_each_document",
+     "search_evidence",
+     "list_documents"
+    ],
+    "notes": "only 2023-2025 papers"
+   }
+  },
+  {
+   "id": "C33",
+   "category": "Thai: fact",
+   "prompt": "งานวิจัยเรื่องขนาดคำศัพท์ของนักศึกษาปีหนึ่งชาวไทยมีผู้เข้าร่วมกี่คน",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "484"
+    ],
+    "lang": "Thai"
+   }
+  },
+  {
+   "id": "C34",
+   "category": "Thai: synthesis",
+   "prompt": "งานวิจัยเกี่ยวกับการประเมินแบบพลวัต (dynamic assessment) พบอะไรบ้าง",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "lang": "Thai"
+   }
+  },
+  {
+   "id": "C35",
+   "category": "Thai: stats",
+   "prompt": "ในคลังนี้มีงานวิจัยกี่เรื่อง",
+   "expect": {
+    "ops": [
+     "inspect_scope"
+    ],
+    "facts": [
+     "41|35"
+    ],
+    "lang": "Thai"
+   }
+  },
+  {
+   "id": "C36",
+   "category": "follow-up (reference)",
+   "history": [
+    {
+     "role": "user",
+     "content": "What did the dynamic assessment studies find?"
+    },
+    {
+     "role": "assistant",
+     "content": "Three studies used dynamic assessment. A group dynamic assessment (G-DA) study with Thai undergraduates improved academic writing across organization, content, vocabulary, language use and mechanics. A computerized dynamic reading assessment (CDRA) program improved the reading comprehension of lower-proficiency undergraduates. A third study combined dynamic assessment with vocabulary learning strategies and improved academic vocabulary knowledge of low-proficiency undergraduates."
+    }
+   ],
+   "prompt": "Which of those had the most participants?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "30|thirty"
+    ],
+    "notes": "CDRA had 30; G-DA 15; DA+VLS count per paper; must resolve 'those' to the three DA studies"
+   }
+  },
+  {
+   "id": "C37",
+   "category": "follow-up (elaborate)",
+   "history": [
+    {
+     "role": "user",
+     "content": "How many students took part in the study on the vocabulary size of Thai freshmen?"
+    },
+    {
+     "role": "assistant",
+     "content": "The study tested 484 Thai freshmen from four public and three private universities across Thailand."
+    }
+   ],
+   "prompt": "And how did their vocabulary size relate to their years of English study?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "relationship (correlation) between vocabulary size and years of study as reported"
+   }
+  },
+  {
+   "id": "C38",
+   "category": "language switch",
+   "prompt": "Answer in Thai: what did the study on English plosive consonants find?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "lang": "Thai"
+   }
+  },
+  {
+   "id": "C39",
+   "category": "outside comparison (no web)",
+   "prompt": "How do the Thai students' English levels in these papers compare with national averages reported elsewhere?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "answers from the papers and says outside data is not in the papers / web is off"
+   }
+  },
+  {
+   "id": "C40",
+   "category": "corpus total",
+   "prompt": "What is the total number of participants across all the studies?",
+   "expect": {
+    "ops": [
+     "aggregate_corpus",
+     "analyze_each_document",
+     "search_evidence"
+    ],
+    "notes": "honest: sums what is reported or explains it cannot be exact"
+   }
+  },
+  {
+   "id": "C41",
+   "category": "length extremes",
+   "prompt": "Which paper is the longest?",
+   "expect": {
+    "ops": [
+     "inspect_scope"
+    ],
+    "notes": "computed from text length"
+   }
+  },
+  {
+   "id": "C42",
+   "category": "metadata: authors",
+   "prompt": "Who are the authors of the paper on Global Englishes language teaching for Vietnamese preservice teachers?",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "inspect_scope"
+    ],
+    "notes": "authors as printed in the paper, or says not available"
+   }
+  },
+  {
+   "id": "C43",
+   "category": "methods distribution",
+   "prompt": "How many of the studies are quantitative, qualitative, or mixed methods?",
+   "expect": {
+    "ops": [
+     "aggregate_corpus"
+    ],
+    "notes": "counts with basis"
+   }
+  },
+  {
+   "id": "C44",
+   "category": "similar papers",
+   "prompt": "Which papers are most similar to the one on English word stress production by Thai learners?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "VOT plosives, comprehensibility/tonality"
+   }
+  },
+  {
+   "id": "C45",
+   "category": "negative search",
+   "prompt": "Does any paper report an effect size?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence"
+    ],
+    "notes": "names papers that report one, or says none found among those read"
+   }
+  },
+  {
+   "id": "C46",
+   "category": "null results",
+   "prompt": "Did any intervention fail to improve the outcome it targeted?",
+   "expect": {
+    "ops": [
+     "screen_papers",
+     "search_evidence"
+    ],
+    "notes": "honest; e.g. some aspects not significant"
+   }
+  },
+  {
+   "id": "C47",
+   "category": "low effort",
+   "effort": "low",
+   "prompt": "What is learner autonomy, according to the ethnographic study of young EFL learners?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ]
+   }
+  },
+  {
+   "id": "C48",
+   "category": "high effort",
+   "effort": "high",
+   "prompt": "Does corpus-based teaching help low-proficiency Thai learners with English verbal complements?",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "facts": [
+     "32"
+    ],
+    "notes": "two groups of 32; corpus vs traditional"
+   }
+  }
+ ],
+ "chart": [
+  {
+   "id": "K01",
+   "category": "papers per year",
+   "prompt": "How many papers were published each year?",
+   "expect": {
+    "kind": "view",
+    "notes": "years 2011-2025"
+   }
+  },
+  {
+   "id": "K02",
+   "category": "themes",
+   "prompt": "Show the main research themes across the papers.",
+   "expect": {
+    "kind": "view"
+   }
+  },
+  {
+   "id": "K03",
+   "category": "term counts",
+   "prompt": "Chart how often 'assessment', 'writing' and 'speaking' appear in the papers.",
+   "expect": {
+    "kind": "terms"
+   }
+  },
+  {
+   "id": "K04",
+   "category": "values: participants",
+   "prompt": "How many participants did each study have?",
+   "expect": {
+    "kind": "values",
+    "notes": "about 30 studies with counts; 484 the largest"
+   }
+  },
+  {
+   "id": "K05",
+   "category": "values: countries",
+   "prompt": "Which countries were the studies conducted in?",
+   "expect": {
+    "kind": "values",
+    "notes": "Thailand most, China, Vietnam"
+   }
+  },
+  {
+   "id": "K06",
+   "category": "values: methods",
+   "prompt": "Chart the research approaches the studies used: quantitative, qualitative or mixed methods.",
+   "expect": {
+    "kind": "values"
+   }
+  },
+  {
+   "id": "K07",
+   "category": "values: instruments",
+   "prompt": "What data collection instruments did the studies use? Chart it.",
+   "expect": {
+    "kind": "values"
+   }
+  },
+  {
+   "id": "K08",
+   "category": "values: education level",
+   "prompt": "Chart the education level of the participants: primary, secondary or university.",
+   "expect": {
+    "kind": "values"
+   }
+  },
+  {
+   "id": "K09",
+   "category": "values: durations",
+   "prompt": "How long did each intervention last, in weeks?",
+   "expect": {
+    "kind": "values",
+    "notes": "GWIMBLE 12, IPA 9, GELT 10 ..."
+   }
+  },
+  {
+   "id": "K10",
+   "category": "paper figures",
+   "prompt": "Plot the results table of the study on listening supports for Thai first-year university students.",
+   "expect": {
+    "kind": "paper_table"
+   }
+  },
+  {
+   "id": "K11",
+   "category": "values: skills",
+   "prompt": "Which English skills do the studies focus on?",
+   "expect": {
+    "kind": "values|view"
+   }
+  },
+  {
+   "id": "K12",
+   "category": "paper length",
+   "prompt": "Compare the length of each paper.",
+   "expect": {
+    "kind": "length"
+   }
+  },
+  {
+   "id": "K13",
+   "category": "section words",
+   "prompt": "Show the word count of each section for every paper.",
+   "expect": {
+    "kind": "sections"
+   }
+  },
+  {
+   "id": "K14",
+   "category": "keywords",
+   "prompt": "Show the top keywords.",
+   "expect": {
+    "kind": "view|keywords"
+   }
+  },
+  {
+   "id": "K15",
+   "category": "Thai: per year",
+   "prompt": "แสดงจำนวนงานวิจัยในแต่ละปี",
+   "expect": {
+    "kind": "view",
+    "lang": "Thai"
+   }
+  },
+  {
+   "id": "K16",
+   "category": "Thai: values",
+   "prompt": "งานวิจัยแต่ละเรื่องมีผู้เข้าร่วมกี่คน",
+   "expect": {
+    "kind": "values",
+    "lang": "Thai"
+   }
+  },
+  {
+   "id": "K17",
+   "category": "topic over time",
+   "prompt": "Chart how research on assessment has changed over the years.",
+   "expect": {
+    "kind": "view|terms"
+   }
+  },
+  {
+   "id": "K18",
+   "category": "values: L1",
+   "prompt": "Pie chart of the participants' first languages.",
+   "expect": {
+    "kind": "values"
+   }
+  },
+  {
+   "id": "K19",
+   "category": "not chartable",
+   "prompt": "Chart the weather in Bangkok this week.",
+   "expect": {
+    "kind": "none",
+    "notes": "graceful: says the papers do not hold this"
+   }
+  },
+  {
+   "id": "K20",
+   "category": "values: effect sizes",
+   "prompt": "Chart the effect sizes the studies report.",
+   "expect": {
+    "kind": "values",
+    "notes": "few or none; honest"
+   }
+  },
+  {
+   "id": "K21",
+   "category": "subset values",
+   "prompt": "Compare the number of participants in the dynamic assessment studies.",
+   "expect": {
+    "kind": "values",
+    "notes": "3 DA studies only"
+   }
+  },
+  {
+   "id": "K22",
+   "category": "paper figures 2",
+   "prompt": "Chart the vocabulary size results in the study of Thai freshmen's vocabulary size by years of English study.",
+   "expect": {
+    "kind": "paper_table"
+   }
+  }
+ ],
+ "bench": [
+  {
+   "id": "Bpron",
+   "category": "benchmark: pron",
+   "prompt": "What do these studies find about Thai learners' English pronunciation problems, and how did they measure them?",
+   "effort": "high",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "aggregate_corpus"
+    ]
+   }
+  },
+  {
+   "id": "Bwriting",
+   "category": "benchmark: writing",
+   "prompt": "Compare the intervention studies that tried to improve Thai university students' English writing: what did each intervention involve, who took part, how was writing measured, and how large were the gains?",
+   "effort": "high",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "aggregate_corpus"
+    ]
+   }
+  },
+  {
+   "id": "Bgaps",
+   "category": "benchmark: gaps",
+   "prompt": "Based on the limitations and recommendations these papers report, what are the most important gaps for future research on English language assessment in Thailand?",
+   "effort": "high",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "aggregate_corpus"
+    ]
+   }
+  },
+  {
+   "id": "Bthai",
+   "category": "benchmark: thai",
+   "prompt": "งานวิจัยเหล่านี้พบอะไรบ้างเกี่ยวกับการสอนแบบผสมผสาน (blended learning) หรือห้องเรียนกลับด้านกับผู้เรียนชาวไทย และแต่ละงานวัดผลอย่างไร",
+   "effort": "high",
+   "expect": {
+    "ops": [
+     "search_evidence",
+     "aggregate_corpus"
+    ]
+   }
+  }
+ ]
+}

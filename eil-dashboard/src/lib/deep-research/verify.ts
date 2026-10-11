@@ -68,12 +68,25 @@ export function citesIn(text: string): string[] {
   return ids;
 }
 
-/** Sentence boundaries: after . ! ? (and any citation group), or after a citation before Thai text. */
-function splitUnits(line: string): string[] {
-  return line
+/**
+ * Sentence boundaries: after . ! ? (and any citation group), or after a
+ * citation before Thai text - but not inside bold. A study named in bold whose
+ * title ends in a question ("**Why should web-based tests be implemented?
+ * (2011)** developed...") was cut in two, the check rewrote the first half as
+ * a whole sentence, and the second was left dangling (2026-10-11).
+ */
+export function splitUnits(line: string): string[] {
+  const parts = line
     .split(/(?<=[.!?](?:\s*\[[^\]]+\])?)\s+(?=[A-Z0-9"“(*ก-๛])|(?<=\])\s+(?=[ก-๛])/)
     .map((part) => part.trim())
     .filter(Boolean);
+  const units: string[] = [];
+  for (const part of parts) {
+    const last = units.length - 1;
+    if (last >= 0 && (units[last].match(/\*\*/g)?.length ?? 0) % 2 === 1) units[last] = `${units[last]} ${part}`;
+    else units.push(part);
+  }
+  return units;
 }
 
 export interface ParsedReport {

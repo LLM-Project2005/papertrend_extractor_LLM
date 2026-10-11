@@ -138,7 +138,9 @@ function plan(operation: RepositoryExecutionPlan["operation"], scopeMode: Reposi
 }
 
 const text = (call: ScriptedModelCall | undefined) => (call?.messages ?? []).map((message) => message.content).join("\n");
-const system = (call: ScriptedModelCall | undefined) => call?.messages.find((message) => message.role === "system")?.content ?? "";
+// Every system message: an answer and its review now open with the papers they share, then their own task.
+const system = (call: ScriptedModelCall | undefined) =>
+  call?.messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n") ?? "";
 const user = (call: ScriptedModelCall | undefined) => call?.messages.filter((message) => message.role === "user").at(-1)?.content ?? "";
 const APPROVED = { supported: true, answersIntent: true, completeForRequest: true, languageMatched: true, correctedAnswer: "", confidence: 0.9, reason: "" };
 const QUESTION = "What do the papers report about peer feedback?";
@@ -648,4 +650,149 @@ test("two uploads of one paper are one study, whatever their word counts", async
     { title: "A Corpus-Based Study of Discourse Markers", year: "2023", copy: 3 },
   ];
   assert.deepEqual(oneCopyEach(papers).map((paper) => paper.copy), [1, 3]);
+});
+
+test("an answer and its review open with the same messages - the papers - marked for the provider's cache, and the review is not sent them twice", async () => {
+  // The review read the same 50,000 tokens as the answer, at full price (2026-10-11).
+  const { ask, task, script, peerFeedback } = await repository();
+  script((call) => {
+    if (call.taskName === "CHAT_SYNTHESIS") return { answer: `Peer feedback improved revision quality [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: "moderate" };
+    if (call.taskName === "CHAT_FAITHFULNESS") return { ...APPROVED, citedPaperIds: [peerFeedback] };
+    return null;
+  });
+  await ask(QUESTION, { executionPlan: plan("search_evidence", "focused", QUESTION) });
+  const [answer] = task("CHAT_SYNTHESIS");
+  const [review] = task("CHAT_FAITHFULNESS");
+  assert.ok(review, "a moderate answer is reviewed");
+  const opening = (call: ScriptedModelCall) => call.messages.slice(0, 2);
+  assert.deepEqual(opening(review), opening(answer), "byte for byte the same opening");
+  assert.deepEqual(opening(answer).map((message) => message.cachePoint), [true, true]);
+  assert.match(opening(answer)[1].content, /# Retrieved evidence[\s\S]*Peer feedback in second-language writing/);
+  assert.ok(!review.messages.slice(2).some((message) => message.content.includes("# Retrieved evidence")), "the evidence is not repeated");
+  assert.equal(answer.parameters.jsonObject, true);
+  assert.equal(review.parameters.jsonObject, true);
+  assert.match(user(review), /Return your verdict as JSON only/);
+});
+
+test("confidence in words or sentences is read, so a confident answer is not reviewed for 'low confidence'", async () => {
+  const { confidenceFrom } = await import("../src/lib/repository-chat");
+  const cases: Array<[unknown, number]> = [
+    [0.82, 0.82],
+    [85, 0.85],
+    ["0.9", 0.9],
+    ["90%", 0.9],
+    ["8/10", 0.8],
+    ["high", 0.85],
+    ["moderate-high", 0.75],
+    ["Medium to high", 0.75],
+    ["High for the reported findings and methods; limited for generalizing beyond these studies.", 0.85],
+    ["moderate", 0.6],
+    ["Low: only one paper addresses it", 0.3],
+    ["สูงสำหรับผลและวิธีวัด; ปานกลางสำหรับการสรุปภาพรวม", 0.85],
+    ["ปานกลาง", 0.6],
+    ["no idea", 0.5],
+    [null, 0.5],
+  ];
+  for (const [value, expected] of cases) assert.equal(confidenceFrom(value), expected, String(value));
+});
+
+test("a question about which papers meet a condition checks every paper and counts them", async () => {
+  // A focused search read the ten highest-ranked papers and named 6 of 12 (the question bank, 2026-10-11).
+  const { ask, task, script, peerFeedback, ids } = await repository();
+  const question = "Which studies looked at feedback?";
+  script((call) => {
+    if (call.taskName === "CHAT_EXECUTION_PLAN") return { ...plan("screen_papers", "complete", "studies that looked at feedback"), outputFormat: "list" };
+    if (call.taskName === "CHAT_SCREEN") {
+      const batch = user(call);
+      const label = batch.split("\n").find((line) => line.includes("Peer feedback in second-language writing"))?.match(/^\[(P\d+)\]/)?.[1];
+      return { matches: [{ paper: label, detail: "Peer feedback and revision in writing classes", quote: "Students who exchanged peer feedback revised their second drafts more often, and revision quality improved." }] };
+    }
+    return null;
+  });
+  const result = await ask(question);
+  assert.equal(task("CHAT_SCREEN").length, 1, "one call checks the three papers");
+  assert.equal(task("CHAT_SYNTHESIS").length, 0, "no focused search");
+  assert.match(result.answer, /\*\*1 of the 3 studies\*\*/);
+  assert.match(result.answer, /Peer feedback in second-language writing\*\* \(2021\) - Peer feedback and revision/);
+  assert.match(result.answer, /Every study in scope was checked/);
+  assert.deepEqual(result.citations.map((citation) => String(citation.paperId)), [peerFeedback]);
+  assert.ok(!result.citations.some((citation) => ids.slice(1).includes(String(citation.paperId))));
+  assert.equal(result.coverage?.processedPapers, 3);
+});
+
+test("a question about which paper is longest is counted, whatever the planner chose, and a table in an answer is not charted", async () => {
+  const { ask, task, script, peerFeedback } = await repository();
+  script((call) => {
+    const request = JSON.parse(user(call) || "{}").request ?? "";
+    if (call.taskName === "CHAT_EXECUTION_PLAN" && /longest/.test(request)) return { ...plan("analyze_each_document", "complete", request) };
+    if (call.taskName === "CHAT_EXECUTION_PLAN") return { ...plan("search_evidence", "focused", request), operations: ["search_evidence", "visualize"], outputFormat: "table" };
+    if (call.taskName === "CHAT_SYNTHESIS") return { answer: `| Study | Finding |\n| --- | --- |\n| Peer feedback | Revision improved [Paper ${peerFeedback}] |`, citedPaperIds: [peerFeedback], confidence: 0.9 };
+    return null;
+  });
+  const longest = await ask("Which paper is the longest?");
+  assert.deepEqual(longest.execution?.operations, ["inspect_scope"]);
+  assert.equal(task("CHAT_DOCUMENT_ANALYSIS").length, 0, "no paper is read for its length");
+  assert.match(longest.answer, /longest/i);
+
+  const table = await ask("Make a table of the studies on feedback and what they found.");
+  assert.deepEqual(table.execution?.operations, ["search_evidence"]);
+  assert.equal(table.charts.length, 0);
+  assert.equal(task("CHAT_CHART_PLAN").length, 0, "the chart reader is not run");
+});
+
+test("a question about years answers first, then shows the table", async () => {
+  const { buildRepositoryFactsAnswer } = await import("../src/lib/repository-chat");
+  const papers = [{ year: "2020" }, { year: "2022" }, { year: "2022" }, { year: "2021" }].map((paper, index) => ({ ...paper, paperId: `p${index}`, title: `Paper ${index}` }));
+  const answer = buildRepositoryFactsAnswer(papers as never, "the test repository", "Which year has the most papers?");
+  assert.match(answer.split("\n")[0], /^\*\*4 papers\*\*, published 2020–2022; the most in \*\*2022\*\* \(2\)\.$/);
+  const thai = buildRepositoryFactsAnswer(papers as never, "คลังทดสอบ", "ปีไหนมีงานวิจัยมากที่สุด");
+  assert.match(thai.split("\n")[0], /มากที่สุดในปี \*\*2022\*\*/);
+});
+
+test("years are counted per study, as the dashboard counts them, and second uploads are said", async () => {
+  // The chat said 2022 had 10 papers while Chart mode said 6 (the question bank, 2026-10-11).
+  const { buildRepositoryFactsAnswer } = await import("../src/lib/repository-chat");
+  const papers = [
+    { year: "2022", title: "Portfolio assessment" },
+    { year: "2022", title: "Portfolio Assessment" },
+    { year: "2022", title: "Dynamic assessment" },
+    { year: "2021", title: "Peer feedback" },
+  ].map((paper, index) => ({ ...paper, paperId: `p${index}` }));
+  const answer = buildRepositoryFactsAnswer(papers as never, "the test repository", "How many papers per year?");
+  assert.match(answer.split("\n")[0], /^\*\*3 studies\*\* \(4 uploads: 1 is a second copy of a study, counted once\), published 2021–2022; the most in \*\*2022\*\* \(2\)\.$/);
+  assert.match(answer, /\| 2022 \| 2 \|/);
+});
+
+test("a chart of some of the papers checks every paper once and reads only those it is about", async () => {
+  // "Compare the participants in the dynamic assessment studies" read all 36 papers for three studies' numbers (2026-10-11).
+  const { ask, task, script, peerFeedback, ids } = await repository();
+  const question = "Compare the number of participants in the feedback studies.";
+  const read = {
+    kind: "values", title: "Participants", chart: "bar", field: "total number of participants", value_type: "number",
+    unit: "participants", group_by: "paper", series: [], terms: [], search: ["students"], papers_about: "feedback studies",
+  };
+  let matches: unknown[] = [];
+  script((call) => {
+    if (call.taskName === "CHAT_CHART_PLAN") return { tool: "read_papers", arguments: read };
+    if (call.taskName === "CHAT_SCREEN") {
+      const label = user(call).split("\n").find((line) => line.includes("Peer feedback in second-language writing"))?.match(/^\[(P\d+)\]/)?.[1];
+      return { matches: matches.length ? matches : [{ paper: label, detail: "peer feedback", quote: "" }] };
+    }
+    if (call.taskName === "CHAT_CHART_EXTRACT") return { items: [{ paperId: peerFeedback, reported: false }] };
+    return null;
+  });
+  const charted = await ask(question, { forceChart: true, executionPlan: plan("visualize", "complete", question) });
+  assert.equal(task("CHAT_SCREEN").length, 1, "one short check of every paper");
+  const extract = task("CHAT_CHART_EXTRACT");
+  assert.ok(extract.length >= 1);
+  const sent = extract.map((call) => user(call)).join("\n");
+  assert.ok(sent.includes(peerFeedback), "the paper the chart is about is read");
+  for (const other of ids.slice(1)) assert.ok(!sent.includes(other), "a paper the chart is not about is not read");
+  assert.ok(charted.limitations?.some((line) => /Charted the study on feedback, found by checking all 3 studies in scope/.test(line)));
+
+  matches = [{ paper: "P9", detail: "no such paper", quote: "" }];
+  const before = task("CHAT_CHART_EXTRACT").length;
+  const none = await ask(`${question} `, { forceChart: true, executionPlan: plan("visualize", "complete", question) });
+  assert.match(none.answer, /None of the 3 studies .* is about feedback studies, so there is nothing to chart/);
+  assert.equal(task("CHAT_CHART_EXTRACT").length, before, "nothing is read when no paper matches");
 });

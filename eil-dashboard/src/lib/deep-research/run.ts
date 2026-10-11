@@ -28,7 +28,7 @@ import {
   sessionStatus,
   type ResearchScope,
 } from "@/lib/deep-research/store";
-import { isCurrentEngine, LIMITS, type PaperRecord, type ResearchPlan, type SelectedPaper, type WebSearch } from "@/lib/deep-research/types";
+import { isCurrentEngine, LIMITS, REASONING, type PaperRecord, type ResearchPlan, type SelectedPaper, type WebSearch } from "@/lib/deep-research/types";
 import { checkAnswer } from "@/lib/deep-research/verify";
 import { searchWeb } from "@/lib/deep-research/web";
 import { answerWords, buildEvidence, condenseMessages, coverageNote, reportMessages, wordLimit, type WebPageRead } from "@/lib/deep-research/write";
@@ -54,7 +54,7 @@ export async function readPaper(input: { question: string; plan: Pick<ResearchPl
     readMessages({ question: input.question, aspects: input.plan.aspects, paper: input.paper, reading }),
     readTool(),
     "DEEP_RESEARCH_READ",
-    { maxTokens: 9_000, timeoutMs: 150_000, reasoningEffort: "medium" }
+    { maxTokens: 9_000, timeoutMs: 150_000, reasoningEffort: REASONING.read }
   );
   if (!raw) return null;
   return checkRecord(raw, input.paper, reading.whole, undefined, { keepCited: asksAboutEarlierWork(input.question) });
@@ -115,7 +115,7 @@ export async function writeAnswer(input: {
     input.model,
     "DEEP_RESEARCH_REPORT",
     // GPT-6 Luna's reasoning counts against max_tokens: high reasoning needs room.
-    { maxTokens: 16_000, timeoutMs: 240_000, reasoningEffort: "high" }
+    { maxTokens: 16_000, timeoutMs: 240_000, reasoningEffort: REASONING.write }
   );
   const draft = completion?.content?.trim() ?? "";
   return { draft: await condensed(draft, input.plan), evidence };
