@@ -50,6 +50,21 @@ Synthesize all supplied batch findings into a coherent repository-level answer. 
 `.trim(),
 };
 
+/**
+ * The opening that several calls share: the contract, then what they all read
+ * (the repository's summary, the papers). Sent first and unchanged, it is
+ * cached once (openai.ts cachePoint), and each call's own task follows it
+ * (buildPapertrendTaskPrompt).
+ */
+export function buildPapertrendSharedPrompt(material: string): string {
+  return [`Papertrend prompt contract ${PAPER_TREND_PROMPT_VERSION}`, CORE_CONTRACT, material.trim()].filter(Boolean).join("\n\n");
+}
+
+/** A call's own task, after the shared opening. */
+export function buildPapertrendTaskPrompt(task: PapertrendPromptTask, additions: string[] = []): string {
+  return [`Task contract:\n${TASK_CONTRACTS[task]}`, ...additions.map((value) => value.trim()).filter(Boolean)].join("\n\n");
+}
+
 export function buildPapertrendSystemPrompt(
   task: PapertrendPromptTask,
   additions: string[] = []

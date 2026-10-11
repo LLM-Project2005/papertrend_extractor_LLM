@@ -14,6 +14,33 @@ import { modelForTask } from "@/lib/model-routing";
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  /**
+   * Ends an opening that a later call sends again unchanged - the papers an
+   * answer is written from, which its check then reads - so the provider
+   * keeps it for 30 minutes and the later call reads it at a tenth of the
+   * price. Everything up to and including this message is the cached part.
+   */
+  cachePoint?: boolean;
+}
+
+/**
+ * Whether the provider charges for keeping a prompt in its cache. OpenRouter
+ * caches every prompt to GPT-5.6 and later by itself and charges 1.25 times
+ * the input price to do it, though almost no prompt here is sent twice:
+ * measured on 2026-10-11, every call paid the 25% and none read the cache.
+ * For these models caching is explicit - only up to a message marked
+ * cachePoint - and a call with no mark is not cached and pays the plain price.
+ */
+export function chargesCacheWrites(model: string): boolean {
+  return /^~?openai\/gpt-(?:5\.(?:[6-9]|\d{2,})|[6-9]|\d{2,})(?:[.-]|$)/.test(model);
+}
+
+/** A message as the provider receives it: a cache mark becomes a marked text block. */
+function wireMessage(message: ChatMessage, explicitCaching: boolean) {
+  if (explicitCaching && message.cachePoint) {
+    return { role: message.role, content: [{ type: "text", text: message.content, prompt_cache_breakpoint: { mode: "explicit" } }] };
+  }
+  return { role: message.role, content: message.content };
 }
 
 export interface ChatCompletionParameters {
@@ -128,11 +155,16 @@ export async function createChatCompletionResult(
   // Steps that only emit JSON for other code run on the fast model; the two
   // steps a reader sees keep whatever the caller asked for.
   const routedModel = modelForTask({ taskName, requestedModel: modelOverride, usesOpenRouter });
+  const model = routedModel || config.model;
+  const explicitCaching = usesOpenRouter && chargesCacheWrites(model);
   const requestBody: Record<string, unknown> = {
-    model: routedModel || config.model,
+    model,
     temperature,
-    messages,
+    messages: messages.map((message) => wireMessage(message, explicitCaching)),
   };
+  if (explicitCaching) {
+    requestBody.prompt_cache_options = { mode: "explicit" };
+  }
 
   if (typeof parameters.topP === "number") {
     requestBody.top_p = parameters.topP;

@@ -32,3 +32,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 public/pdfjs/
+
+# Model replies cached by scripts/evaluate-chat-questions.ts: they quote private papers.
+.chat-eval-cache/

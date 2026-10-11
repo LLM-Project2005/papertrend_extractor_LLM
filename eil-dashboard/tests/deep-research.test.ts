@@ -593,3 +593,12 @@ test("the page draws a run: the answer as a message with Copy and Download, quie
   assert.match(client, /\{deepSession\.status === "failed" \? "Retry" : "Resume"\}/);
   assert.doesNotMatch(client, /tool_name === "dr2_gather"\)/, "the summary counts this engine's reads");
 });
+
+test("a study named in bold whose title asks a question stays one sentence for the check", async () => {
+  const { splitUnits } = await import("../src/lib/deep-research/verify");
+  const line = "**Why Should the Web-Based Achievement Tests in English for Tourism Be Implemented? (2011)** developed and piloted a speaking test with 30 students [E4]. Its alpha was .98 [E5].";
+  assert.deepEqual(splitUnits(line), [
+    "**Why Should the Web-Based Achievement Tests in English for Tourism Be Implemented? (2011)** developed and piloted a speaking test with 30 students [E4].",
+    "Its alpha was .98 [E5].",
+  ]);
+});

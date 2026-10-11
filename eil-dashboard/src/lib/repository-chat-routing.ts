@@ -10,6 +10,7 @@ interface RepositoryAsyncRoutingInput {
 
 const MODEL_HEAVY_OPERATIONS = new Set([
   "analyze_each_document",
+  "screen_papers",
   "aggregate_corpus",
   "search_evidence",
 ]);
