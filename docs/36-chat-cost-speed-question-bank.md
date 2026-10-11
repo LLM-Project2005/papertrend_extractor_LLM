@@ -59,6 +59,7 @@ Chart mode, 22 requests: the planner read 21 sensibly - years, themes, theme cha
 
 - "Chart the research approaches: quantitative, qualitative or mixed" was declared unanswerable because the dashboard records methods as topics. The planner now reads the papers when no view holds what is asked (23 of 36 papers state an approach) - but still declines, without reading, anything that is not about the studies.
 - "Show the top keywords" counted the word "keywords". A word that names what to count is no longer a term to count unless quoted.
+- "Compare the number of participants in the dynamic assessment studies" read the participant count from all 36 papers (about $0.014) and could chart papers the question was not about. The chart planner now names the group a chart is about (`papers_about`); every paper is checked against it in a short read (screening, without its detail pass) and only the matches are read: the three studies, 30, 15 and 5 participants, for $0.005 in 11 s. A group that only restates the value ("papers reporting an intervention" for the length of each intervention) is ignored, so a chart of every paper that reports a value still reads every paper: narrowing it first had dropped two of eleven interventions.
 
 Value charts were right against the papers: intervention lengths (11 interventions, 4 to 17 weeks) and research approaches this round, participants and countries in docs/35.
 
@@ -69,5 +70,4 @@ Value charts were right against the papers: intervention lengths (11 interventio
 ## Known limits
 
 - Screening reads about 4,000 characters of each paper; a condition stated only deep in a paper's results can be missed, and the list says it checked "from its abstract and the passages that bear on the question".
-- A chart of one value for a few named papers ("the dynamic assessment studies") still reads every paper in scope.
 - Run-to-run variation: the same question can cite three or four studies on different runs.

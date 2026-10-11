@@ -762,3 +762,37 @@ test("years are counted per study, as the dashboard counts them, and second uplo
   assert.match(answer.split("\n")[0], /^\*\*3 studies\*\* \(4 uploads: 1 is a second copy of a study, counted once\), published 2021–2022; the most in \*\*2022\*\* \(2\)\.$/);
   assert.match(answer, /\| 2022 \| 2 \|/);
 });
+
+test("a chart of some of the papers checks every paper once and reads only those it is about", async () => {
+  // "Compare the participants in the dynamic assessment studies" read all 36 papers for three studies' numbers (2026-10-11).
+  const { ask, task, script, peerFeedback, ids } = await repository();
+  const question = "Compare the number of participants in the feedback studies.";
+  const read = {
+    kind: "values", title: "Participants", chart: "bar", field: "total number of participants", value_type: "number",
+    unit: "participants", group_by: "paper", series: [], terms: [], search: ["students"], papers_about: "feedback studies",
+  };
+  let matches: unknown[] = [];
+  script((call) => {
+    if (call.taskName === "CHAT_CHART_PLAN") return { tool: "read_papers", arguments: read };
+    if (call.taskName === "CHAT_SCREEN") {
+      const label = user(call).split("\n").find((line) => line.includes("Peer feedback in second-language writing"))?.match(/^\[(P\d+)\]/)?.[1];
+      return { matches: matches.length ? matches : [{ paper: label, detail: "peer feedback", quote: "" }] };
+    }
+    if (call.taskName === "CHAT_CHART_EXTRACT") return { items: [{ paperId: peerFeedback, reported: false }] };
+    return null;
+  });
+  const charted = await ask(question, { forceChart: true, executionPlan: plan("visualize", "complete", question) });
+  assert.equal(task("CHAT_SCREEN").length, 1, "one short check of every paper");
+  const extract = task("CHAT_CHART_EXTRACT");
+  assert.ok(extract.length >= 1);
+  const sent = extract.map((call) => user(call)).join("\n");
+  assert.ok(sent.includes(peerFeedback), "the paper the chart is about is read");
+  for (const other of ids.slice(1)) assert.ok(!sent.includes(other), "a paper the chart is not about is not read");
+  assert.ok(charted.limitations?.some((line) => /Charted the study on feedback, found by checking all 3 studies in scope/.test(line)));
+
+  matches = [{ paper: "P9", detail: "no such paper", quote: "" }];
+  const before = task("CHAT_CHART_EXTRACT").length;
+  const none = await ask(`${question} `, { forceChart: true, executionPlan: plan("visualize", "complete", question) });
+  assert.match(none.answer, /None of the 3 studies .* is about feedback studies, so there is nothing to chart/);
+  assert.equal(task("CHAT_CHART_EXTRACT").length, before, "nothing is read when no paper matches");
+});

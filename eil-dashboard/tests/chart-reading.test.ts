@@ -61,6 +61,7 @@ const PLAN: ReadPlan = {
   series: [],
   terms: [],
   search: ["participants", "students"],
+  about: "",
 };
 
 type Reply = (messages: ChatMessage[], task: string) => unknown;
@@ -234,4 +235,8 @@ test("the planner's choice is read from a tool call or from the message, and a v
   assert.equal(withViews?.tool, "build_view");
   assert.equal(parseReadPlan({ ...read, field: "" }), null, "a value with no field is not a plan");
   assert.equal(parseReadPlan({ ...read, kind: "terms", terms: [] }), null, "a word count with no words is not a plan");
+  assert.equal(parseReadPlan(read)?.about, "", "a chart of every paper names no subset");
+  assert.equal(parseReadPlan({ ...read, papers_about: "  dynamic assessment   studies " })?.about, "dynamic assessment studies");
+  assert.equal(parseReadPlan({ ...read, field: "length of the intervention", papers_about: "papers reporting an intervention" })?.about, "", "a subset that restates the value is dropped");
+  assert.equal(parseReadPlan({ ...read, papers_about: "studies that report participants" })?.about, "");
 });

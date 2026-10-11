@@ -40,6 +40,11 @@ export interface ReadPlan {
   terms: string[];
   /** Phrases a passage that reports it would contain, to find it in a long paper. */
   search: string[];
+  /**
+   * The papers the chart is about, when it is about some of them ("dynamic
+   * assessment studies"); empty for every paper in scope. Only those are read.
+   */
+  about: string;
 }
 
 export type ChartPlan = { tool: "build_view"; query: AskQuery } | { tool: "read_papers"; read: ReadPlan };
@@ -109,8 +114,13 @@ export function readPapersTool() {
           series: { type: "array", items: { type: "string" }, maxItems: 4, description: "paper_table: short names of the figures drawn side by side, e.g. ['Pre-test', 'Post-test']; or empty." },
           terms: { type: "array", items: { type: "string" }, maxItems: 6, description: "terms: the words or phrases to count, as the question gives them; or empty." },
           search: { type: "array", items: { type: "string" }, maxItems: 4, description: "values and paper_table: short phrases a passage reporting it would contain, e.g. 'participants', 'students were', 'sample'." },
+          papers_about: {
+            type: "string",
+            description:
+              "Only when the question limits the chart to some of the papers by what they are about or did ('the dynamic assessment studies', 'studies of Chinese learners'): those papers, in a few English words. Empty when the chart covers every paper in scope, including 'each study' or 'each intervention': a paper that does not report the value is simply left off, and narrowing first can drop one.",
+          },
         },
-        required: ["kind", "title", "chart", "field", "value_type", "unit", "group_by", "series", "terms", "search"],
+        required: ["kind", "title", "chart", "field", "value_type", "unit", "group_by", "series", "terms", "search", "papers_about"],
       },
     },
   };
@@ -118,6 +128,21 @@ export function readPapersTool() {
 
 function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
+}
+
+const SUBSET_FILLER = new Set(["a", "an", "the", "of", "in", "on", "that", "which", "with", "who", "papers", "paper", "studies", "study", "report", "reports", "reporting", "reported", "state", "stating", "each", "every", "all", "any", "their", "its"]);
+
+/**
+ * Whether a chart's subset only restates its value: "papers reporting an
+ * intervention" for "length of the intervention". Every paper that reports the
+ * value is charted anyway, and narrowing first had dropped two of eleven
+ * interventions (the question bank, 2026-10-11).
+ */
+export function subsetRestatesField(about: string, field: string): boolean {
+  const words = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).map((word) => word.replace(/s$/, "")).filter(Boolean);
+  const own = words(about).filter((word) => !SUBSET_FILLER.has(word) && !SUBSET_FILLER.has(`${word}s`));
+  const fieldWords = new Set(words(field));
+  return own.length === 0 || own.every((word) => fieldWords.has(word));
 }
 
 export function parseReadPlan(raw: unknown): ReadPlan | null {
@@ -143,6 +168,8 @@ export function parseReadPlan(raw: unknown): ReadPlan | null {
     series: list(value.series, 4),
     terms,
     search: list(value.search, 4),
+    // A subset that only restates the value is no subset (subsetRestatesField).
+    about: subsetRestatesField(clean(value.papers_about, 160), field) ? "" : clean(value.papers_about, 160),
   };
 }
 
@@ -178,6 +205,7 @@ export function chartPlanMessages(input: {
             ]
           : [`Only read_papers is available: the other views need at least ${MIN_PAPERS} papers. How to fill it:`]),
         "- 'How many participants did each study have?' -> kind values, field 'total number of participants', value_type number, unit 'participants', group_by paper, search ['participants', 'students', 'sample'].",
+        "- 'Compare the number of participants in the dynamic assessment studies' -> the same, with papers_about 'dynamic assessment studies': only those papers are read. papers_about stays empty when the chart is about every paper, as in 'How long did each intervention last?'.",
         "- 'Have sample sizes grown over the years?' -> kind values, field 'total number of participants', value_type number, group_by year, chart line.",
         "- 'Where were the studies conducted?' -> kind values, field 'country where the study was conducted', value_type category.",
         "- 'Which statistical tests do the papers use?' -> kind values, field 'statistical tests used', value_type category.",

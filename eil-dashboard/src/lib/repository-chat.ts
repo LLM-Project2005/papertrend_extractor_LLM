@@ -3581,11 +3581,19 @@ async function corpusChartResult(
  */
 async function readChartResult(
   input: RepositoryChatInput,
-  context: RepositoryContext,
+  whole: RepositoryContext,
   execution: RepositoryExecutionPlan,
   read: ReadPlan
 ): Promise<ChartStepResult | null> {
   const legacy = legacyPlanForExecution(execution, input.prompt);
+  // A chart of some of the papers ("the participants in the dynamic assessment
+  // studies") reads only those. It read all 36 papers in scope for three
+  // studies' numbers - about $0.014 - and could chart papers the question was
+  // not about (the question bank, 2026-10-11). Every paper is first checked in
+  // a short read against what the chart is about (paper-screening.ts).
+  const subset = read.about && read.kind !== "keywords" ? await chartSubset(input, whole, read.about) : null;
+  if (subset?.empty) return subset.empty;
+  const context = subset?.context ?? whole;
   const covered = completeCoverage(context, context.papers.length);
   const barOrTable = read.chart === "table" ? "table" : "bar";
   if (read.kind === "sections") return { ...sectionWordCountResult(context, { ...legacy, needsChart: true }), coverage: covered };
@@ -3610,6 +3618,7 @@ async function readChartResult(
 
   let [lead, title] = [outcome.lead, outcome.chart?.title ?? ""];
   let limitations = [
+    ...(subset?.note ? [subset.note] : []),
     ...outcome.limitations,
     ...(copies > 0 ? [`${copies === 1 ? "One paper is a second copy" : `${copies} papers are second copies`} of another, with the same title and year, and ${copies === 1 ? "was" : "were"} read once.`] : []),
   ];
@@ -3643,6 +3652,35 @@ async function readChartResult(
       : [],
     coverage: completeCoverage(context, outcome.citedPaperIds.length),
     limitations,
+  };
+}
+
+/** The papers a chart is about, found by checking every paper in scope; null to chart them all. */
+async function chartSubset(
+  input: RepositoryChatInput,
+  whole: RepositoryContext,
+  about: string
+): Promise<{ context?: RepositoryContext; note?: string; empty?: ChartStepResult } | null> {
+  const studies = oneCopyEach(whole.papers);
+  reportChatProgress("reading_evidence", `${studies.length} papers`);
+  const screened = await screenPapers({ papers: studies, question: input.prompt, condition: about, answerLanguage: "English", model: input.model, details: false });
+  // Nothing could be checked: chart every paper, as before, rather than none.
+  if (screened.failed.length === studies.length) return null;
+  const keep = new Set(screened.matches.map((match) => match.paperId));
+  const thai = /[\u0e00-\u0e7f]/.test(input.prompt);
+  if (keep.size === 0) {
+    const answer = `None of the ${studies.length} studies in ${whole.scopeLabel} is about ${about}, so there is nothing to chart.`;
+    return { empty: { answer: thai ? (await inThai([answer]))[0] : answer, citations: [], charts: [], coverage: completeCoverage(whole, 0), limitations: [] } };
+  }
+  const papers = whole.papers.filter((paper) => keep.has(paper.paperId));
+  // "the 3 dynamic assessment studies", "the study on Chinese learners"
+  const group = /\s(?:studies|papers|articles)$/i.test(about);
+  const label = group && papers.length > 1
+    ? `the ${papers.length} ${about}`
+    : `the ${papers.length === 1 ? "study" : `${papers.length} studies`} on ${about.replace(/\s+(?:studies|papers|articles)$/i, "")}`;
+  return {
+    context: contextFor(whole, papers, label),
+    note: `Charted ${label}, found by checking all ${studies.length} studies in scope.`,
   };
 }
 
