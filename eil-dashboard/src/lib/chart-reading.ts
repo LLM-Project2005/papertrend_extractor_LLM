@@ -181,6 +181,10 @@ export function chartPlanMessages(input: {
         "- 'Have sample sizes grown over the years?' -> kind values, field 'total number of participants', value_type number, group_by year, chart line.",
         "- 'Where were the studies conducted?' -> kind values, field 'country where the study was conducted', value_type category.",
         "- 'Which statistical tests do the papers use?' -> kind values, field 'statistical tests used', value_type category.",
+        "- 'Chart the research approaches: quantitative, qualitative or mixed methods' -> kind values, field 'research approach (quantitative, qualitative or mixed methods)', value_type category.",
+        ...(views
+          ? ["When none of build_view's values present is what the question asks for - a study's research approach, its participants' level, its setting - but a paper's text could state it, use read_papers. A question about something other than the studies themselves - the weather, news, prices - is answered with build_view, answerable false: reading every paper for it costs money and finds nothing."]
+          : []),
         "- 'How long did each intervention last?' -> kind values, field 'length of the intervention', value_type number, unit 'weeks'.",
         "- 'Chart the pre-test and post-test scores in <a paper>' -> kind paper_table, field 'mean pre-test and post-test scores by group', series ['Pre-test', 'Post-test'].",
         "- 'How long is each paper?' -> kind length. 'Words in each section' -> kind sections.",

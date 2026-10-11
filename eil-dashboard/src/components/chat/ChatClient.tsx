@@ -4092,7 +4092,7 @@ export default function ChatClient() {
                     <span>
                       Max effort reads the papers that bear on your question in full - up to 20 - takes each finding in
                       the paper&apos;s own words, checks every number against the paper, and searches the web only where
-                      the papers cannot answer. One to three minutes; you can stop it at any time.
+                      the papers cannot answer. About a minute; you can stop it at any time.
                     </span>
                   </p>
                 ) : null}

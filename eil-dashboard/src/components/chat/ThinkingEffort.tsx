@@ -21,7 +21,7 @@ export const EFFORT_LEVELS: ReadonlyArray<{ value: ThinkingEffortLevel; label: s
   {
     value: "max",
     label: "Max",
-    hint: "The most thorough: reads the papers that matter in full, quotes them, and checks every number against the paper. One to three minutes; 10 a day.",
+    hint: "The most thorough: reads the papers that matter in full, quotes them, and checks every number against the paper. About a minute; 10 a day.",
   },
 ];
 

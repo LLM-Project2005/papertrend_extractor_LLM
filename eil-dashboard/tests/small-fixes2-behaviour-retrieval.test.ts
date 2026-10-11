@@ -157,3 +157,30 @@ test("a question's load builds a word index only for a paper whose text changed,
   const cachesAfter = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM workspace_analytics_cache`);
   assert.equal(cachesAfter.rows[0].n, cachesBefore.rows[0].n, "no context row is written on a question");
 });
+
+test("the reranker judges in the same call whether its papers suffice, and the separate check runs only when it cannot", async () => {
+  // One call instead of two: the check cost 4 to 6 seconds of every Medium and High answer (2026-10-11).
+  const rerankWith = async (verdict: Record<string, unknown>) => {
+    const repo = await repository(12);
+    const reply = globalThis.__chatScopeModel!.reply;
+    globalThis.__chatScopeModel!.reply = (call) =>
+      call.taskName === "CHAT_RERANK"
+        ? { paperIds: [paperIdFromRunId(run(1)), paperIdFromRunId(run(2))], reason: "direct", confidence: 0.9, ...verdict }
+        : reply(call);
+    const lines = await logged("info", repo.ask);
+    return { repo, lines };
+  };
+
+  const short = await rerankWith({ sufficient: false, missingEvidenceNeeds: ["revision counts"], expansionQueries: ["peer feedback revision counts"] });
+  assert.ok(!short.repo.tasks.includes("CHAT_EVIDENCE_SUFFICIENCY"), "no second call");
+  const expansion = short.lines.find((line) => line[0] === "chat_expansion_applied");
+  assert.ok(expansion, "the search widened on the reranker's word");
+  assert.ok(JSON.parse(expansion![1]).after > JSON.parse(expansion![1]).before);
+
+  const enough = await rerankWith({ sufficient: true });
+  assert.ok(!enough.repo.tasks.includes("CHAT_EVIDENCE_SUFFICIENCY"));
+  assert.ok(!enough.lines.some((line) => line[0] === "chat_expansion_applied"), "nothing to widen");
+
+  const silent = await rerankWith({});
+  assert.ok(silent.repo.tasks.includes("CHAT_EVIDENCE_SUFFICIENCY"), "a reranker that does not say runs the check as before");
+});

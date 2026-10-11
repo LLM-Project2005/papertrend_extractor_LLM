@@ -50,9 +50,26 @@ export const LIMITS = {
   factsPerPaper: 10,
   aspects: 8,
   webSearches: 2,
-  /** Papers read at once. */
-  concurrency: 10,
+  /**
+   * Papers read at once: all of them. Ten at a time read twenty papers in two
+   * waves of about 28 seconds each (2026-10-11); the second wave was waiting
+   * time only.
+   */
+  concurrency: 20,
 } as const;
+
+/**
+ * How long the reading and writing steps reason. GPT-6 Luna's reasoning is
+ * billed as output and is most of a step's time. Measured on the same papers
+ * (2026-10-11): reading at low and writing at medium gave answers as specific
+ * as medium and high did - the same studies, numbers and structure - and the
+ * writing step took 13-25 seconds instead of 35-58. Code checks every quote
+ * and number a reading records either way.
+ */
+export const REASONING: { read: "low" | "medium" | "high"; write: "low" | "medium" | "high" } = {
+  read: "low",
+  write: "medium",
+};
 
 /** The model Max reads, writes and chooses papers with, as High does (the chat route's model). */
 export const CHAT_MODEL = "openai/gpt-6-luna-20260922";

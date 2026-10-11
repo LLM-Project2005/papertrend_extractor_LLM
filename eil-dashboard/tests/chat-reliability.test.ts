@@ -475,3 +475,48 @@ test("a cached answer is shown to the reader as cached", () => {
   // (It also renders for a Low or High answer's effort note.)
   assert.match(client, /if \(!hasCoverage && limitations\.length === 0 && !cached && !effortNote\) return null;/);
 });
+
+/* ------------------------------------------------ the provider's prompt cache */
+
+test("GPT-6 on OpenRouter is cached only up to a marked message, so a prompt sent once pays no cache-write premium", async () => {
+  // OpenRouter caches every GPT-5.6+ prompt by itself at 1.25x the input price;
+  // explicit mode with no mark turns that off (measured 2026-10-11).
+  process.env.OPENAI_API_KEY = "test-key";
+  process.env.OPENAI_BASE_URL = "https://openrouter.ai/api/v1";
+  const { createChatCompletionResult, chargesCacheWrites } = await import("../src/lib/openai");
+  const bodies: Array<Record<string, any>> = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return completion("ok");
+  }) as typeof fetch;
+  try {
+    await createChatCompletionResult(
+      [
+        { role: "system", content: "The papers.", cachePoint: true },
+        { role: "user", content: "The question." },
+      ],
+      0,
+      "openai/gpt-6-luna-20260922",
+      "CHAT_SYNTHESIS"
+    );
+    await createChatCompletionResult([{ role: "user", content: "hi" }], 0, "google/gemini-3.1-flash-lite", "CHAT_SYNTHESIS");
+  } finally {
+    globalThis.fetch = original;
+    delete process.env.OPENAI_BASE_URL;
+  }
+  const [luna, gemini] = bodies;
+  assert.deepEqual(luna.prompt_cache_options, { mode: "explicit" });
+  assert.deepEqual(luna.messages[0], {
+    role: "system",
+    content: [{ type: "text", text: "The papers.", prompt_cache_breakpoint: { mode: "explicit" } }],
+  });
+  assert.deepEqual(luna.messages[1], { role: "user", content: "The question." }, "an unmarked message goes as plain text");
+  assert.equal(gemini.prompt_cache_options, undefined, "other providers are sent nothing new");
+  assert.ok(!("cachePoint" in gemini.messages[0]));
+
+  for (const model of ["openai/gpt-6-luna-20260922", "openai/gpt-5.6-luna", "openai/gpt-7"]) assert.ok(chargesCacheWrites(model), model);
+  for (const model of ["openai/gpt-5-mini", "openai/gpt-4.1-mini", "google/gemini-3.1-flash-lite", "openai/text-embedding-3-small"]) {
+    assert.ok(!chargesCacheWrites(model), model);
+  }
+});
