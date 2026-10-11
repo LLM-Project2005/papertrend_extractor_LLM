@@ -200,6 +200,8 @@ export async function screenPapers(input: {
   answerLanguage: string;
   model?: string;
   complete?: Complete;
+  /** Read a match again for a detail its short read lacked; off when only the matches are wanted. */
+  details?: boolean;
 }): Promise<ScreenResult> {
   const complete = input.complete ?? createChatCompletionResult;
   const readings = readPapers(input.papers, [input.condition, input.question], SCREEN_CHARS * Math.max(1, input.papers.length));
@@ -213,7 +215,7 @@ export async function screenPapers(input: {
   }
   const order = new Map(input.papers.map((paper, index) => [paper.paperId, index]));
   const matches = answers.flatMap((answer) => answer ?? []).sort((a, b) => order.get(a.paperId)! - order.get(b.paperId)!);
-  await fillDetails(matches, new Map(input.papers.map((paper) => [paper.paperId, paper])), input, complete);
+  if (input.details !== false) await fillDetails(matches, new Map(input.papers.map((paper) => [paper.paperId, paper])), input, complete);
   return {
     matches,
     screened: input.papers.length,
