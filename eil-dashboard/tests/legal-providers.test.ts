@@ -73,7 +73,7 @@ const PROVIDERS: Record<string, string> = {
  * Addresses in the code that are never requested: links built for citations,
  * placeholders, and the team's own pages, which a reader may follow from /team.
  */
-const NOT_REQUESTED = new Set(["doi.org", "example.org", "papertrend.app", "return-path.invalid", "github.com", "jakapunt.github.io"]);
+const NOT_REQUESTED = new Set(["doi.org", "example.org", "papertrend.app", "return-path.invalid", "github.com", "jakapun-t.github.io"]);
 
 test("every outside service the code calls is named in the privacy policy", () => {
   const hosts = new Set([...code.matchAll(/https:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+)/gi)].map((match) => match[1].toLowerCase()));

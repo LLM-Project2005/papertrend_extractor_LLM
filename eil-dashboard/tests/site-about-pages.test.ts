@@ -109,7 +109,7 @@ test("the pages keep the site's honesty rules", async () => {
 test("the team page shows each person with their portrait, both names and a way to reach them", async () => {
   const html = await page("team");
   const people = [
-    { name: "Jakapun Tachaiya", thai: "อ.ดร.จักรพันธ์ เตไชยา", photo: "jakapun", links: ["https://jakapunt.github.io/", "mailto:jakapun.t@chula.ac.th"] },
+    { name: "Jakapun Tachaiya", thai: "อ.ดร.จักรพันธ์ เตไชยา", photo: "jakapun", links: ["https://jakapun-t.github.io/", "mailto:jakapun.t@chula.ac.th"] },
     { name: "Pheemaphat Chantarusorn", thai: "ภีมพัศ จันทรุสอน", photo: "pheemaphat", links: ["mailto:p.chantarusorn@gmail.com", "https://github.com/pheechan"] },
     { name: "Thanawat Traipat", thai: "ธนวัฒน์ ไตรพัชร์", photo: "thanawat", links: ["mailto:thanawattraipat@gmail.com", "https://github.com/Thanawat-Traipat"] },
   ];
