@@ -3,6 +3,7 @@
  * config's own headers() rather than its source (docs/32, long-term health).
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 interface HeaderRule {
@@ -72,6 +73,22 @@ test("every response carries an enforced Content-Security-Policy that names wher
       assert.ok(!["*", "https:", "http:", "data:"].includes(source), `${directive} must not allow ${source}`);
     }
   }
+});
+
+test("the PDF viewer's worker may compile WebAssembly, and nothing else is loosened", async () => {
+  // Without it the worker could not decode JPEG 2000 images, and those figures were blank.
+  const rules = await headersWith(DEPLOYED);
+  const siteIndex = rules.findIndex((rule) => rule.source === "/:path*");
+  const workerIndex = rules.findIndex((rule) => rule.source === "/pdfjs/pdf.worker.min.mjs");
+  assert.ok(workerIndex > siteIndex, "the worker's rule comes after the site's, so its policy wins");
+  const site = rules[siteIndex].headers.find((header) => header.key === "Content-Security-Policy")!.value;
+  const worker = rules[workerIndex].headers.find((header) => header.key === "Content-Security-Policy")?.value;
+  assert.equal(worker, site.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'"));
+  assert.ok(!site.includes("wasm-unsafe-eval"), "pages keep the stricter policy");
+  assert.ok(!/'unsafe-eval'/.test(worker ?? ""), "JavaScript eval stays blocked");
+  // The rule names the file the viewer actually loads.
+  const viewer = readFileSync(new URL("../src/components/workspace/PdfViewer.tsx", import.meta.url), "utf8");
+  assert.match(viewer, /const WORKER_SRC = "\/pdfjs\/pdf\.worker\.min\.mjs";/);
 });
 
 test("an unset or malformed address adds nothing to the policy", async () => {
