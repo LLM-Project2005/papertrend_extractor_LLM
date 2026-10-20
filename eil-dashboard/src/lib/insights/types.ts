@@ -32,10 +32,18 @@ export interface CompareRow {
   label: string;
   /** Groups rows under a heading (a category, say). */
   group?: string;
+  /** Shares, in whole percent: of the left group's papers, of the right group's. */
   left: number;
   right: number;
+  /** The counts behind the shares and the groups' sizes, so a chart can show either (docs/38). */
+  leftCount?: number;
+  rightCount?: number;
+  leftOf?: number;
+  rightOf?: number;
   /** "emerging" / "declining" when the change passes the shift rules. */
   tag?: string;
+  /** The value the question asked about: drawn first and named in bold. */
+  asked?: boolean;
   paperIds: PaperId[];
 }
 
@@ -54,10 +62,34 @@ export interface ListRow {
   title: string;
   detail: string;
   paperIds: PaperId[];
+  /** Names the detail mentions (two themes), so digits in them are not read as numbers. */
+  names?: string[];
+}
+
+export interface TableColumnSpec {
+  key: string;
+  label: string;
+  align?: "left" | "right";
+}
+
+export interface TableRowSpec {
+  key: string;
+  cells: Record<string, string | number | string[] | null>;
+  /** The papers the row is about; one paper makes its first cell open it. */
+  paperIds: PaperId[];
 }
 
 export type InsightChart =
-  | { kind: "bars"; valueLabel: string; unit: "papers" | "percent" | "themes"; rows: BarRow[] }
+  | {
+      kind: "bars";
+      valueLabel: string;
+      unit: "papers" | "percent" | "themes";
+      rows: BarRow[];
+      /** Rows that are years, drawn as columns along the axis. */
+      layout?: "columns";
+      /** Labels of the rows a question asks about, drawn in the accent. */
+      emphasis?: string[];
+    }
   | { kind: "pairs"; rows: Array<{ a: string; b: string; together: number; lift: number; aPapers: number; bPapers: number; paperIds: PaperId[] }> }
   | {
       kind: "matrix";
@@ -69,11 +101,17 @@ export type InsightChart =
       /** Cells a fact talks about: [row, col, "strong" | "absent"]. */
       marks: Array<[number, number, "strong" | "absent"]>;
       paperIds: PaperId[][][];
+      /** Papers with each row's value, whatever the columns. */
+      rowTotals?: number[];
     }
   /** "time": the left value came before the right; "contrast": two groups side by side. */
   | { kind: "compare"; leftLabel: string; rightLabel: string; unit: "percent"; sequence: "time" | "contrast"; rows: CompareRow[] }
   | { kind: "lifecycles"; years: string[]; rows: LifecycleRow[] }
-  | { kind: "list"; rows: ListRow[] };
+  | { kind: "list"; rows: ListRow[] }
+  /** Papers side by side, or values that are all the same, where bars would say nothing (docs/38). */
+  | { kind: "table"; columns: TableColumnSpec[]; rows: TableRowSpec[] }
+  /** One value: a one-bar chart drawn as a number. */
+  | { kind: "stat"; value: string; label: string; detail?: string };
 
 /** What a fixed tab already draws, so an insight can be checked against it. */
 export interface ViewSignature {
@@ -97,6 +135,10 @@ export interface Insight {
   score: number;
   /** Papers the insight rests on. */
   paperIds: PaperId[];
+  /** The papers its counts are out of, so a chart can say "of 41" and show shares (docs/38). */
+  population?: { papers: number; label: string };
+  /** Names its sentence mentions that the chart does not draw, so digits in them ("L2 Writing") are not read as numbers. */
+  mentions?: string[];
   /** "Based on …" line under the chart. */
   basis: string;
   /** A limit of this finding a reader should know, shown with it. */

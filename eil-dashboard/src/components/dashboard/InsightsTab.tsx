@@ -23,6 +23,8 @@ import type { PaperId } from "@/types/database";
 interface InsightsResponse {
   report: InsightReport;
   plan: InsightPlan;
+  /** Paper titles, so a chart's squares can name their papers. */
+  titles?: Record<string, string>;
   cached?: boolean;
   notice?: string;
   error?: string;
@@ -64,12 +66,14 @@ function InsightCard({
   takeaway,
   onOpen,
   index,
+  paperTitles,
 }: {
   insight: Insight;
   title: string;
   takeaway: string;
   onOpen: OpenPapers;
   index: number;
+  paperTitles?: Map<string, string>;
 }) {
   return (
     <section className="app-surface px-4 py-5 sm:px-6" aria-labelledby={`insight-${insight.id}-${index}`} data-insight={insight.id}>
@@ -91,7 +95,7 @@ function InsightCard({
         </p>
       ) : null}
       <div className="mt-5">
-        <InsightChart insight={insight} onOpen={onOpen} />
+        <InsightChart insight={insight} onOpen={onOpen} paperTitles={paperTitles} />
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-[#1a1a1a]">
         <p className="max-w-2xl text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{insight.basis}</p>
@@ -410,6 +414,7 @@ export default function InsightsTab({
   }
 
   const { report, plan } = result;
+  const paperTitles = result.titles ? new Map(Object.entries(result.titles)) : undefined;
   const byId = new Map(report.insights.map((insight) => [insight.id, insight]));
   const cards = plan.cards.filter((card) => byId.has(card.insightId));
   const shownIds = new Set(cards.map((card) => card.insightId));
@@ -577,7 +582,7 @@ export default function InsightsTab({
             </button>
           </p>
           {answer.insight ? (
-            <InsightCard insight={answer.insight} title={answer.insight.question} takeaway={answer.insight.takeaway} onOpen={openPapers} index={-1} />
+            <InsightCard insight={answer.insight} title={answer.insight.question} takeaway={answer.insight.takeaway} onOpen={openPapers} index={-1} paperTitles={paperTitles} />
           ) : (
             <section className="app-surface px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4] sm:px-6">{answer.unanswerable}</section>
           )}
@@ -608,6 +613,7 @@ export default function InsightsTab({
             takeaway={card.takeaway}
             onOpen={openPapers}
             index={index}
+            paperTitles={paperTitles}
           />
         ))
       )}
@@ -635,6 +641,7 @@ export default function InsightsTab({
                   takeaway={insight.takeaway}
                   onOpen={openPapers}
                   index={cards.length + index}
+                  paperTitles={paperTitles}
                 />
               ))}
             </div>

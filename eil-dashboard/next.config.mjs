@@ -54,6 +54,13 @@ const contentSecurityPolicy = [
   "upgrade-insecure-requests",
 ].join("; ");
 
+// The PDF viewer's worker decodes JPEG 2000 images with WebAssembly, which the
+// policy above blocks: those figures were left blank on the page. A worker
+// takes its policy from its own response, so only the worker's file gets
+// 'wasm-unsafe-eval'; JavaScript eval stays blocked there too.
+const PDF_WORKER = "/pdfjs/pdf.worker.min.mjs";
+const pdfWorkerPolicy = contentSecurityPolicy.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'");
+
 // Enforced. It ran report-only on the pilot first, while every feature was
 // exercised (landing videos, Google sign-in, the PDF viewer and its fallback
 // frame, dashboards, streaming chat, uploads, the Drive Picker), and nothing
@@ -112,6 +119,8 @@ const nextConfig = {
         source: "/:path*",
         headers: securityHeaders,
       },
+      // After the rule above: the later value of a header wins.
+      { source: PDF_WORKER, headers: [{ key: CSP_HEADER, value: pdfWorkerPolicy }] },
       ...["/api/:path*", "/workspace/:path*", "/workspaces/:path*", "/admin/:path*"].map(
         (source) => ({
           source,

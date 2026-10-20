@@ -8,12 +8,13 @@
  * so a model can make the page better written but never wrong.
  */
 import type { ChatMessage } from "@/lib/openai";
+import { FEW_PAPERS } from "@/lib/insights/analyses";
 import { fixedViewSummary } from "@/lib/insights/fixed-views";
 import { allowedFacts, claimsCause, corpusFacts, dropFiller, insightLabels, scrubLoadedWords, unbackedClaims } from "@/lib/insights/check";
 import type { Insight, InsightPlan, InsightPlanCard, InsightReport } from "@/lib/insights/types";
 
 /** Bumped whenever the prompt or the checks change, so cached plans are rewritten. */
-export const INSIGHTS_PROMPT_VERSION = "insights-v4";
+export const INSIGHTS_PROMPT_VERSION = "insights-v5";
 export const MAX_CARDS = 5;
 const TITLE_MAX = 90;
 const TAKEAWAY_MAX = 280;
@@ -33,10 +34,16 @@ export interface InsightContext {
 function computedHeadline(report: InsightReport): string {
   const { papers, firstYear, lastYear } = report.summary;
   const span = firstYear && lastYear ? (firstYear === lastYear ? ` from ${firstYear}` : ` from ${firstYear}–${lastYear}`) : "";
+  if (papers === 0) return "No papers selected";
+  if (papers === 1) return `One paper${span}`;
+  if (papers < FEW_PAPERS) return `${papers} papers${span}, side by side`;
   return `What stands out in these ${papers} papers${span}`;
 }
 
 function computedSummary(report: InsightReport): string {
+  if (report.summary.papers > 0 && report.summary.papers < FEW_PAPERS) {
+    return "Each paper's year, methods and themes, and what the papers share. Patterns across papers are looked for from 8 papers on.";
+  }
   return report.insights.length
     ? "The strongest patterns in the selected papers, each resting on at least 3 papers and holding when any one of them is removed."
     : "No pattern in the selected papers is strong enough to show yet.";

@@ -1,0 +1,1441 @@
+{
+ "about": "Chart mode requests (docs/38), each with the plan it should get. scope names a synthetic collection (tests/support/chart-corpora.ts): one, two, six (the EIL pipeline check), test (36 papers, the test account's shape), thai, big (1,500 papers). expect.tool is build_view or read_papers; rows, columns, focus and kind list the answers accepted; answerable false means the planner should decline. scripts/evaluate-chart-planner.ts runs them.",
+ "items": [
+  {
+   "id": "V01",
+   "scope": "test",
+   "category": "years",
+   "prompt": "How many papers were published each year?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V02",
+   "scope": "test",
+   "category": "years",
+   "prompt": "Show the number of publications per year as a bar chart.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "V03",
+   "scope": "test",
+   "category": "years",
+   "prompt": "Plot papers over time.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "V04",
+   "scope": "test",
+   "category": "themes",
+   "prompt": "Show the main research themes across the papers.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V05",
+   "scope": "test",
+   "category": "themes",
+   "prompt": "What topics do these papers cover? Make a chart.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "V06",
+   "scope": "test",
+   "category": "themes",
+   "prompt": "Which themes are the most common?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "V07",
+   "scope": "test",
+   "category": "methods",
+   "prompt": "Chart the research methods the papers use.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ]
+   }
+  },
+  {
+   "id": "V08",
+   "scope": "test",
+   "category": "methods",
+   "prompt": "How often is each methodology used?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ]
+   }
+  },
+  {
+   "id": "V09",
+   "scope": "test",
+   "category": "research areas",
+   "prompt": "How are the papers split across research areas?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "category"
+    ]
+   }
+  },
+  {
+   "id": "V10",
+   "scope": "test",
+   "category": "research areas",
+   "prompt": "Show a pie chart of the research areas.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "category"
+    ]
+   }
+  },
+  {
+   "id": "V11",
+   "scope": "test",
+   "category": "kinds of study",
+   "prompt": "What kinds of study are these - empirical, review, theoretical?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "study_type"
+    ]
+   }
+  },
+  {
+   "id": "V12",
+   "scope": "test",
+   "category": "contributions",
+   "prompt": "What do the studies set out to produce?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "contribution"
+    ]
+   }
+  },
+  {
+   "id": "V13",
+   "scope": "test",
+   "category": "aims",
+   "prompt": "Chart the aims of the studies.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "aim"
+    ]
+   }
+  },
+  {
+   "id": "V14",
+   "scope": "test",
+   "category": "cross",
+   "prompt": "Which methods are used for which themes?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme",
+     "method"
+    ],
+    "columns": [
+     "method",
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "V15",
+   "scope": "test",
+   "category": "cross",
+   "prompt": "Show themes by year as a heatmap.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme",
+     "year"
+    ],
+    "columns": [
+     "year",
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "V16",
+   "scope": "test",
+   "category": "cross",
+   "prompt": "How do the research areas change over the years?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year",
+     "category"
+    ],
+    "columns": [
+     "category",
+     "year"
+    ],
+    "measure": [
+     "papers",
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "V17",
+   "scope": "test",
+   "category": "cross",
+   "prompt": "Which kinds of study use which methods?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "study_type",
+     "method"
+    ],
+    "columns": [
+     "method",
+     "study_type"
+    ]
+   }
+  },
+  {
+   "id": "V18",
+   "scope": "test",
+   "category": "change",
+   "prompt": "How have the themes changed over time?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "measure": [
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "V19",
+   "scope": "test",
+   "category": "change",
+   "prompt": "Which methods are growing in popularity?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "measure": [
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "V20",
+   "scope": "test",
+   "category": "change",
+   "prompt": "Has the balance between research areas shifted recently?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "category"
+    ],
+    "measure": [
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "V21",
+   "scope": "test",
+   "category": "change",
+   "prompt": "Is interest in dynamic assessment declining?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "measure": [
+     "change"
+    ],
+    "about": true
+   }
+  },
+  {
+   "id": "V22",
+   "scope": "test",
+   "category": "narrowed",
+   "prompt": "What methods do the academic writing papers use?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "focus": [
+     "theme"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V23",
+   "scope": "test",
+   "category": "narrowed",
+   "prompt": "Which themes appear alongside dynamic assessment?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "focus": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "V24",
+   "scope": "test",
+   "category": "narrowed",
+   "prompt": "When were the papers on reading comprehension published?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ],
+    "focus": [
+     "theme"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V25",
+   "scope": "test",
+   "category": "narrowed",
+   "prompt": "What do the survey studies focus on?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "focus": [
+     "method"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V26",
+   "scope": "test",
+   "category": "narrowed",
+   "prompt": "Chart the methods used in Language Assessment & Evaluation papers.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "focus": [
+     "category"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V27",
+   "scope": "test",
+   "category": "about",
+   "prompt": "Is mixed methods more common in writing papers?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "focus": [
+     "theme"
+    ],
+    "about": true,
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V28",
+   "scope": "test",
+   "category": "about",
+   "prompt": "Do the speaking papers use interviews more than the rest?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "focus": [
+     "theme"
+    ],
+    "about": true,
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V29",
+   "scope": "test",
+   "category": "compared",
+   "prompt": "How many papers study writing compared with reading?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "about": true
+   }
+  },
+  {
+   "id": "V30",
+   "scope": "test",
+   "category": "compared",
+   "prompt": "Compare surveys and interviews: which is used more?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "about": true
+   }
+  },
+  {
+   "id": "V31",
+   "scope": "test",
+   "category": "compared",
+   "prompt": "Compare the methods used in writing papers and in speaking papers.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method",
+     "theme"
+    ],
+    "columns": [
+     "theme",
+     "method"
+    ]
+   }
+  },
+  {
+   "id": "V32",
+   "scope": "test",
+   "category": "vague",
+   "prompt": "Make a chart.",
+   "expect": {
+    "tool": "build_view"
+   }
+  },
+  {
+   "id": "V33",
+   "scope": "test",
+   "category": "vague",
+   "prompt": "Visualize my papers.",
+   "expect": {
+    "tool": "build_view"
+   }
+  },
+  {
+   "id": "V34",
+   "scope": "test",
+   "category": "vague",
+   "prompt": "Show me something interesting about this collection.",
+   "expect": {
+    "tool": "build_view"
+   }
+  },
+  {
+   "id": "V35",
+   "scope": "test",
+   "category": "vague",
+   "prompt": "Give me an overview chart for my literature review.",
+   "expect": {
+    "tool": "build_view"
+   }
+  },
+  {
+   "id": "V36",
+   "scope": "test",
+   "category": "follow-up",
+   "prompt": "Now by year.",
+   "restated": "Show the main research themes across the papers, by year.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme",
+     "year"
+    ],
+    "columns": [
+     "year",
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "V37",
+   "scope": "test",
+   "category": "follow-up",
+   "prompt": "Only the assessment ones.",
+   "restated": "Chart the research methods used in the papers on assessment.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "focus": [
+     "theme",
+     "category"
+    ]
+   }
+  },
+  {
+   "id": "V38",
+   "scope": "test",
+   "category": "follow-up",
+   "prompt": "And how has that changed?",
+   "restated": "How have the research methods used in the papers changed over time?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ],
+    "measure": [
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "V39",
+   "scope": "test",
+   "category": "chart type",
+   "prompt": "Line chart of papers per year.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "V40",
+   "scope": "test",
+   "category": "chart type",
+   "prompt": "Put the number of papers per theme in a table.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "R01",
+   "scope": "test",
+   "category": "values: participants",
+   "prompt": "How many participants did each study have?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R02",
+   "scope": "test",
+   "category": "values: participants",
+   "prompt": "Compare the sample sizes of the studies.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R03",
+   "scope": "test",
+   "category": "values: participants",
+   "prompt": "Have sample sizes grown over the years?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number",
+    "group_by": "year"
+   }
+  },
+  {
+   "id": "R04",
+   "scope": "test",
+   "category": "values: participants",
+   "prompt": "Compare the number of participants in the dynamic assessment studies.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number",
+    "about": true
+   }
+  },
+  {
+   "id": "R05",
+   "scope": "test",
+   "category": "values: countries",
+   "prompt": "Which countries were the studies conducted in?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R06",
+   "scope": "test",
+   "category": "values: countries",
+   "prompt": "Map the study contexts by country.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "V41",
+   "scope": "test",
+   "category": "cross",
+   "prompt": "How are the kinds of study spread across the years?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "study_type",
+     "year"
+    ],
+    "columns": [
+     "year",
+     "study_type"
+    ]
+   }
+  },
+  {
+   "id": "V42",
+   "scope": "test",
+   "category": "change",
+   "prompt": "Are more papers developing instruments than before?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "contribution"
+    ],
+    "measure": [
+     "change"
+    ],
+    "about": true
+   }
+  },
+  {
+   "id": "V43",
+   "scope": "test",
+   "category": "cross",
+   "prompt": "What do the papers on each theme aim to do?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "aim",
+     "theme"
+    ],
+    "columns": [
+     "theme",
+     "aim"
+    ]
+   }
+  },
+  {
+   "id": "V44",
+   "scope": "test",
+   "category": "narrowed",
+   "prompt": "Which years had papers on Global Englishes?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ],
+    "focus": [
+     "theme"
+    ],
+    "columns": [
+     null
+    ]
+   }
+  },
+  {
+   "id": "V45",
+   "scope": "test",
+   "category": "share",
+   "prompt": "What percentage of the papers are empirical?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "study_type"
+    ],
+    "about": true
+   }
+  },
+  {
+   "id": "V46",
+   "scope": "test",
+   "category": "share",
+   "prompt": "Show the share of papers in each research area, in percent.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "category"
+    ]
+   }
+  },
+  {
+   "id": "R07",
+   "scope": "test",
+   "category": "values: approach",
+   "prompt": "Chart the research approaches the studies used: quantitative, qualitative or mixed methods.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R08",
+   "scope": "test",
+   "category": "values: instruments",
+   "prompt": "What data collection instruments did the studies use? Chart it.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R09",
+   "scope": "test",
+   "category": "values: level",
+   "prompt": "Chart the education level of the participants: primary, secondary or university.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R10",
+   "scope": "test",
+   "category": "values: durations",
+   "prompt": "How long did each intervention last, in weeks?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R11",
+   "scope": "test",
+   "category": "values: tests",
+   "prompt": "Which statistical tests do the papers use?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R12",
+   "scope": "test",
+   "category": "values: effect sizes",
+   "prompt": "Plot the effect sizes reported in the experimental studies.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R13",
+   "scope": "test",
+   "category": "values: first language",
+   "prompt": "What first languages do the participants speak? Use a pie chart.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R14",
+   "scope": "test",
+   "category": "values: age",
+   "prompt": "Chart the mean age of the participants in each study.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R15",
+   "scope": "test",
+   "category": "values: setting",
+   "prompt": "Were the studies done in classrooms or online? Chart the settings.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R16",
+   "scope": "test",
+   "category": "values: proficiency",
+   "prompt": "What proficiency levels were the learners at?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values",
+     "paper_table"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R17",
+   "scope": "test",
+   "category": "values: reliability",
+   "prompt": "Chart the Cronbach's alpha each questionnaire reported.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R18",
+   "scope": "test",
+   "category": "values: theory",
+   "prompt": "Which theoretical frameworks do the papers draw on?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "R19",
+   "scope": "test",
+   "category": "length",
+   "prompt": "Compare the length of each paper.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "length"
+    ]
+   }
+  },
+  {
+   "id": "R20",
+   "scope": "test",
+   "category": "length",
+   "prompt": "Count the number of words in each paper and then show the bar chart.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "length"
+    ]
+   }
+  },
+  {
+   "id": "R21",
+   "scope": "test",
+   "category": "sections",
+   "prompt": "Show the word count of each section for every paper.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "sections"
+    ]
+   }
+  },
+  {
+   "id": "R22",
+   "scope": "test",
+   "category": "terms",
+   "prompt": "Chart how often 'assessment', 'writing' and 'speaking' appear in the papers.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "terms"
+    ]
+   }
+  },
+  {
+   "id": "R23",
+   "scope": "test",
+   "category": "terms",
+   "prompt": "How often do the papers mention motivation and anxiety?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "terms"
+    ]
+   }
+  },
+  {
+   "id": "R24",
+   "scope": "test",
+   "category": "paper figures",
+   "prompt": "Plot the results table of Academic Writing study 12.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "paper_table"
+    ]
+   }
+  },
+  {
+   "id": "R25",
+   "scope": "test",
+   "category": "paper figures",
+   "prompt": "Chart the pre-test and post-test scores in Dynamic Assessment study 24.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "paper_table"
+    ]
+   }
+  },
+  {
+   "id": "R26",
+   "scope": "test",
+   "category": "follow-up",
+   "prompt": "Now only the experimental ones.",
+   "restated": "How many participants did each experimental study have?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R27",
+   "scope": "test",
+   "category": "follow-up",
+   "prompt": "As a line chart by year.",
+   "restated": "Show the median number of participants per year as a line chart.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "group_by": "year"
+   }
+  },
+  {
+   "id": "S01",
+   "scope": "six",
+   "category": "six papers: years",
+   "prompt": "How many papers were published each year?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "S02",
+   "scope": "six",
+   "category": "six papers: themes",
+   "prompt": "Show the main themes.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "S03",
+   "scope": "six",
+   "category": "six papers: methods",
+   "prompt": "Which methods do these papers use?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ]
+   }
+  },
+  {
+   "id": "S04",
+   "scope": "six",
+   "category": "six papers: length",
+   "prompt": "Count the number of words in each paper and then show the bar chart.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "length"
+    ]
+   }
+  },
+  {
+   "id": "S05",
+   "scope": "six",
+   "category": "six papers: participants",
+   "prompt": "Compare the number of participants in each study.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "S06",
+   "scope": "six",
+   "category": "six papers: vague",
+   "prompt": "Make a chart that compares these papers.",
+   "expect": {
+    "tool": "build_view"
+   }
+  },
+  {
+   "id": "S07",
+   "scope": "six",
+   "category": "six papers: cross",
+   "prompt": "Which methods go with which themes?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme",
+     "method"
+    ],
+    "columns": [
+     "method",
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "S08",
+   "scope": "six",
+   "category": "six papers: sections",
+   "prompt": "Show the words in each section of each paper.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "sections"
+    ]
+   }
+  },
+  {
+   "id": "O01",
+   "scope": "one",
+   "category": "one paper: sections",
+   "prompt": "Show the words in each section.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "sections"
+    ]
+   }
+  },
+  {
+   "id": "O02",
+   "scope": "one",
+   "category": "one paper: figures",
+   "prompt": "Chart the results table of this paper.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "paper_table"
+    ]
+   }
+  },
+  {
+   "id": "O03",
+   "scope": "one",
+   "category": "one paper: keywords",
+   "prompt": "Which keywords does it use most?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "keywords",
+     "terms"
+    ]
+   }
+  },
+  {
+   "id": "O04",
+   "scope": "one",
+   "category": "one paper: vague",
+   "prompt": "Make a chart.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "keywords",
+     "sections",
+     "length",
+     "paper_table"
+    ]
+   }
+  },
+  {
+   "id": "O05",
+   "scope": "two",
+   "category": "two papers: participants",
+   "prompt": "Compare the participants in the two studies.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values",
+     "paper_table"
+    ]
+   }
+  },
+  {
+   "id": "O06",
+   "scope": "two",
+   "category": "two papers: length",
+   "prompt": "Which paper is longer?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "length"
+    ]
+   }
+  },
+  {
+   "id": "B01",
+   "scope": "big",
+   "category": "1,500 papers: years",
+   "prompt": "Show publications per year.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "B02",
+   "scope": "big",
+   "category": "1,500 papers: themes",
+   "prompt": "What are the top themes?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "B03",
+   "scope": "big",
+   "category": "1,500 papers: change",
+   "prompt": "Which themes are emerging?",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "measure": [
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "B04",
+   "scope": "big",
+   "category": "1,500 papers: cross",
+   "prompt": "Show research areas by year.",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year",
+     "category"
+    ],
+    "columns": [
+     "category",
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "T01",
+   "scope": "thai",
+   "category": "Thai: years",
+   "prompt": "จำนวนงานวิจัยในแต่ละปีเป็นอย่างไร",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "year"
+    ]
+   }
+  },
+  {
+   "id": "T02",
+   "scope": "thai",
+   "category": "Thai: themes",
+   "prompt": "ทำแผนภูมิหัวข้อวิจัยหลักให้หน่อย",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "T03",
+   "scope": "thai",
+   "category": "Thai: methods",
+   "prompt": "งานวิจัยใช้วิธีวิจัยอะไรบ้าง ขอเป็นกราฟ",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "method"
+    ]
+   }
+  },
+  {
+   "id": "T04",
+   "scope": "thai",
+   "category": "Thai: change",
+   "prompt": "หัวข้อวิจัยเปลี่ยนไปอย่างไรตามช่วงเวลา",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme"
+    ],
+    "measure": [
+     "change"
+    ]
+   }
+  },
+  {
+   "id": "T05",
+   "scope": "thai",
+   "category": "Thai: participants",
+   "prompt": "แต่ละงานวิจัยมีผู้เข้าร่วมกี่คน",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "T06",
+   "scope": "thai",
+   "category": "Thai: countries",
+   "prompt": "งานวิจัยทำในประเทศอะไรบ้าง",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "category"
+   }
+  },
+  {
+   "id": "T07",
+   "scope": "thai",
+   "category": "Thai: length",
+   "prompt": "นับจำนวนคำของแต่ละงานวิจัยแล้วทำกราฟแท่ง",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "length"
+    ]
+   }
+  },
+  {
+   "id": "T08",
+   "scope": "thai",
+   "category": "Thai: cross",
+   "prompt": "วิธีวิจัยแต่ละแบบใช้กับหัวข้อไหน",
+   "expect": {
+    "tool": "build_view",
+    "rows": [
+     "theme",
+     "method"
+    ],
+    "columns": [
+     "method",
+     "theme"
+    ]
+   }
+  },
+  {
+   "id": "U01",
+   "scope": "test",
+   "category": "off topic",
+   "prompt": "Chart the weather in Bangkok this week.",
+   "expect": {
+    "tool": "build_view",
+    "answerable": false
+   }
+  },
+  {
+   "id": "U02",
+   "scope": "test",
+   "category": "off topic",
+   "prompt": "Plot the Thai baht exchange rate.",
+   "expect": {
+    "tool": "build_view",
+    "answerable": false
+   }
+  },
+  {
+   "id": "U03",
+   "scope": "test",
+   "category": "not in the data",
+   "prompt": "Which authors published the most papers?",
+   "expect": {
+    "tool": "build_view",
+    "answerable": false,
+    "or": {
+     "tool": "read_papers"
+    }
+   }
+  },
+  {
+   "id": "U04",
+   "scope": "test",
+   "category": "not in the data",
+   "prompt": "Chart how many citations each paper has.",
+   "expect": {
+    "tool": "build_view",
+    "answerable": false,
+    "or": {
+     "tool": "read_papers"
+    }
+   }
+  },
+  {
+   "id": "U05",
+   "scope": "test",
+   "category": "off topic",
+   "prompt": "Show me a chart of the stock market.",
+   "expect": {
+    "tool": "build_view",
+    "answerable": false
+   }
+  },
+  {
+   "id": "R28",
+   "scope": "test",
+   "category": "values: participants",
+   "prompt": "Which study had the most participants?",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  },
+  {
+   "id": "R29",
+   "scope": "test",
+   "category": "values: durations",
+   "prompt": "Chart the length of each study in months.",
+   "expect": {
+    "tool": "read_papers",
+    "kind": [
+     "values"
+    ],
+    "value_type": "number"
+   }
+  }
+ ]
+}

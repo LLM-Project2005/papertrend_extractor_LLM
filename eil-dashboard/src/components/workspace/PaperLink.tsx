@@ -5,7 +5,8 @@
  * page; a middle click, Ctrl/Cmd-click or "Open in new tab" still follows the
  * real address to the Library, as a link should.
  */
-import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from "react";
+// React in scope: the test runner compiles JSX the classic way.
+import React, { type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from "react";
 import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
 import { libraryPaperHref, parsePaperHref, type PaperTarget } from "@/lib/paper-address";
 

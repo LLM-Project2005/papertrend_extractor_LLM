@@ -164,9 +164,18 @@ export function insightLabels(insight: Insight): string[] {
       chart.rows.forEach((row) => labels.push(row.label));
       break;
     case "list":
-      chart.rows.forEach((row) => labels.push(row.title));
+      chart.rows.forEach((row) => labels.push(row.title, ...(row.names ?? [])));
+      break;
+    case "table":
+      chart.rows.forEach((row) =>
+        Object.values(row.cells).forEach((cell) => (Array.isArray(cell) ? labels.push(...cell) : typeof cell === "string" ? labels.push(cell) : undefined))
+      );
+      break;
+    case "stat":
+      labels.push(chart.label);
       break;
   }
+  labels.push(...(insight.mentions ?? []));
   return labels.filter(Boolean);
 }
 

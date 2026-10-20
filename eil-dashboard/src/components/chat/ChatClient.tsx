@@ -174,6 +174,8 @@ export interface ChatChartPayload {
   data: Array<Record<string, string | number>>;
   /** Where each value read from the papers comes from (chart-reading.ts). */
   sources?: Array<{ paperId: string; title: string; year: string; value: string; quote: string; note?: string }>;
+  /** A group for each paper (its research area), so bars that are papers can be told apart by colour (docs/38). */
+  groups?: { label: string; byPaper: Record<string, string> };
   planner?: {
     source: "llm" | "fallback";
     reason?: string;

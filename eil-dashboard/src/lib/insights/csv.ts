@@ -25,8 +25,18 @@ export function insightCsv(insight: Insight, name: string): ChartCsv {
       rows = chart.rows.map((label, index) => [label, ...(chart.values[index] ?? [])]);
       break;
     case "compare":
-      header = ["Group", "Label", `${chart.leftLabel} (%)`, `${chart.rightLabel} (%)`, "Change"];
-      rows = chart.rows.map((row) => [row.group ?? "", row.label, row.left, row.right, row.tag ?? ""]);
+      header = [
+        "Group",
+        "Label",
+        `${chart.leftLabel} (%)`,
+        `${chart.leftLabel} (papers)`,
+        `${chart.leftLabel} (of)`,
+        `${chart.rightLabel} (%)`,
+        `${chart.rightLabel} (papers)`,
+        `${chart.rightLabel} (of)`,
+        "Change",
+      ];
+      rows = chart.rows.map((row) => [row.group ?? "", row.label, row.left, row.leftCount ?? "", row.leftOf ?? "", row.right, row.rightCount ?? "", row.rightOf ?? "", row.tag ?? ""]);
       break;
     case "lifecycles":
       header = ["Theme", "Status", "First year", "Last year", "Papers", ...chart.years];
@@ -35,6 +45,19 @@ export function insightCsv(insight: Insight, name: string): ChartCsv {
     case "list":
       header = ["Title", "Detail", "Papers"];
       rows = chart.rows.map((row) => [row.title, row.detail, row.paperIds.length]);
+      break;
+    case "table":
+      header = chart.columns.map((column) => column.label);
+      rows = chart.rows.map((row) =>
+        chart.columns.map((column) => {
+          const value = row.cells[column.key];
+          return Array.isArray(value) ? value.join("; ") : value ?? "";
+        })
+      );
+      break;
+    case "stat":
+      header = ["Value", "What it is", "Detail"];
+      rows = [[chart.value, chart.label, chart.detail ?? ""]];
       break;
   }
   return { name, header, rows };
