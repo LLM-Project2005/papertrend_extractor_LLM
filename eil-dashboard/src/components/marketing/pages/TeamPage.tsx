@@ -28,7 +28,7 @@ const TEAM: Array<{ photo: string; name: string; thai: string; role: string; con
     thai: "อ.ดร.จักรพันธ์ เตไชยา",
     role: "Lecturer, Department of Linguistics, Faculty of Arts, and the Language and Information Technology program, Chulalongkorn University.",
     contacts: [
-      { kind: "web", href: "https://jakapunt.github.io/", label: "jakapunt.github.io" },
+      { kind: "web", href: "https://jakapun-t.github.io/", label: "jakapun-t.github.io" },
       { kind: "email", href: "mailto:jakapun.t@chula.ac.th", label: "jakapun.t@chula.ac.th" },
     ],
   },
