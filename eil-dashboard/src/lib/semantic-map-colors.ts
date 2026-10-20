@@ -50,6 +50,30 @@ export function pointColor(
   return scale.get(colorLabelValue(point, mode)) ?? FALLBACK_POINT_COLOR;
 }
 
+/**
+ * The colouring a map opens with. Neighborhoods, unless the papers did not
+ * split into any: then every paper had one colour, and the professor asked why
+ * the home page's map has many and this one none (2026-10-20). Such a map
+ * opens coloured by research area, or by year when there is one research area.
+ */
+export function defaultColorMode(map: { clusters: unknown[]; points: Array<Pick<SemanticMapPoint, "categories" | "year">> } | null): ColorMode {
+  if (!map || map.clusters.length > 1) return "cluster";
+  const distinct = (values: string[]) => new Set(values.filter(Boolean)).size;
+  if (distinct(map.points.map((point) => point.categories[0] ?? "")) >= 2) return "category";
+  if (distinct(map.points.map((point) => point.year)) >= 2) return "year";
+  return "cluster";
+}
+
+/** What the map's colours stand for, in a sentence under the legend. */
+export function colorMeaning(mode: ColorMode, neighborhoods: number): string {
+  if (mode === "category") return "Colour is each paper's research area, from the repository's own profile.";
+  if (mode === "year") return "Colour is the publication year; lighter is earlier.";
+  if (mode === "track") return "Colour is each paper's track.";
+  return neighborhoods > 1
+    ? "Colour is a neighborhood: papers the map found close together in meaning, from their text. Lines join papers that share signals."
+    : "Colour is a neighborhood, and these papers form one: they are too close in meaning to split into groups. Colour by research area or year to tell them apart.";
+}
+
 /** Labels are drawn by default only on a map small enough to read them; the reader's choice wins. */
 export function showLabelsByDefault(pointCount: number, readerChoice: boolean | null): boolean {
   return readerChoice ?? pointCount <= LABELS_BY_DEFAULT_MAX;

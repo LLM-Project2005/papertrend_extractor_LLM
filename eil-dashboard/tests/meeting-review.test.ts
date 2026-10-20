@@ -176,7 +176,9 @@ test("every example question offered is one these papers answer", () => {
     assert.ok("insight" in result, `${query.title} answers`);
   }
   // A wording that drops the value a view is about falls back to plain words.
-  const focused = queries.find((query) => query.focus) ?? { ...queries[0], focus: { dimension: "theme" as const, values: ["Mangrove restoration"] } };
+  // A view with a subject, or one made from the first view (with its own plain wording).
+  const stand = { ...queries[0], focus: { dimension: "theme" as const, values: ["Mangrove restoration"] } };
+  const focused = queries.find((query) => query.focus) ?? { ...stand, title: templateQuestion(stand) };
   const [kept] = applyWordings([focused], { questions: ["Which methods do these coastal studies use?"] });
   assert.equal(kept.question, templateQuestion(focused));
   const [worded] = applyWordings([focused], { questions: [`Which methods do studies of ${focused.focus!.values[0]} rely on?`] });

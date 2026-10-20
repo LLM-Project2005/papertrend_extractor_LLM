@@ -63,7 +63,22 @@ Chart mode, 22 requests: the planner read 21 sensibly - years, themes, theme cha
 
 Value charts were right against the papers: intervention lengths (11 interventions, 4 to 17 weeks) and research approaches this round, participants and countries in docs/35.
 
-## 5. Also found
+## 5. In production (2026-10-11)
+
+Production revision `papertrend-web-production-00090-bac` (rollback `00088-gen`), checked signed in as the test account:
+
+- Screening: "Which studies used a pretest-posttest design?" listed 12 of the 36 studies in 15 s.
+- High: "What did the dynamic assessment studies find?" in 44 s; the citation card quotes the passage and "Show in paper" opens it.
+- Chart mode: "Compare the number of participants in the dynamic assessment studies" charted the three studies, read after checking all 36, in 20 s.
+- Max: the writing-interventions comparison in 49 s ("Thought for 26s, 8 papers read, 11 claims checked"); 77 s in the previous round.
+
+It also showed two faults, fixed on the pilot: a screening detail that repeated its paper's title (now stripped in code, since the model ignored the instruction), and "Based on 12 of 41 papers" with "What do the other 29 papers say about this?" under a list that had checked every paper (a screening answer now reports complete coverage, and a complete answer offers no "other papers" question).
+
+## 6. The model and the effort in one control
+
+After Codex's composer: one pill beside Send names the model and the effort ("GPT-6 Luna Medium"); opened, the effort in the accent colour above the model's name (which opens the list of models), a reset to Medium in the corner, and a track of dots with a round knob. At Max the track fills with the sheen and stars twinkle across it. The separate model label is gone; the level descriptions are read out to screen readers.
+
+## 7. Also found
 
 - A regular expression in `repository-chat.ts` held two backspace characters where `\b` was meant (an editing script's escape), so "sections" never matched in the chart step. Fixed. Two test files carry the same slip (`tests/semantic-map-labels.test.ts:144`, `tests/site-ui.test.ts:41`), so those assertions cannot fail; they are outside the chat and left as they are.
 

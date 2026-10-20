@@ -94,6 +94,8 @@ export interface RepositoryDataChart {
   data: Array<Record<string, string | number>>;
   /** Where each value read from the papers comes from, in the papers' own words. */
   sources?: ChartSource[];
+  /** Each paper's research area, for bars that are papers (docs/38); rows carry their paperId. */
+  groups?: { label: string; byPaper: Record<string, string> };
   planner: {
     source: "llm" | "fallback";
     reason: string;
@@ -1542,7 +1544,7 @@ function totalWordCountResult(
           metric: "word_count",
           xKey: "label",
           yKeys: ["words"],
-          data: rows.map((paper) => ({ label: shortLabel(paper.title), words: paper.totalWords })),
+          data: rows.map((paper) => ({ label: shortLabel(paper.title), words: paper.totalWords, paperId: paper.paperId })),
           planner: {
             source: plan.source,
             reason: "Indexed word totals grouped by paper.",
@@ -1823,7 +1825,7 @@ export function wordCountResult(
           metric: "word_count",
           xKey: "label",
           yKeys: terms,
-          data: rows.map(({ paper, values }) => ({ label: shortLabel(paper.title), ...values })),
+          data: rows.map(({ paper, values }) => ({ label: shortLabel(paper.title), ...values, paperId: paper.paperId })),
           planner: {
             source: plan.source,
             reason: plan.reason || "Exact term counts grouped by paper.",
@@ -3655,6 +3657,55 @@ async function readChartResult(
   };
 }
 
+/**
+ * Each charted paper's research area, so bars that are papers - words per
+ * paper, participants in each study - can be told apart by it (docs/38). They
+ * took a colour each by position before, which said nothing. Only when the
+ * papers fall in two or more research areas.
+ */
+export function withResearchAreas(result: ChartStepResult, corpus: InsightCorpus | null): ChartStepResult {
+  if (!corpus || !corpus.classificationEnabled) return result;
+  const area = new Map(corpus.papers.filter((paper) => paper.category).map((paper) => [String(paper.id), paper.category as string]));
+  return {
+    ...result,
+    charts: (result.charts ?? []).map((chart) => {
+      if (chart.chartType === "insight") return chart;
+      const byPaper = Object.fromEntries(
+        chart.data
+          .map((row) => (row.paperId === undefined ? "" : String(row.paperId)))
+          .filter((id) => area.has(id))
+          .map((id) => [id, area.get(id) as string])
+      );
+      return new Set(Object.values(byPaper)).size >= 2 ? { ...chart, groups: { label: "Research area", byPaper } } : chart;
+    }),
+  };
+}
+
+/**
+ * Research areas for every chart of papers that has none yet. Chart mode adds
+ * them as it draws, but a word count asked for with its chart ("count the
+ * words in each paper and then show the bar chart") is drawn by the word-count
+ * step and came out in one colour on the pilot (2026-10-21). Only when a chart
+ * has rows that are papers; the areas come from the dashboard's own data.
+ */
+async function attachResearchAreas(context: RepositoryContext, charts: RepositoryChartPayload[]): Promise<RepositoryChartPayload[]> {
+  const needs = charts.some((chart) => chart.chartType !== "insight" && !chart.groups && chart.data.some((row) => row.paperId !== undefined));
+  if (!needs || context.papers.length === 0) return charts;
+  try {
+    const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
+    const corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, new Set(context.papers.map((paper) => String(paper.paperId))));
+    const grouped = withResearchAreas({ answer: "", citations: [], charts, coverage: completeCoverage(context, 0), limitations: [] }, corpus).charts ?? charts;
+    // A chart that already had its areas keeps them.
+    return grouped.map((chart, index) => {
+      const before = charts[index];
+      return before.chartType !== "insight" && before.groups ? before : chart;
+    });
+  } catch (error) {
+    console.warn("chat_chart_areas_failed", { message: error instanceof Error ? error.message : "unknown_error" });
+    return charts;
+  }
+}
+
 /** The papers a chart is about, found by checking every paper in scope; null to chart them all. */
 async function chartSubset(
   input: RepositoryChatInput,
@@ -3723,7 +3774,7 @@ async function visualizeResult(
     });
     if (plan?.tool === "read_papers") {
       const read = await readChartResult(input, context, execution, plan.read);
-      if (read) return read;
+      if (read) return withResearchAreas(read, corpus);
     } else if (plan?.tool === "build_view" && corpus) {
       return corpusChartResult(input, context, execution, corpus, plan.query);
     }
@@ -3844,7 +3895,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
   return {
     answer: sections.join("\n\n"),
     citations: [...citations.values()],
-    charts,
+    charts: await attachResearchAreas(context, charts),
     passageSources,
     coverage: {
       eligiblePapers,
@@ -4859,6 +4910,7 @@ async function runRepositoryChatWithContext(
     return {
       handled: true,
       ...result,
+      charts: await attachResearchAreas(context, result.charts),
       plan: lengthPlan,
       execution,
       coverage: completeCoverage(context, context.papers.length),
@@ -5010,6 +5062,7 @@ async function runRepositoryChatWithContext(
   return {
     handled: true,
     ...result,
+    charts: await attachResearchAreas(context, result.charts),
     plan,
     execution,
     coverage: completeCoverage(context, context.papers.length),

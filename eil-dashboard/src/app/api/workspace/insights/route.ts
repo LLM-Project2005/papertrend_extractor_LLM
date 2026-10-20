@@ -53,6 +53,9 @@ function parseToolArguments(raw: string | undefined | null): unknown {
  * called only when the reader asks for the page to be written up ("write"),
  * once per selection until the papers change or they ask again.
  */
+/** Titles are sent with the insights up to this many papers. */
+const TITLES_MAX = 600;
+
 export async function POST(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Sign in to see insights." }, { status: 401 });
@@ -76,9 +79,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "The insights could not be worked out just now. Try again in a moment." }, { status: 503 });
   }
   const { report } = built;
+  // The papers' titles, so a chart that draws each paper as a square can name it (docs/38).
+  const titles = built.corpus.papers.length <= TITLES_MAX ? Object.fromEntries(built.corpus.papers.map((paper) => [String(paper.id), paper.title])) : undefined;
   const cached = body.refresh ? null : await readCachedPlan(user.id, built, body.projectId).catch(() => null);
   const respond = (plan: InsightPlan, extra: Record<string, unknown> = {}) =>
-    NextResponse.json({ report, plan, cached: plan === cached && Boolean(cached), ...extra }, { headers: { "Cache-Control": "no-store" } });
+    NextResponse.json({ report, plan, titles, cached: plan === cached && Boolean(cached), ...extra }, { headers: { "Cache-Control": "no-store" } });
 
   if (cached) return respond(cached);
   if (body.mode === "auto" || report.insights.length === 0) return respond(computedPlan(report));

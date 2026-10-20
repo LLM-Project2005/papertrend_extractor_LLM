@@ -53,6 +53,24 @@ const DIMENSION_NOUN: Record<AskDimension, string> = {
   year: "year",
 };
 
+/**
+ * Narrowed papers at least this many are drawn against all those selected.
+ * With fewer, a share is one or two papers ("50% here" of 2), so only the
+ * counts are drawn.
+ */
+export const COMPARE_MIN = 8;
+
+/** "Papers on writing", "Papers using interviews", "Papers in Assessment". */
+function focusPhrase(dimension: AskDimension, subject: string): string {
+  if (dimension === "method") return `Papers using ${subject}`;
+  if (dimension === "category") return `Papers in ${subject}`;
+  if (dimension === "study_type") return `${subject} papers`;
+  if (dimension === "year") return `Papers from ${subject}`;
+  if (dimension === "aim") return `Papers that ${subject}`;
+  if (dimension === "contribution") return `Papers contributing ${subject}`;
+  return `Papers on ${subject}`;
+}
+
 export function valuesOf(paper: CorpusPaper, dimension: AskDimension): string[] {
   switch (dimension) {
     case "theme":
@@ -116,8 +134,36 @@ function yearSpan(index: Map<string, Set<PaperId>>, max: number): Array<[string,
 
 export type AskResult = { insight: Insight } | { unanswerable: string };
 
+/**
+ * What a planned view means, whatever shape the model gave it. Both were
+ * planned for questions in the chart question bank (docs/38):
+ *  - One subject on the columns' dimension is a narrowing, not a grid of one
+ *    column: "which years had papers on Global Englishes" drew years by theme.
+ *  - A change among papers that all have the value asked about is that
+ *    value's own change: "is interest in dynamic assessment declining" drew
+ *    dynamic assessment at 100% of the dynamic assessment papers, before and after.
+ */
+export function normalizeQuery(query: AskQuery): AskQuery {
+  let next = query;
+  if (next.focus && next.columns && next.columns === next.focus.dimension && next.focus.values.length === 1) next = { ...next, columns: null };
+  if (next.measure === "change" && next.focus && next.focus.dimension === next.rows) {
+    next = { ...next, about: next.about?.length ? next.about : next.focus.values.slice(0, 3), focus: null };
+  }
+  return next;
+}
+
+function listOf(items: string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** "papers on writing", "papers using interviews": the narrowed papers in a sentence. */
+function among(dimension: AskDimension, subject: string): string {
+  return focusPhrase(dimension, subject).replace(/^./, (c) => c.toLowerCase());
+}
+
 /** Runs a checked query. Every number in the answer is computed here. */
-export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
+export function runAskQuery(corpus: InsightCorpus, asked: AskQuery): AskResult {
+  const query = normalizeQuery(asked);
   if (!query.answerable) return { unanswerable: query.reason?.slice(0, 240) || "These papers cannot answer that question." };
   if (!ASK_DIMENSIONS.includes(query.rows)) return { unanswerable: "That question needs data these papers do not have." };
   const columns = query.columns && ASK_DIMENSIONS.includes(query.columns) && query.columns !== query.rows ? query.columns : null;
@@ -153,13 +199,22 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
   const undated = usesYear ? papers.filter((paper) => paper.year === null).length : 0;
   const undatedNote = undated > 0 ? ` ${undated === 1 ? "One paper has" : `${undated} papers have`} no readable year and ${undated === 1 ? "is" : "are"} left out of the years.` : "";
   const N = papers.length;
-  const scope = focusText ? `the ${N} papers on ${focusText}` : `the ${N} papers selected`;
-  if (N < MIN_PAPERS) {
-    return { unanswerable: `Only ${N === 1 ? "one paper" : `${N} papers`} ${focusText ? `are on ${focusText}` : "are selected"}; an answer needs at least ${MIN_PAPERS}.` };
+  const scope =
+    N === 1
+      ? `the one ${focusText && narrowedBy ? among(narrowedBy.dimension, focusText).replace(/papers/, "paper") : "paper selected"}`
+      : focusText && narrowedBy
+        ? `the ${N} ${among(narrowedBy.dimension, focusText)}`
+        : `the ${N} papers selected`;
+  const Scope = scope.replace(/^./, (c) => c.toUpperCase());
+  // A count of one or two papers is a fact, drawn as squares; a grid or a
+  // change over time is a pattern, and needs at least MIN_PAPERS behind it.
+  if (N === 0) return { unanswerable: focusText ? `None of the selected papers has ${focusText}.` : "No analysed papers are selected." };
+  if (N < MIN_PAPERS && (query.measure === "change" || columns)) {
+    return { unanswerable: `Only ${N === 1 ? "one of the selected papers has" : `${N} of the selected papers have`} ${focusText || "an analysis"}; a pattern across papers needs at least ${MIN_PAPERS}.` };
   }
   // The title is built here from the query, so no model wording reaches the page.
   const noun = (dimension: AskDimension) => DIMENSION_PLURAL[dimension];
-  const within = focusShort ? ` among papers on ${focusShort}` : "";
+  const within = focusShort && narrowedBy ? ` among ${among(narrowedBy.dimension, focusShort)}` : "";
   const alongside = narrowedBy?.dimension === query.rows && !columns && query.measure !== "change" && !(query.about ?? []).length;
   const title = (
     query.measure === "change" && query.rows !== "year"
@@ -169,7 +224,7 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
         : query.rows === "year"
           ? `Papers per year${within}`
           : alongside
-            ? `Other ${noun(query.rows)} in papers on ${focusShort}`
+            ? `Other ${noun(query.rows)} in ${among(narrowedBy!.dimension, focusShort)}`
             : `Papers by ${DIMENSION_NOUN[query.rows]}${within}`
   ).slice(0, 140);
   const base = {
@@ -184,7 +239,7 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
   if (query.measure === "change" && query.rows !== "year") {
     const split = halves(papers);
     if (!split || split.early.length < MIN_PAPERS || split.late.length < MIN_PAPERS) {
-      return { unanswerable: `The ${focusText ? `papers on ${focusText}` : "selected papers"} span too few dated years to compare early and late.` };
+      return { unanswerable: `The ${focusText && narrowedBy ? among(narrowedBy.dimension, focusText) : "selected papers"} span too few dated years to compare early and late.` };
     }
     const shifts = labelShifts(papers, (paper) => valuesOf(paper, query.rows));
     const tags = new Map([
@@ -198,13 +253,21 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       .sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))
       .slice(0, 10);
     if (index.length === 0) return { unanswerable: `No ${DIMENSION_NOUN[query.rows]} appears in 2 or more of ${scope}.` };
-    const rows = index.map(([label, ids]) => ({
-      label,
-      left: percent(intersectionSize(ids, early), split.early.length),
-      right: percent(intersectionSize(ids, late), split.late.length),
-      tag: tags.get(label),
-      paperIds: [...ids],
-    }));
+    const rows = index.map(([label, ids]) => {
+      const leftCount = intersectionSize(ids, early);
+      const rightCount = intersectionSize(ids, late);
+      return {
+        label,
+        left: percent(leftCount, split.early.length),
+        right: percent(rightCount, split.late.length),
+        leftCount,
+        rightCount,
+        leftOf: split.early.length,
+        rightOf: split.late.length,
+        tag: tags.get(label),
+        paperIds: [...ids],
+      };
+    });
     const asked = resolveValues(corpus, query.rows, query.about ?? [])[0];
     const lead = rows.find((row) => row.label === asked) ?? [...rows].sort((a, b) => Math.abs(b.right - b.left) - Math.abs(a.right - a.left))[0];
     // The value asked about may be too rare to draw: say so, rather than
@@ -219,6 +282,7 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       fact("late_papers", split.late.length, "papers", `papers from ${split.lateLabel}`),
       fact("lead_early_share", lead.left, "percent", `share of ${split.earlyLabel} papers with ${lead.label}`),
       fact("lead_late_share", lead.right, "percent", `share of ${split.lateLabel} papers with ${lead.label}`),
+      fact("moved", moved.length, "count", `${DIMENSION_PLURAL[query.rows]} that pass the shift rules`),
     ];
     const verdict = lead.tag
       ? `a shift that holds with any one paper removed`
@@ -229,8 +293,9 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
         family: "change",
         chart: { kind: "compare", leftLabel: split.earlyLabel, rightLabel: split.lateLabel, unit: "percent", sequence: "time", rows },
         facts,
-        takeaway: `${askedMissing}Among ${scope}, ${lead.label === asked ? "" : "the biggest change is "}${lead.label}${lead.label === asked ? " went" : ""}: ${lead.left}% of papers in ${split.earlyLabel}, ${lead.right}% in ${split.lateLabel} - ${verdict}.${moved.length > 1 ? ` ${moved.length} ${DIMENSION_NOUN[query.rows]}s pass the shift rules.` : ""}`,
+        takeaway: `${askedMissing}Among ${scope}, ${lead.label === asked ? "" : "the biggest change is "}${lead.label}${lead.label === asked ? " went" : ""}: ${lead.left}% of papers in ${split.earlyLabel}, ${lead.right}% in ${split.lateLabel} - ${verdict}.${moved.length > 1 ? ` ${moved.length} ${DIMENSION_PLURAL[query.rows]} pass the shift rules.` : ""}`,
         paperIds: uniqueIds(rows.flatMap((row) => row.paperIds)),
+        population: { papers: N, label: scope },
         basis: `The ${N} papers split where they best halve (${split.early.length} and ${split.late.length}). "Gaining" and "losing" follow the Trend tab's rules: at least ${MIN_PAPERS} papers, and a change that survives removing any one.${undatedNote}`,
       },
     };
@@ -297,10 +362,12 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
           values,
           marks,
           paperIds,
+          rowTotals: rowIndex.map(([, rowIds]) => rowIds.size),
         },
         facts,
         takeaway,
         paperIds: uniqueIds(paperIds.flat(2)),
+        population: { papers: N, label: scope },
         basis: `Papers per pair of values among ${scope}. Outlined: at least ${MIN_PAPERS} papers and 1.5 times chance, even with one fewer.${undatedNote}`,
       },
     };
@@ -319,9 +386,19 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
         .sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))
         .slice(0, 12);
   const about = resolveValues(corpus, query.rows, query.about ?? [])[0] ?? null;
+  // The narrowed papers are drawn against all those selected when there are
+  // enough of them for a share to mean something, or when the question is
+  // that comparison ("is mixed methods more common in writing papers?"). The
+  // old chart drew the count and printed both shares in grey under it ("25%
+  // here · 17% of all papers", 2026-10-20).
+  const comparing = Boolean(focusText) && query.rows !== "year" && N < total && N >= MIN_PAPERS && (N >= COMPARE_MIN || Boolean(about));
   const facts: InsightFact[] = [fact("scope", N, "papers", scope), fact("total", total, "papers", "papers selected")];
   const shareHere = (value: string) => percent(index.find(([label]) => label === value)?.[1].size ?? 0, N);
   const shareOverall = (value: string) => percent(overall.get(value)?.size ?? 0, total);
+  const population = { papers: N, label: scope };
+  const allIds = uniqueIds(index.flatMap(([, ids]) => [...ids]));
+  const counted = SINGLE_VALUED.has(query.rows) ? "" : "; a paper can count under more than one";
+  const leftOut = subject.length ? `; the ${DIMENSION_PLURAL[query.rows]} asked about are left out, since every paper here has one` : "";
   let takeaway: string;
   if (rowPick) {
     const parts = rowPick.map((value, i) => {
@@ -337,16 +414,20 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       fact("about_share", shareHere(about), "percent", `share of ${scope} with ${about}`),
       fact("about_overall", shareOverall(about), "percent", `share of all selected papers with ${about}`)
     );
-    takeaway = focusText
+    takeaway = N === 1
+      ? `${Scope} ${count === 0 ? "does not have" : "has"} ${about}.`
+      : comparing
       ? count === 0
         ? `None of ${scope} has ${about}, against ${shareOverall(about)}% of all ${total} papers selected.`
         : `${about} appears in ${count} of ${scope} (${shareHere(about)}%), against ${shareOverall(about)}% of all ${total} papers selected.`
-      : `${about} appears in ${count} of ${scope} (${shareHere(about)}%).`;
+      : count === 0
+        ? `None of ${scope} has ${about}.`
+        : `${about} appears in ${count} of ${scope} (${shareHere(about)}%).`;
   } else {
     if (index.length === 0) {
       return {
         unanswerable: subject.length
-          ? `The ${N} papers on ${focusText} have no other ${DIMENSION_NOUN[query.rows]} recorded.`
+          ? `The ${N} ${among(narrowedBy!.dimension, focusText)} have no other ${DIMENSION_NOUN[query.rows]} recorded.`
           : `None of ${scope} has a ${DIMENSION_NOUN[query.rows]} recorded.`,
       };
     }
@@ -363,8 +444,95 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       ? `${scope.replace(/^./, (c) => c.toUpperCase())} run from ${dated[0][0]} to ${dated[dated.length - 1][0]}; ${tied.length > 1 ? `${tied.slice(0, -1).join(", ")} and ${tied[tied.length - 1]} have the most, ${top[1].size} each` : `${top[0]} has the most, ${top[1].size}`}${focusText ? "" : ` (${shareHere(top[0])}%)`}.`
       : tied.length > 1
         ? `Among ${scope}, the most common ${subject.length ? "other " : ""}${DIMENSION_PLURAL[query.rows]} are ${tied.slice(0, -1).join(", ")} and ${tied[tied.length - 1]}, in ${top[1].size} each (${shareHere(top[0])}%).`
-        : `Among ${scope}, the most common ${subject.length ? "other " : ""}${DIMENSION_NOUN[query.rows]} is ${top[0]}, in ${top[1].size} (${shareHere(top[0])}%)${focusText ? `, against ${shareOverall(top[0])}% of all ${total} papers selected` : ""}.`;
+        : `Among ${scope}, the most common ${subject.length ? "other " : ""}${DIMENSION_NOUN[query.rows]} is ${top[0]}, in ${top[1].size} (${shareHere(top[0])}%)${comparing ? `, against ${shareOverall(top[0])}% of all ${total} papers selected` : ""}.`;
   }
+
+  // Every value the same - seven themes in one paper each - is no chart: the
+  // bars would all be one length and say nothing (docs/38). A table says which
+  // papers have which, and the sentence says none stands out.
+  const sizes = index.map(([, ids]) => ids.size);
+  if (query.rows !== "year" && index.length >= 2 && new Set(sizes).size === 1 && !rowPick && !about) {
+    const titleOf = new Map(papers.map((paper) => [paper.id, paper.title]));
+    const each = sizes[0];
+    facts.push(fact("each", each, "papers", `papers with each ${DIMENSION_NOUN[query.rows]}`), fact("values", index.length, "count", `${DIMENSION_PLURAL[query.rows]} found`));
+    return {
+      insight: {
+        ...base,
+        chart: {
+          kind: "table",
+          columns: [
+            { key: "value", label: DIMENSION_NOUN[query.rows].replace(/^./, (c) => c.toUpperCase()) },
+            { key: "papers", label: each === 1 ? "Paper" : "Papers" },
+          ],
+          rows: index.map(([label, ids]) => ({ key: label, cells: { value: label, papers: [...ids].map((id) => titleOf.get(id) ?? "Untitled paper") }, paperIds: [...ids] })),
+        },
+        facts,
+        takeaway:
+          N === 1
+            ? `${Scope} records ${index.length} ${subject.length ? "other " : ""}${DIMENSION_PLURAL[query.rows]}: ${listOf(index.map(([label]) => label))}.`
+            : `Each of the ${index.length} ${subject.length ? "other " : ""}${DIMENSION_PLURAL[query.rows]} appears in ${each === 1 ? "just one" : each} of ${scope}, so none stands out.`,
+        paperIds: allIds,
+        population,
+        ...(about ? { mentions: [about] } : {}),
+        basis: `The ${DIMENSION_PLURAL[query.rows]} recorded for ${scope}${counted}${leftOut}.${undatedNote}`,
+      },
+    };
+  }
+
+  // One value only is a number, not a one-bar chart.
+  if (query.rows !== "year" && index.length === 1 && !rowPick) {
+    const [label, ids] = index[0];
+    return {
+      insight: {
+        ...base,
+        chart: {
+          kind: "stat",
+          value: `${ids.size} of ${N}`,
+          label: `${N === 1 ? "paper" : "papers"} with ${label}`,
+          detail: `The only ${subject.length ? "other " : ""}${DIMENSION_NOUN[query.rows]} recorded for ${scope}.`,
+        },
+        facts,
+        takeaway: N === 1 && !about ? `${Scope} records one ${DIMENSION_NOUN[query.rows]}: ${label}.` : takeaway,
+        paperIds: allIds,
+        population,
+        ...(about ? { mentions: [about] } : {}),
+        basis: `The ${DIMENSION_PLURAL[query.rows]} recorded for ${scope}${leftOut}.${undatedNote}`,
+      },
+    };
+  }
+
+  if (comparing) {
+    return {
+      insight: {
+        ...base,
+        chart: {
+          kind: "compare",
+          leftLabel: focusPhrase(narrowedBy?.dimension ?? "theme", focusShort),
+          rightLabel: "All papers selected",
+          unit: "percent",
+          sequence: "contrast",
+          // The value asked about first, even when none of the narrowed papers has it.
+          rows: [
+            ...(about && !index.some(([label]) => label === about) ? [[about, new Set<PaperId>()] as [string, Set<PaperId>]] : []),
+            ...index,
+          ]
+            .sort(([a], [b]) => Number(b === about) - Number(a === about))
+            .map(([label, ids]) => {
+              const all = overall.get(label)?.size ?? 0;
+              return { label, left: percent(ids.size, N), right: percent(all, total), leftCount: ids.size, rightCount: all, leftOf: N, rightOf: total, paperIds: [...ids], ...(label === about ? { asked: true } : {}) };
+            }),
+        },
+        facts,
+        takeaway,
+        paperIds: allIds,
+        population,
+        ...(about ? { mentions: [about] } : {}),
+        basis: `The share of ${scope} with each ${DIMENSION_NOUN[query.rows]}, beside its share of all ${total} papers selected${counted}${leftOut}.${undatedNote}`,
+      },
+    };
+  }
+
+  const emphasis = rowPick ?? (about ? [about] : []);
   return {
     insight: {
       ...base,
@@ -372,17 +540,17 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
         kind: "bars",
         valueLabel: "Papers",
         unit: "papers",
-        rows: index.map(([label, ids]) => ({
-          label,
-          value: ids.size,
-          detail: focusText ? `${percent(ids.size, N)}% here · ${shareOverall(label)}% of all papers` : `${percent(ids.size, N)}% of papers`,
-          paperIds: [...ids] as PaperId[],
-        })),
+        rows: index.map(([label, ids]) => ({ label, value: ids.size, paperIds: [...ids] as PaperId[] })),
+        ...(query.rows === "year" ? { layout: "columns" as const } : {}),
+        // Values compared by name are all drawn in the accent: the reader asked for each.
+        ...(emphasis.length ? { emphasis } : {}),
       },
       facts,
       takeaway,
-      paperIds: uniqueIds(index.flatMap(([, ids]) => [...ids])),
-      basis: `Papers per ${DIMENSION_NOUN[query.rows]} among ${scope}${focusText ? `, beside the share among all ${total} papers selected` : ""}${query.rows === "year" ? "; years with no papers are shown as empty" : SINGLE_VALUED.has(query.rows) ? "" : "; a paper can count under more than one"}${subject.length ? `; the ${DIMENSION_PLURAL[query.rows]} asked about are left out, since every paper here has one` : ""}.${undatedNote}`,
+      paperIds: allIds,
+      population,
+      ...(about ? { mentions: [about] } : {}),
+      basis: `Papers per ${DIMENSION_NOUN[query.rows]} among ${scope}${query.rows === "year" ? "; years with no papers are shown as empty" : counted}${leftOut}.${undatedNote}`,
     },
   };
 }

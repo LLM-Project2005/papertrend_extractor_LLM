@@ -148,6 +148,7 @@ export function themePairs(corpus: InsightCorpus): Insight | null {
     takeaway: `${top.a} and ${top.b} meet in ${top.together} papers, ${times(top.lift)} as often as their sizes predict: ${percent(top.together, top.aPapers)}% of the ${top.aPapers} papers on ${top.a} also cover ${top.b}.`,
     score: Math.min(pairs[0].related ? 0.45 : 1, 0.3 + 0.4 * effect + 0.3 * support),
     paperIds: uniqueIds(shown.flatMap((pair) => pair.paperIds)),
+    population: { papers: N, label: "papers selected" },
     basis: `Pairs of themes that share at least ${MIN_PAPERS} papers and meet at least 1.5 times as often as chance, even with one fewer shared paper.`,
     caution: nested
       ? `Every paper on ${top.a} is also on ${top.b}, so ${top.a} may simply be a part of ${top.b} rather than a separate subject studied alongside it.`
@@ -234,11 +235,13 @@ export function methodsByTheme(corpus: InsightCorpus): Insight | null {
       values,
       marks,
       paperIds,
+      rowTotals: themes.map(([, ids]) => ids.size),
     },
     facts,
     takeaway,
     score: 0.25 + 0.55 * marksScore,
     paperIds: uniqueIds(paperIds.flat(2)),
+    population: { papers: N, label: "papers selected" },
     basis: `Papers per theme and method. Marked cells: a pairing in at least ${MIN_PAPERS} papers and 1.5 times chance, or none where about 3 were expected.`,
   };
 }
@@ -285,6 +288,7 @@ export function bridgePapers(corpus: InsightCorpus): Insight | null {
         title: entry.paper.title,
         detail: `The only paper on both ${entry.a} (${entry.aPapers} papers) and ${entry.b} (${entry.bPapers} papers).`,
         paperIds: [entry.paper.id],
+        names: [entry.a, entry.b],
       })),
     },
     facts: [
@@ -295,6 +299,7 @@ export function bridgePapers(corpus: InsightCorpus): Insight | null {
     takeaway: `${top.a} (${top.aPapers} papers) and ${top.b} (${top.bPapers} papers) meet in only one paper: "${top.paper.title}".`,
     score: 0.25 + 0.3 * clamp01((top.expected - 1) / 2) + 0.05 * clamp01(found.length / 4),
     paperIds: shown.map((entry) => entry.paper.id),
+    population: { papers: N, label: "papers selected" },
     basis: "Themes with at least 4 papers, large enough to be expected to meet more than once, that meet in exactly one paper.",
   };
 }
@@ -324,6 +329,10 @@ export function categorySignatures(corpus: InsightCorpus): Insight | null {
         group: category,
         left: percent(count, catIds.size),
         right: percent(themeIds.size - count, rest),
+        leftCount: count,
+        rightCount: themeIds.size - count,
+        leftOf: catIds.size,
+        rightOf: rest,
         paperIds: intersection(catIds, themeIds),
         gap: inside - outside,
         inside,
@@ -355,11 +364,12 @@ export function categorySignatures(corpus: InsightCorpus): Insight | null {
     family: "composition",
     question: "What sets each research area apart?",
     view: { measure: "share in vs outside category", rows: "theme", cols: "category" },
-    chart: { kind: "compare", leftLabel: "In the research area", rightLabel: "In the other papers", unit: "percent", sequence: "contrast", rows: rows.map(({ label, group, left, right, paperIds }) => ({ label, group, left, right, paperIds })) },
+    chart: { kind: "compare", leftLabel: "In the research area", rightLabel: "In the other papers", unit: "percent", sequence: "contrast", rows: rows.map(({ label, group, left, right, leftCount, rightCount, leftOf, rightOf, paperIds }) => ({ label, group, left, right, leftCount, rightCount, leftOf, rightOf, paperIds })) },
     facts,
     takeaway,
     score: 0.35 + 0.4 * clamp01(first.gap / 0.4) + 0.15 * clamp01(first.count / 6),
     paperIds: uniqueIds(rows.flatMap((row) => row.paperIds)),
+    population: { papers: N, label: "papers selected" },
     basis: `Themes in at least ${MIN_PAPERS} of a research area's papers, and at least 1.5 times as common there as in the other papers, even with one paper removed.`,
   };
 }
@@ -454,6 +464,7 @@ export function themeLifecycles(corpus: InsightCorpus): Insight | null {
     takeaway: parts.join(" "),
     score: 0.3 + 0.25 * clamp01(fresh.length / 3) + 0.15 * clamp01(fading.length / 2) + 0.1 * clamp01(enduring.length / 3),
     paperIds: uniqueIds(shown.flatMap((row) => row.paperIds)),
+    population: { papers: dated.length, label: "dated papers selected" },
     basis: `Themes with at least ${MIN_PAPERS} dated papers. New: every paper is in the most recent third; faded: none in the later half.`,
   };
 }
@@ -523,8 +534,8 @@ export function themeBreadth(corpus: InsightCorpus): Insight | null {
       valueLabel: `Themes among ${k} papers`,
       unit: "themes",
       rows: [
-        { label: split.earlyLabel, value: early, detail: `${split.early.length} papers`, paperIds: split.early.map((paper) => paper.id) },
-        { label: split.lateLabel, value: late, detail: `${split.late.length} papers`, paperIds: split.late.map((paper) => paper.id) },
+        { label: split.earlyLabel, value: early, detail: `${split.early.length} papers in this period`, paperIds: split.early.map((paper) => paper.id) },
+        { label: split.lateLabel, value: late, detail: `${split.late.length} papers in this period`, paperIds: split.late.map((paper) => paper.id) },
       ],
     },
     facts,
@@ -570,10 +581,16 @@ function shiftInsight(
   if (labels.length < 2) return null;
   const rows: CompareRow[] = labels.map((label) => {
     const ids = index.get(label) ?? new Set<PaperId>();
+    const leftCount = intersectionSize(ids, earlyIds);
+    const rightCount = intersectionSize(ids, lateIds);
     return {
       label,
-      left: percent(intersectionSize(ids, earlyIds), earlyPapers),
-      right: percent(intersectionSize(ids, lateIds), latePapers),
+      left: percent(leftCount, earlyPapers),
+      right: percent(rightCount, latePapers),
+      leftCount,
+      rightCount,
+      leftOf: earlyPapers,
+      rightOf: latePapers,
       tag: tagOf.get(label),
       paperIds: [...ids],
     };
@@ -608,6 +625,7 @@ function shiftInsight(
     takeaway,
     score: 0.35 + 0.45 * clamp01(size / 0.3) + 0.1 * clamp01(moved.length / 3),
     paperIds: uniqueIds(rows.flatMap((row) => row.paperIds)),
+    population: { papers: earlyPapers + latePapers, label: "dated papers selected" },
     basis: `The dated papers split where they best halve (${earlyPapers} and ${latePapers}). A change counts with at least ${MIN_PAPERS} papers, and only if it survives removing any one of them.`,
   };
 }
@@ -676,7 +694,7 @@ export function studyContributions(corpus: InsightCorpus): Insight | null {
       rows: kinds.map(([name, ids]) => ({
         label: name.charAt(0).toUpperCase() + name.slice(1),
         value: ids.size,
-        detail: `${percent(ids.size, N)}% of papers${moved.find((entry) => entry.shift.topic === name) ? ` · ${moved.find((entry) => entry.shift.topic === name)!.tag}` : ""}`,
+        ...(moved.find((entry) => entry.shift.topic === name) ? { detail: `${moved.find((entry) => entry.shift.topic === name)!.tag} ground` } : {}),
         paperIds: [...ids],
       })),
     },
@@ -684,6 +702,7 @@ export function studyContributions(corpus: InsightCorpus): Insight | null {
     takeaway,
     score: 0.3 + (moved.length ? 0.35 : 0) + 0.1 * clamp01(kinds.length / 6),
     paperIds: uniqueIds(kinds.flatMap(([, ids]) => [...ids])),
+    population: { papers: N, label: "papers selected" },
     basis: "The contribution each paper's analysis recorded (a paper can have more than one).",
   };
 }
@@ -728,12 +747,14 @@ export function studyTypes(corpus: InsightCorpus): Insight | null {
       kind: "bars",
       valueLabel: "Papers",
       unit: "papers",
-      rows: groups.slice(0, 6).map(([name, ids]) => ({ label: name, value: ids.size, detail: `${percent(ids.size, N)}% of papers`, paperIds: [...ids] })),
+      rows: groups.slice(0, 6).map(([name, ids]) => ({ label: name, value: ids.size, paperIds: [...ids] })),
     },
     facts,
     takeaway,
     score: 0.25 + (s ? 0.3 : 0),
     paperIds: uniqueIds(groups.flatMap(([, ids]) => [...ids])),
+    population: { papers: N, label: "papers selected" },
+    ...(s ? { mentions: [s.theme] } : {}),
     basis: "The research type the analysis assigned each paper.",
   };
 }
@@ -788,11 +809,112 @@ export function authorKeywordGaps(corpus: InsightCorpus): Insight | null {
     takeaway: `Authors of ${top.papers.length} papers list "${top.label}" as a keyword, but none of those papers' themes names it.`,
     score: 0.2 + 0.2 * clamp01((top.papers.length - 1) / 4),
     paperIds: uniqueIds(gaps.slice(0, 6).flatMap((entry) => entry.papers.map((paper) => paper.id))),
+    population: { papers: N, label: "papers selected" },
     basis: "Keywords the authors listed on at least 2 papers, compared with the themes and topics found in those papers.",
   };
 }
 
+/* ------------------------------------------- a few papers, side by side */
+
+/** Up to this many papers, the tab shows each of them side by side (docs/38). */
+export const SIDE_BY_SIDE_MAX = 12;
+/** Below this many, patterns across papers are not looked for, so these views lead. */
+export const FEW_PAPERS = 8;
+
+/**
+ * The papers side by side: a table with one row per paper. On a repository of
+ * 6 papers the tab had a notice and charts of 1s (2026-10-20); a reader of six
+ * papers wants to see the six.
+ */
+export function paperOverview(corpus: InsightCorpus): Insight | null {
+  const N = corpus.papers.length;
+  if (N === 0 || N > SIDE_BY_SIDE_MAX) return null;
+  const papers = [...corpus.papers].sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999) || a.title.localeCompare(b.title));
+  const classified = corpus.classificationEnabled && papers.some((paper) => paper.category);
+  const typed = papers.some((paper) => paper.typology);
+  const shared = sizeOrder(indexBy(papers, (paper) => paper.themes), 2);
+  const years = papers.map((paper) => paper.year).filter((year): year is number => year !== null);
+  const span = years.length ? (Math.min(...years) === Math.max(...years) ? ` from ${Math.min(...years)}` : ` from ${Math.min(...years)} to ${Math.max(...years)}`) : "";
+  const only = papers[0];
+  return {
+    id: "paper_overview",
+    family: "composition",
+    question: N === 1 ? "The paper at a glance" : "The papers side by side",
+    view: { measure: "profile", rows: "paper" },
+    chart: {
+      kind: "table",
+      columns: [
+        { key: "title", label: "Paper" },
+        { key: "year", label: "Year", align: "right" },
+        ...(classified ? [{ key: "category", label: "Research area" }] : []),
+        ...(typed ? [{ key: "type", label: "Kind of study" }] : []),
+        { key: "methods", label: "Methods" },
+        { key: "themes", label: "Themes" },
+      ],
+      rows: papers.map((paper) => ({
+        key: String(paper.id),
+        cells: {
+          title: paper.title,
+          year: paper.year === null ? null : String(paper.year),
+          category: paper.category,
+          type: paper.typology,
+          methods: [...paper.methods].slice(0, 4),
+          themes: [...paper.themes].slice(0, 5),
+        },
+        paperIds: [paper.id],
+      })),
+    },
+    facts: [fact("papers", N, "papers", "papers selected"), fact("shared_themes", shared.length, "themes", "themes in more than one paper")],
+    takeaway:
+      N === 1
+        ? `One paper is selected: "${only.title}"${only.year ? ` (${only.year})` : ""}. Its methods and themes are below; patterns across papers need at least ${FEW_PAPERS}.`
+        : `${N} papers${span}, side by side. ${shared.length === 0 ? "No theme appears in more than one of them." : `${shared.length === 1 ? "One theme appears" : `${shared.length} themes appear`} in more than one of them.`}`,
+    score: N < FEW_PAPERS ? 0.99 : 0.2,
+    paperIds: papers.map((paper) => paper.id),
+    population: { papers: N, label: "papers selected" },
+    basis: `Each paper's year${classified ? ", research area" : ""}${typed ? ", kind of study" : ""}, methods and themes, as its analysis recorded them; up to 4 methods and 5 themes each.`,
+  };
+}
+
+/** What a few papers have in common: the themes and methods in more than one of them, drawn one square per paper. */
+export function sharedValues(corpus: InsightCorpus): Insight | null {
+  const N = corpus.papers.length;
+  if (N < 2 || N > SIDE_BY_SIDE_MAX * 2) return null;
+  const rows = [
+    ...sizeOrder(indexBy(corpus.papers, (paper) => paper.themes), 2).map(([label, ids]) => ({ label, ids, kind: "theme" })),
+    ...sizeOrder(indexBy(corpus.papers, (paper) => paper.methods), 2).map(([label, ids]) => ({ label, ids, kind: "method" })),
+  ]
+    .sort((a, b) => b.ids.size - a.ids.size || a.label.localeCompare(b.label))
+    .slice(0, 10);
+  if (rows.length === 0) return null;
+  const [top, second] = rows;
+  return {
+    id: "shared_values",
+    family: "relationship",
+    question: "What do these papers share?",
+    view: { measure: "papers", rows: "shared theme or method" },
+    chart: {
+      kind: "bars",
+      valueLabel: "Papers",
+      unit: "papers",
+      rows: rows.map((row) => ({ label: row.label, value: row.ids.size, detail: row.kind === "theme" ? "Theme" : "Method", paperIds: [...row.ids] })),
+    },
+    facts: [
+      fact("top", top.ids.size, "papers", `papers with ${top.label}`),
+      fact("papers", N, "papers", "papers selected"),
+      ...(second ? [fact("second", second.ids.size, "papers", `papers with ${second.label}`)] : []),
+    ],
+    takeaway: `${top.label} is in ${top.ids.size} of the ${N} papers${second ? `, and ${second.label} in ${second.ids.size}` : ""}.`,
+    score: N < FEW_PAPERS ? 0.9 : 0.15,
+    paperIds: uniqueIds(rows.flatMap((row) => [...row.ids])),
+    population: { papers: N, label: "papers selected" },
+    basis: "Themes and methods recorded for more than one of the selected papers.",
+  };
+}
+
 export const ANALYSES = [
+  paperOverview,
+  sharedValues,
   themePairs,
   methodsByTheme,
   categorySignatures,
