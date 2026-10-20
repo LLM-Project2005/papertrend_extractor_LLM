@@ -144,3 +144,21 @@ Changes:
 - The first, looser judging had passed three plans that drew the wrong chart (V21, V28, V44). The judge now requires the asked value itself.
 
 **Found, not changed:** `likelyDuplicatePapers` treats two papers as one study when 80% of their title words match, so near-identical titles are counted once everywhere. Examples are "… among Thai EFL learners" against "… among Vietnamese EFL learners", or "Part 1" against "Part 2". The synthetic collections show it: 500 generated papers count as 458.
+
+## 8. In production (2026-10-21)
+
+The release went to the pilot first (PR #278, then #279, web papertrend-web-cloudsql-pilot-00282-qtj) and then to production (PR #280, web **papertrend-web-production-00094-yob**). The rollback revision is 00092-hox. It contains the Team link (#277), the PDF fix and the charts.
+
+**Checked on the pilot, then on production, signed in as the test account:**
+- The Team page links to jakapun-t.github.io.
+- Two testtest papers whose figures are JPEG 2000 now decode, with no warnings. The production before this release gave 4 and 2 CSP decode errors. Figure 1 of "Beliefs and Classroom Assessment Practices…" draws on page 4.
+- The Adaptive tab on testtest shows 5 cards: grouped bars, bars and a grid, each with a Papers | % switch.
+- The Adaptive tab on Pipeline check (EIL) shows "6 papers from 2012–2025, side by side". Before this release it said "Nothing strong enough to show yet". Its 6 papers share no theme, and the page says so.
+- The semantic map opens coloured by research area and says why.
+- In Chart mode, papers per year are squares, words per paper are bars coloured by research area, and themes are drawn as squares.
+
+**Found on the pilot and fixed before production (#279):** "count the number of words in each paper and then show the bar chart" drew one colour. That request is answered by the word count's shortcut, not by Chart mode. Every chart of papers now gets its papers' research areas after its steps run.
+
+**Found on production and fixed on development only (47b3c70, not deployed):** the map stores every research area a paper has, alphabetically, and colouring took the first. So 40 of testtest's 41 papers came out as "English Language Instruction". Each paper's own (single-label) area now comes first when a map is read.
+
+**OpenRouter spent on the live checks:** $0.0034. Planning the three Chart mode requests twice on the pilot and once on production accounts for all of it; the word counts need no model call.
