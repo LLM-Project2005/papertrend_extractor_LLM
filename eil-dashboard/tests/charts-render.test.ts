@@ -4,6 +4,7 @@
  * charts saved before docs/38, which must still draw.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React, { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -224,4 +225,26 @@ test("answers counted by papers are squares out of the papers that state one", a
   });
   assert.match(html, /Papers, out of the 4 that state it/);
   assert.match(html, /data-units="true"/);
+});
+
+test("charts of papers take each paper's research area, on every path that draws one", async () => {
+  const { withResearchAreas } = await import("../src/lib/repository-chat");
+  const corpus = {
+    classificationEnabled: true,
+    duplicates: [],
+    papers: [
+      { id: "a", category: "Assessment" },
+      { id: "b", category: "Instruction" },
+      { id: "c", category: "Assessment" },
+    ],
+  } as never;
+  const words = { chartType: "bar" as const, title: "Words per paper", scopeLabel: "s", metric: "word_count" as const, xKey: "label" as const, yKeys: ["words"], data: [{ label: "A", words: 9, paperId: "a" }, { label: "B", words: 7, paperId: "b" }], planner: { source: "llm" as const, reason: "", confidence: "high" as const, warnings: [] } };
+  const result = withResearchAreas({ answer: "", citations: [], charts: [words], limitations: [] } as never, corpus);
+  assert.deepEqual((result.charts?.[0] as { groups?: unknown }).groups, { label: "Research area", byPaper: { a: "Assessment", b: "Instruction" } });
+  // One area tells nothing, so no colours.
+  const one = withResearchAreas({ answer: "", citations: [], charts: [{ ...words, data: [{ label: "A", words: 9, paperId: "a" }, { label: "C", words: 7, paperId: "c" }] }], limitations: [] } as never, corpus);
+  assert.equal((one.charts?.[0] as { groups?: unknown }).groups, undefined);
+  // The word count's shortcut, the planned steps and the fallback all add them (the pilot's words chart, 2026-10-21).
+  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
+  assert.ok((source.match(/charts: await attachResearchAreas\(context, /g) ?? []).length >= 3);
 });
