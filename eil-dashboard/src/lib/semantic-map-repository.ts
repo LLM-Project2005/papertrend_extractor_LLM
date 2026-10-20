@@ -405,6 +405,14 @@ function mapSemanticMap(row: Record<string, unknown>, points: SemanticMapPoint[]
   };
 }
 
+/** Puts each paper's own (single-label) research area first in its list; a paper without one keeps its list. */
+export function withPrimaryCategoryFirst(points: SemanticMapPoint[], primaryOf: Map<string, string>): SemanticMapPoint[] {
+  return points.map((point) => {
+    const first = primaryOf.get(point.paperId);
+    return first ? { ...point, categories: [first, ...point.categories.filter((category) => category !== first)] } : point;
+  });
+}
+
 export async function getSemanticMap(ownerUserId: string, projectId: string, mapId?: string): Promise<RepositorySemanticMap | null> {
   return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
     const documents = await loadDocumentsWithClient(client, ownerUserId, projectId);
@@ -448,7 +456,21 @@ export async function getSemanticMap(ownerUserId: string, projectId: string, map
       similarity: Number(edge.cosine_similarity),
       rank: Number(edge.edge_rank), sharedSignals: (edge.shared_signals as SemanticMapEdge["sharedSignals"]) ?? { categories: [], topics: [], keywords: [], methods: [] },
     }));
-    const mapped = mapSemanticMap(displayRow, points, edges, String(displayRow.source_hash) !== sourceHash);
+    // Each paper's own research area first: the stored list is every area it
+    // has, alphabetically, so colouring by the first painted 40 of the test
+    // account's 41 papers "English Language Instruction" (docs/38, 2026-10-21).
+    const primary = points.length
+      ? await client.query<{ paper_id: string; category_label: string }>(
+          `SELECT DISTINCT ON (paper_id) paper_id::text AS paper_id, category_label
+           FROM public.paper_category_assignments
+           WHERE owner_user_id=$1 AND assignment_type='single' AND category_label IS NOT NULL
+             AND paper_id = ANY($2::bigint[]) AND (project_id=$3 OR project_id IS NULL)
+           ORDER BY paper_id, (project_id=$3) DESC NULLS LAST, position, category_label`,
+          [ownerUserId, points.map((point) => point.paperId).filter((id) => /^\d+$/.test(id)), projectId]
+        ).catch(() => ({ rows: [] as Array<{ paper_id: string; category_label: string }> }))
+      : { rows: [] as Array<{ paper_id: string; category_label: string }> };
+    const ordered = withPrimaryCategoryFirst(points, new Map(primary.rows.map((entry) => [String(entry.paper_id), String(entry.category_label)])));
+    const mapped = mapSemanticMap(displayRow, ordered, edges, String(displayRow.source_hash) !== sourceHash);
     const activeJob = (displayRow as Record<string, unknown>).active_job as Record<string, unknown> | undefined;
     if (activeJob) mapped.progress = { stage: String(activeJob.progress_stage), current: Number(activeJob.progress_current), total: Number(activeJob.progress_total) };
     return mapped;

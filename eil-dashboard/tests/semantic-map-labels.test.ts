@@ -171,3 +171,18 @@ test("the minimap shows which part of the map you are looking at", () => {
   assert.ok(mask, "no minimap mask found");
   assert.ok(Number(mask![1]) >= 15, `mask at .${mask![1]} is too faint to read`);
 });
+
+test("colouring by research area uses each paper's own area, not the first of its areas alphabetically", async () => {
+  // The stored list is every area a paper has, sorted: 40 of the test account's
+  // 41 papers came out "English Language Instruction" (docs/38, 2026-10-21).
+  const { withPrimaryCategoryFirst } = await import("../src/lib/semantic-map-repository");
+  const point = (paperId: string, categories: string[]) => ({ paperId, runId: null, folderId: null, x: 0, y: 0, clusterId: 0, title: paperId, year: "2024", folderName: null, categories, topics: [], keywords: [], track: null });
+  const ordered = withPrimaryCategoryFirst(
+    [point("1", ["English Language Instruction", "English Linguistics"]), point("2", ["English Language Instruction"]), point("3", ["A", "B"])],
+    new Map([["1", "English Linguistics"], ["2", "English Language Instruction"]])
+  );
+  assert.deepEqual(ordered.map((entry) => entry.categories), [["English Linguistics", "English Language Instruction"], ["English Language Instruction"], ["A", "B"]]);
+  const repository = source("lib/semantic-map-repository.ts");
+  assert.match(repository, /assignment_type='single'/);
+  assert.match(repository, /withPrimaryCategoryFirst\(points, /);
+});
