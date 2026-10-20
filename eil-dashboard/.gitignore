@@ -35,3 +35,6 @@ public/pdfjs/
 
 # Model replies cached by scripts/evaluate-chat-questions.ts: they quote private papers.
 .chat-eval-cache/
+
+# Model replies cached by the evaluation scripts (docs/36, docs/38)
+.chart-eval-cache/

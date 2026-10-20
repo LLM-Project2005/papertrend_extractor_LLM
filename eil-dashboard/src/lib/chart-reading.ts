@@ -866,7 +866,7 @@ export function valueChart(reading: ValueReading, plan: ReadPlan): ReadChart {
       chartType: plan.chart === "table" ? "table" : "bar",
       title,
       yKeys: [valueKey],
-      data: order.map((value, index) => ({ label: labels[index], [valueKey]: value.number as number })),
+      data: order.map((value, index) => ({ label: labels[index], [valueKey]: value.number as number, paperId: value.paper.paperId })),
     },
     sources,
     limitations,

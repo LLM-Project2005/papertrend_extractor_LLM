@@ -3,7 +3,7 @@
  * Pure and free: no model, no database. The route adds the model's choice and
  * wording on top, and the page falls back to this alone.
  */
-import { ANALYSES } from "@/lib/insights/analyses";
+import { ANALYSES, FEW_PAPERS } from "@/lib/insights/analyses";
 import type { InsightCorpus } from "@/lib/insights/corpus";
 import { indexBy } from "@/lib/insights/corpus";
 import { MIN_PAPERS } from "@/lib/insights/stats";
@@ -50,10 +50,13 @@ export function buildInsightReport(corpus: InsightCorpus): InsightReport {
       text: `The year of ${uncertain === 1 ? "one paper" : `${uncertain} papers`} was read with low confidence; check ${uncertain === 1 ? "it" : "them"} in the Library before relying on dates.`,
     });
   }
-  if (total < 8) {
+  if (total === 0) {
+    notices.push({ id: "few_papers", text: "No analysed papers are selected. Widen the years or research areas, or clear the search." });
+  } else if (total < FEW_PAPERS) {
+    // The few papers are shown side by side instead (paperOverview); patterns need more.
     notices.push({
       id: "few_papers",
-      text: `Only ${total === 1 ? "one paper is" : `${total} papers are`} selected. A pattern needs at least ${MIN_PAPERS} papers behind it, so widen the filters to see more.`,
+      text: `With ${total === 1 ? "one paper" : `${total} papers`}, this tab shows ${total === 1 ? "it" : "them side by side and what they share"}. Patterns across papers are looked for from ${FEW_PAPERS} papers on, each resting on at least ${MIN_PAPERS}.`,
     });
   } else if (insights.length === 0) {
     notices.push({

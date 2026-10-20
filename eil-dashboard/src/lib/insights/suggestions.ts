@@ -75,14 +75,22 @@ export function templateQuestion(query: AskQuery): string {
   return `Which ${PLURAL[query.rows]} are most common in these papers?`;
 }
 
-/** Whether a computed view says something: at least two rows (and two columns for a cross). */
+/**
+ * Whether a computed view says something: at least two rows (and two columns
+ * for a cross), and bars that differ. A view where every value is the same
+ * comes back as a table and is not offered (docs/38).
+ */
 function drawsSomething(insight: Insight): boolean {
   const chart = insight.chart;
   switch (chart.kind) {
+    case "table":
+    case "stat":
+      return false;
     case "bars":
-      return chart.rows.filter((row) => row.value > 0).length >= 2;
+      return chart.rows.filter((row) => row.value > 0).length >= 2 && new Set(chart.rows.map((row) => row.value)).size >= 2;
     case "matrix":
-      return chart.rows.length >= 2 && chart.cols.length >= 2;
+      // A grid of 0s and 1s - each pairing in at most one paper - shows no pattern.
+      return chart.rows.length >= 2 && chart.cols.length >= 2 && chart.values.flat().some((value) => value >= 2);
     case "compare":
     case "pairs":
     case "lifecycles":

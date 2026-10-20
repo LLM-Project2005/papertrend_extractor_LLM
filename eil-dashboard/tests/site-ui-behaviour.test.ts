@@ -270,10 +270,12 @@ test("an Adaptive chart draws one quantity in one fill, and writes no colour of 
   // The same "Papers" series was cyan, purple and hot pink in three adjacent charts.
   for (const theme of ["light", "dark"] as const) {
     const [bars, pairs, ...rest] = await insightCharts(theme);
-    const fills = (html: string) =>
-      [...html.matchAll(/<span class="block h-full rounded-full ([^"]*)" style="width:/g)].map((match) => match[1]);
-    assert.equal(fills(bars).length, 2, "one bar per row");
-    assert.deepEqual([...new Set([...fills(bars), ...fills(pairs)])], ["bg-accent"], "bars and pairs share one fill, the accent");
+    // Each bar or square (src/components/charts, docs/38): its fill classes, and any colour written in.
+    const marks = (html: string) => [...html.matchAll(/<span data-bar="true" class="([^"]*)"(?: style="([^"]*)")?/g)].map((match) => ({ classes: match[1], style: match[2] ?? "" }));
+    assert.ok(marks(bars).length >= 2, "a mark per row");
+    const fills = new Set([...marks(bars), ...marks(pairs)].map((mark) => mark.classes.split(/\s+/).find((name) => name.startsWith("bg-"))));
+    assert.deepEqual([...fills], ["bg-accent"], "bars and pairs share one fill, the accent");
+    for (const mark of [...marks(bars), ...marks(pairs)]) assert.doesNotMatch(mark.style, /background/, "no colour written into a bar");
     for (const html of [bars, pairs, ...rest]) {
       assert.doesNotMatch(html, /\s(?:fill|stroke)="#[0-9a-f]{3,8}"/i, "no chart colour is written in");
     }

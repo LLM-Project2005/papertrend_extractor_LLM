@@ -104,11 +104,12 @@ test("no claim rests on fewer than 3 papers", () => {
     assert.ok(insight.paperIds.length >= 3, `${insight.id} rests on ${insight.paperIds.length}`);
     if (insight.chart.kind === "pairs") for (const row of insight.chart.rows) assert.ok(row.together >= 3);
   }
-  // Seven papers are too few for any pattern, and the page says so.
+  // Seven papers are too few for any pattern: the page says so, and shows the
+  // papers side by side and what they share instead (docs/38).
   const small = fixture();
   small.trends = small.trends.filter((row) => Number(row.paper_id) <= 7);
   const few = report(small);
-  assert.equal(few.insights.length, 0);
+  assert.deepEqual(few.insights.map((insight) => insight.id).sort(), ["paper_overview", "shared_values"]);
   assert.deepEqual(few.notices.map((notice) => notice.id), ["few_papers"]);
 });
 

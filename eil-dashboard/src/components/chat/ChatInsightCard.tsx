@@ -37,7 +37,7 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
         {insight.caution ? <p className="mt-1 text-[13px] leading-5 text-amber-900 dark:text-amber-200">{insight.caution}</p> : null}
       </div>
       <div className="px-4 py-4">
-        <InsightChart insight={insight} onOpen={onOpen} />
+        <InsightChart insight={insight} onOpen={onOpen} paperTitles={new Map([...titles.entries()].map(([id, paper]) => [id, paper.title]))} />
       </div>
       {open ? (
         <div className="border-t border-slate-200 px-4 py-3 dark:border-[#1f1f1f]" aria-live="polite">

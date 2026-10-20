@@ -132,10 +132,19 @@ test("a cell's text is whichever colour reads better on it", async () => {
       marks: [], paperIds: [values[0].map((value) => Array.from({ length: value }, (_, index) => String(index)))],
     },
   } as unknown as Parameters<typeof InsightChart>[0]["insight"];
-  for (const theme of ["light", "dark"] as const) {
-    globalThis.__auditfixTheme = theme;
-    const drawn = cellColours(renderToStaticMarkup(createElement(InsightChart, { insight: matrix, onOpen: () => undefined })), "background").filter(([background]) => background !== "transparent");
-    assert.equal(drawn.length, 32, theme);
-    for (const [background, text] of drawn) assert.ok(contrastRatio(text, background) >= AA_NORMAL, `${theme}: ${text} on ${background}`);
+  // The grid lays the theme's accent over its panel at some strength and picks
+  // its text by class (HeatGrid): worked out here for each theme.
+  const html = renderToStaticMarkup(createElement(InsightChart, { insight: matrix, onOpen: () => undefined }));
+  const grid = [...html.matchAll(/<button[^>]*class="([^"]*)"[^>]*style="background:rgb\(var\(--accent\) \/ ([\d.]+)\)"/g)].map((match) => ({ classes: match[1], alpha: Number(match[2]) }));
+  assert.equal(grid.length, 32);
+  const mix = (accent: number[], panel: number[], alpha: number) =>
+    `#${accent.map((channel, index) => Math.round(panel[index] + (channel - panel[index]) * alpha).toString(16).padStart(2, "0")).join("")}`;
+  for (const { classes, alpha } of grid) {
+    const light = mix([37, 99, 235], [255, 255, 255], alpha);
+    const dark = mix([96, 165, 250], [10, 10, 10], alpha);
+    assert.ok(/(^|\s)text-black(\s|$)/.test(classes), `light text class on ${alpha}`);
+    assert.ok(contrastRatio("#000000", light) >= AA_NORMAL, `light: black on ${light}`);
+    const darkText = /dark:text-white/.test(classes) ? "#ffffff" : "#000000";
+    assert.ok(contrastRatio(darkText, dark) >= AA_NORMAL, `dark: ${darkText} on ${dark} (strength ${alpha})`);
   }
 });

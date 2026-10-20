@@ -1,28 +1,26 @@
 "use client";
 
 /**
- * A chart in a chat answer: a bar, line or pie chart, or a table. Its own
- * file so the chat page loads Recharts only when an answer has a chart
- * (docs/32, 3.3).
+ * A chart in a chat answer that was read from the papers: words per paper,
+ * participants in each study, a paper's own figures, words in each section.
+ *
+ * It is drawn with the same charts as the Adaptive tab and the chat's
+ * dashboard views (src/components/charts, docs/38), so one conversation has
+ * one look: an axis from zero, values beside the bars, counts of papers as
+ * squares. It drew with Recharts before, beside charts drawn another way
+ * (2026-10-20). Bars that are papers take their paper's research area as
+ * their colour when the chart says which that is.
  */
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { chartAnimationActive } from "@/lib/chart-theme";
-import { TOPIC_PALETTE } from "@/lib/constants";
-import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
+// React in scope: the test runner compiles JSX the classic way.
+import React from "react";
+import Bars from "@/components/charts/Bars";
+import DataTable from "@/components/charts/DataTable";
+import GroupedBars from "@/components/charts/GroupedBars";
+import LineChart from "@/components/charts/LineChart";
+import Pie, { PIE_MAX_PARTS } from "@/components/charts/Pie";
+import StackedBars from "@/components/charts/StackedBars";
+import YearColumns from "@/components/charts/YearColumns";
+import { categoricalColor } from "@/lib/chart-palette";
 import PaperLink from "@/components/workspace/PaperLink";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
 
@@ -52,45 +50,6 @@ export function wrapLabel(label: string, chars: number, maxLines = 2): string[] 
   }
   return lines.slice(0, maxLines);
 }
-
-/** A category tick on the label axis: two lines at most, or one when rows are many, with the whole label on hover. */
-function LabelTick({ x, y, payload, chars, maxLines = 2 }: { x?: number; y?: number; payload?: { value: string }; chars: number; maxLines?: number }) {
-  const label = String(payload?.value ?? "");
-  const lines = wrapLabel(label, chars, maxLines);
-  return (
-    <g transform={`translate(${x ?? 0},${y ?? 0})`}>
-      <title>{label}</title>
-      <text textAnchor="end" fill="currentColor" fontSize={12} dy={lines.length > 1 ? -3 : 4}>
-        {lines.map((text, index) => (
-          <tspan key={index} x={-6} dy={index === 0 ? 0 : 14}>
-            {text}
-          </tspan>
-        ))}
-      </text>
-    </g>
-  );
-}
-
-const chatChartTooltipTheme = {
-  contentStyle: {
-    backgroundColor: "#111827",
-    border: "1px solid rgba(148, 163, 184, 0.35)",
-    borderRadius: "12px",
-    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
-    color: "#fafafa",
-  },
-  labelStyle: {
-    color: "#fafafa",
-    fontWeight: 600,
-  },
-  itemStyle: {
-    color: "#e5e7eb",
-  },
-  cursor: {
-    fill: "rgba(148, 163, 184, 0.14)",
-    stroke: "rgba(148, 163, 184, 0.25)",
-  },
-};
 
 /** A table cell: a figure a paper does not give is a dash, not a zero. */
 function tableValue(value: string | number | undefined): string {
@@ -137,182 +96,95 @@ function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sour
   );
 }
 
-export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
-  const narrow = useIsNarrow();
-  const chartData = chart.data ?? [];
-  const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
-  const primaryKey = yKeys[0] ?? "value";
-  // Stacked parts of a whole (a paper's sections) share one bar per row.
-  const stacked = Boolean(chart.stacked) && yKeys.length > 1;
-  const maxValue = Math.max(
-    ...chartData.flatMap((row) =>
-      stacked
-        ? [yKeys.reduce((sum, key) => sum + (Number(row[key]) || 0), 0)]
-        : yKeys.map((key) => Number(row[key]) || 0)
-    ),
-    0
-  );
+/** "Words", "participants": what a chart's one series measures, for its axis. */
+function unitOf(key: string): string {
+  return key.replace(/^Median /, "median ").trim();
+}
 
-  // Bars run sideways, names on the left, whenever a name is long or there are
-  // many: upright bars gave each name a few pixels, and long paper titles were
-  // drawn over one another (the test account's chat, 2026-10-09). The chart
-  // grows with its rows instead of squeezing them into a fixed height.
-  const longestLabel = Math.max(0, ...chartData.map((row) => String(row.label ?? "").length));
-  const sideways = stacked || chartData.length > 6 || longestLabel > 14;
-  const column = labelColumn(narrow, {
-    width: Math.min(240, Math.max(96, Math.min(longestLabel, 34) * 6.6)),
-    chars: Math.min(34, Math.max(14, longestLabel)),
-  });
-  const series = yKeys.length;
-  // Many rows - a value read from each of 34 papers - get one-line labels and
-  // a taller chart: squeezed into 760 pixels, two-line titles ran into each
-  // other (the pilot, 2026-10-11).
-  const dense = sideways && chartData.length > 16;
-  const rowHeight = series > 1 && !stacked ? 14 * series + 18 : dense ? 26 : 38;
-  const barHeight = sideways ? Math.max(200, Math.min(dense ? 1_400 : 760, chartData.length * rowHeight + (series > 1 ? 90 : 50))) : 320;
+function Plot({ chart }: { chart: ChatChartPayload }) {
+  const data = chart.data ?? [];
+  const keys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
+  const label = (row: Record<string, string | number>) => String(row.label ?? "");
+  const number = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
 
+  if (chart.chartType === "table") {
+    return (
+      <DataTable
+        columns={[{ key: "label", label: "Label" }, ...keys.map((key) => ({ key, label: key, align: "right" as const }))]}
+        rows={data.map((row, index) => ({
+          key: `${label(row)}-${index}`,
+          cells: Object.fromEntries([["label", label(row)], ...keys.map((key) => [key, tableValue(row[key])])]),
+        }))}
+        caption={chart.title}
+      />
+    );
+  }
+
+  if (chart.chartType === "line") {
+    return <LineChart labels={data.map(label)} series={keys.map((key, index) => ({ label: keys.length > 1 ? key : "", values: data.map((row) => number(row[key])), color: categoricalColor(index) }))} unit={keys.length === 1 ? unitOf(keys[0]) : undefined} />;
+  }
+
+  if (chart.chartType === "pie" && keys.length === 1 && data.length <= PIE_MAX_PARTS) {
+    return <Pie slices={data.map((row, index) => ({ key: `${label(row)}-${index}`, label: label(row), value: number(row[keys[0]]) ?? 0 }))} unit={keys[0].toLowerCase()} />;
+  }
+
+  if (chart.stacked && keys.length > 1) {
+    return <StackedBars series={keys} rows={data.map((row, index) => ({ key: `${label(row)}-${index}`, label: label(row), parts: keys.map((key) => number(row[key]) ?? 0) }))} unit="words" />;
+  }
+
+  if (keys.length > 1) {
+    return (
+      <GroupedBars
+        series={keys.map((key, index) => ({ key, label: key, color: categoricalColor(index) }))}
+        rows={data.map((row, index) => ({ key: `${label(row)}-${index}`, label: label(row), values: keys.map((key) => number(row[key])) }))}
+        measure="value"
+        initialRows={12}
+      />
+    );
+  }
+
+  const key = keys[0];
+  // Years along the axis are columns; anything else is bars.
+  if (data.length >= 2 && data.every((row) => /^\d{4}$/.test(label(row)))) {
+    return <YearColumns points={data.map((row) => ({ key: label(row), label: label(row), value: number(row[key]) ?? 0 }))} measure="value" unit={unitOf(key)} />;
+  }
+  // Answers counted by the papers that give them ("Papers"): squares, out of the papers that answered.
+  const papersCounted = /^papers$/i.test(key);
+  const answered = new Set((chart.sources ?? []).map((source) => source.paperId)).size;
+  const groups = chart.groups;
+  const groupNames = groups ? [...new Set(Object.values(groups.byPaper))].sort((a, b) => a.localeCompare(b)) : [];
+  const colorOf = (row: Record<string, string | number>) => {
+    const paperId = row.paperId === undefined ? undefined : String(row.paperId);
+    const group = paperId && groups ? groups.byPaper[paperId] : undefined;
+    return group ? categoricalColor(groupNames.indexOf(group)) : undefined;
+  };
+  const colored = groupNames.length > 0 && data.some((row) => colorOf(row));
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
-            Chart
-          </p>
-          <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
-            {chart.title}
-          </h3>
-          <p className="mt-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
-            {chart.scopeLabel}
-          </p>
-        </div>
-        <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d8d8d8]">
-          {chart.chartType}
-        </span>
-      </div>
+    <Bars
+      rows={data.map((row, index) => ({ key: `${label(row)}-${index}`, label: label(row), value: number(row[key]) ?? 0, color: colored ? colorOf(row) ?? "rgb(var(--mute) / 0.6)" : undefined }))}
+      measure={papersCounted ? "papers" : "value"}
+      total={papersCounted && answered > 0 ? answered : undefined}
+      unit={papersCounted ? undefined : unitOf(key)}
+      axisLabel={papersCounted && answered > 0 ? `Papers, out of the ${answered} that state it` : undefined}
+      legend={colored ? groupNames.map((name, index) => ({ label: name, color: categoricalColor(index) })) : undefined}
+      initialRows={data.length <= 16 ? data.length : 12}
+    />
+  );
+}
 
-      {chart.chartType === "table" ? (
-        <div className="max-h-[360px] overflow-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="sticky top-0 bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#b4b4b4]">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Label</th>
-                {yKeys.map((key) => (
-                  <th key={key} className="px-4 py-3 text-right font-semibold">
-                    {key}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {chartData.map((row) => (
-                <tr key={String(row.label)} className="border-t border-slate-200 dark:border-[#1f1f1f]">
-                  <td className="px-4 py-3 text-slate-700 dark:text-[#ececec]">{row.label}</td>
-                  {yKeys.map((key) => (
-                    <td
-                      key={key}
-                      className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white"
-                    >
-                      {tableValue(row[key])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="px-3 py-4 text-slate-600 dark:text-[#a3a3a3]" style={{ height: chart.chartType === "bar" ? barHeight : 320 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            {chart.chartType === "line" ? (
-              <LineChart data={chartData} margin={{ left: 6, right: 18, top: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
-                <XAxis dataKey="label" tick={{ fill: "currentColor", fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fill: "currentColor", fontSize: 12 }} />
-                <Tooltip {...chatChartTooltipTheme} />
-                {yKeys.map((key, index) => (
-                  <Line isAnimationActive={chartAnimationActive()}
-                    key={key}
-                    type="monotone"
-                    dataKey={key}
-                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    strokeWidth={2.4}
-                    dot={{ r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                ))}
-              </LineChart>
-            ) : chart.chartType === "pie" ? (
-              <PieChart>
-                <Tooltip {...chatChartTooltipTheme} />
-                <Pie isAnimationActive={chartAnimationActive()}
-                  data={chartData}
-                  dataKey={primaryKey}
-                  nameKey="label"
-                  outerRadius={105}
-                  label={(entry) => entry.label}
-                >
-                  {chartData.map((row, index) => (
-                    <Cell
-                      key={`${row.label}-${index}`}
-                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    />
-                  ))}
-                </Pie>
-              </PieChart>
-            ) : (
-              <BarChart
-                data={chartData}
-                layout={sideways ? "vertical" : "horizontal"}
-                margin={{ left: 6, right: 18, top: 8, bottom: 8 }}
-                barCategoryGap={series > 1 ? "18%" : "24%"}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" horizontal={!sideways} vertical={sideways} />
-                <XAxis
-                  type={sideways ? "number" : "category"}
-                  dataKey={sideways ? undefined : "label"}
-                  tick={{ fill: "currentColor", fontSize: 12 }}
-                  domain={sideways ? [0, Math.ceil(maxValue)] : undefined}
-                  allowDecimals={false}
-                  interval={0}
-                />
-                <YAxis
-                  type={sideways ? "category" : "number"}
-                  dataKey={sideways ? "label" : undefined}
-                  width={sideways ? column.width : undefined}
-                  allowDecimals={false}
-                  interval={0}
-                  tick={sideways ? <LabelTick chars={column.chars} maxLines={dense ? 1 : 2} /> : { fill: "currentColor", fontSize: 12 }}
-                />
-                <Tooltip {...chatChartTooltipTheme} />
-                {series > 1 ? <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} /> : null}
-                {yKeys.map((key, keyIndex) => (
-                  <Bar
-                    isAnimationActive={chartAnimationActive()}
-                    key={key}
-                    dataKey={key}
-                    stackId={stacked ? "parts" : undefined}
-                    fill={TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]}
-                    // Only the outer end of a stacked bar is rounded.
-                    radius={stacked && keyIndex < yKeys.length - 1 ? 0 : sideways ? [0, 4, 4, 0] : [4, 4, 0, 0]}
-                    maxBarSize={sideways ? 28 : 64}
-                  >
-                    {chartData.map((row, index) => (
-                      <Cell
-                        key={`${String(row.label)}-${key}-${index}`}
-                        fill={
-                          yKeys.length > 1
-                            ? TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]
-                            : TOPIC_PALETTE[index % TOPIC_PALETTE.length]
-                        }
-                      />
-                    ))}
-                  </Bar>
-                ))}
-              </BarChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      )}
+export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]" data-chat-chart={chart.metric}>
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
+        <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Chart · {chart.scopeLabel}</p>
+        <h3 className="mt-1 text-base font-semibold leading-6 text-slate-900 dark:text-white">{chart.title}</h3>
+      </div>
+      <div className="px-4 py-4">
+        <Plot chart={chart} />
+      </div>
       {chart.sources && chart.sources.length > 0 ? <ChartSources sources={chart.sources} /> : null}
     </div>
   );

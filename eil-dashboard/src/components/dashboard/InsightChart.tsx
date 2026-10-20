@@ -1,20 +1,35 @@
 "use client";
 
 /*
- * Draws one insight. Every value comes from the insight object itself - the
- * same object the model was shown - so the chart and its words cannot drift
- * apart. They are plain elements rather than a chart library: every label is
- * shown in full and wraps at phone width, where a chart's axis would cut it.
+ * Draws one insight with the shared charts (src/components/charts, docs/38).
+ * Every value comes from the insight object itself - the same object the
+ * model was shown - so the chart and its words cannot drift apart.
+ *
+ * Insights saved before docs/38 are still drawn: their bars kept a grey
+ * "40% of papers" line under each label, which is dropped (the switch shows
+ * shares now), and their comparisons kept shares only, which are drawn as
+ * shares.
  */
-import { useTheme } from "@/components/theme/ThemeProvider";
-import { greyHex, readableTextOn } from "@/lib/contrast";
-import type { Insight, LifecycleRow } from "@/lib/insights/types";
+// React in scope: the test runner compiles JSX the classic way.
+import React from "react";
+import Bars, { type BarDatum } from "@/components/charts/Bars";
+import DataTable from "@/components/charts/DataTable";
+import GroupedBars, { type GroupRow, type GroupSeries } from "@/components/charts/GroupedBars";
+import HeatGrid from "@/components/charts/HeatGrid";
+import StatTile from "@/components/charts/StatTile";
+import YearColumns from "@/components/charts/YearColumns";
+import type { CompareRow, Insight, LifecycleRow } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
 export type OpenPapers = (paperIds: PaperId[], label: string) => void;
 
-function truncate(value: string, max: number): string {
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+/** The two groups of a comparison: earlier in grey and later in the accent; a subject in the accent against the rest in grey. */
+const ACCENT = "rgb(var(--accent))";
+const GREY = "rgb(var(--mute) / 0.7)";
+
+/** A line under a bar that only restated its share ("40% of papers", "25% here · 17% of all papers"). */
+function legacyShare(detail: string | undefined): boolean {
+  return Boolean(detail && /\d+%/.test(detail));
 }
 
 function PapersButton({ ids, label, onOpen, children }: { ids: PaperId[]; label: string; onOpen: OpenPapers; children: React.ReactNode }) {
@@ -22,7 +37,7 @@ function PapersButton({ ids, label, onOpen, children }: { ids: PaperId[]; label:
     <button
       type="button"
       onClick={() => onOpen(ids, label)}
-      className="rounded text-left underline-offset-2 transition-colors hover:text-slate-950 hover:underline focus-visible:underline dark:hover:text-white"
+      className="rounded text-left underline-offset-2 transition-colors hover:text-ink hover:underline focus-visible:underline"
       title={`Show the ${ids.length} paper${ids.length === 1 ? "" : "s"}`}
     >
       {children}
@@ -30,228 +45,43 @@ function PapersButton({ ids, label, onOpen, children }: { ids: PaperId[]; label:
   );
 }
 
-function BarsChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }) {
-  const chart = insight.chart;
-  if (chart.kind !== "bars") return null;
-  const max = Math.max(...chart.rows.map((row) => row.value), 1);
-  return (
-    <div>
-      <p className="mb-2 text-xs text-slate-500 dark:text-[#8f8f8f]">{chart.valueLabel}</p>
-      <ul className="space-y-2.5">
-        {chart.rows.map((row) => (
-          <li key={row.label} className="grid gap-1 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
-            <div className="min-w-0">
-              <p className="text-sm leading-5 text-slate-800 dark:text-[#e5e5e5]">
-                <PapersButton ids={row.paperIds} label={row.label} onOpen={onOpen}>
-                  {row.label}
-                </PapersButton>
-              </p>
-              {row.detail ? <p className="text-xs leading-4 text-slate-500 dark:text-[#8f8f8f]">{row.detail}</p> : null}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1a1a1a]" aria-hidden>
-                {/* One quantity, one fill: the accent, in colour rather than grey (2026-10-09 review). */}
-                <span className="block h-full rounded-full bg-accent" style={{ width: `${(row.value / max) * 100}%` }} />
-              </span>
-              <span className="w-10 flex-none text-right text-xs tabular-nums text-slate-700 dark:text-[#d4d4d4]">{row.value}</span>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PairsChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }) {
-  const chart = insight.chart;
-  if (chart.kind !== "pairs") return null;
-  const max = Math.max(...chart.rows.map((row) => row.together), 1);
-  return (
-    <ul className="space-y-3">
-      {chart.rows.map((row) => (
-        <li key={`${row.a}|${row.b}`} className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] sm:items-center sm:gap-4">
-          <p className="min-w-0 text-sm leading-5 text-slate-800 dark:text-[#e5e5e5]">
-            <PapersButton ids={row.paperIds} label={`${row.a} with ${row.b}`} onOpen={onOpen}>
-              <span className="font-medium">{row.a}</span>
-              <span className="text-slate-500 dark:text-[#8f8f8f]"> with </span>
-              <span className="font-medium">{row.b}</span>
-            </PapersButton>
-          </p>
-          <div className="flex items-center gap-3">
-            <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1a1a1a]">
-              <span className="block h-full rounded-full bg-accent" style={{ width: `${(row.together / max) * 100}%` }} />
-            </span>
-            <span className="w-32 flex-none text-right text-xs tabular-nums text-slate-600 dark:text-[#a3a3a3]">
-              {row.together} papers · {Math.round(row.lift * 10) / 10}× chance
-            </span>
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function MatrixChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }) {
-  const chart = insight.chart;
-  const { theme, hydrated } = useTheme();
-  const isDark = hydrated && theme === "dark";
-  if (chart.kind !== "matrix") return null;
-  const max = Math.max(...chart.values.flat(), 1);
-  const mark = new Map(chart.marks.map(([row, col, kind]) => [`${row}:${col}`, kind]));
-  return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <table className="w-full min-w-[26rem] border-separate border-spacing-1 text-xs sm:min-w-[34rem]">
-        <caption className="sr-only">
-          Papers per {chart.rowLabel.toLowerCase()} and {chart.colLabel.toLowerCase()}. Outlined cells are strong pairings; dashed cells are notable absences.
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col" className="w-28 text-left font-medium text-slate-500 sm:w-48 dark:text-[#8f8f8f]">
-              {chart.rowLabel} by {chart.colLabel.toLowerCase()}
-            </th>
-            {chart.cols.map((col) => (
-              <th key={col} scope="col" className="max-w-[7rem] px-1 pb-1 text-left align-bottom font-medium leading-4 text-slate-600 dark:text-[#b3b3b3]">
-                <span className="line-clamp-3" title={col}>{col}</span>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {chart.rows.map((row, r) => (
-            <tr key={row}>
-              <th scope="row" className="pr-2 text-left font-normal leading-4 text-slate-700 dark:text-[#d4d4d4]">
-                <span className="line-clamp-3 sm:line-clamp-2" title={row}>{row}</span>
-              </th>
-              {chart.cols.map((col, c) => {
-                const value = chart.values[r][c];
-                const kind = mark.get(`${r}:${c}`);
-                const strength = value / max;
-                // The cell's colour as drawn over the panel (white, or #0a0a0a in dark),
-                // so its text can be picked by contrast rather than by a cut-off.
-                const alpha = isDark ? 0.12 + strength * 0.7 : 0.08 + strength * 0.72;
-                const background = value === 0 ? "transparent" : greyHex(isDark ? 10 + (229 - 10) * alpha : 255 + (38 - 255) * alpha);
-                const text = value === 0 ? (isDark ? "#8f8f8f" : "#707070") : readableTextOn(background, ["#000000", "#ffffff"]);
-                return (
-                  <td key={col} className="p-0">
-                    <button
-                      type="button"
-                      disabled={value === 0}
-                      onClick={() => onOpen(chart.paperIds[r][c], `${row} with ${col}`)}
-                      aria-label={`${row} with ${col}: ${value} paper${value === 1 ? "" : "s"}${kind === "strong" ? ", a strong pairing" : kind === "absent" ? ", none where some were expected" : ""}`}
-                      className={`flex h-9 w-full min-w-[3rem] items-center justify-center rounded-md tabular-nums transition-transform enabled:hover:scale-[1.04] ${
-                        kind === "strong"
-                          ? "ring-2 ring-sky-600 ring-offset-1 ring-offset-white dark:ring-sky-400 dark:ring-offset-black"
-                          : kind === "absent"
-                            ? "border border-dashed border-amber-600 dark:border-amber-400"
-                            : value === 0
-                              ? "border border-slate-100 dark:border-[#1a1a1a]"
-                              : ""
-                      }`}
-                      style={{ background, color: text }}
-                    >
-                      {value}
-                    </button>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {chart.cols.length > 1 ? (
-        // The grid is wider than a phone; say that the rest is there.
-        <p className="mt-2 text-xs text-slate-600 sm:hidden dark:text-[#a3a3a3]">
-          Swipe sideways to see all {chart.cols.length} columns.
-        </p>
-      ) : null}
-      {chart.marks.length > 0 ? (
-        <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
-          {chart.marks.some(([, , kind]) => kind === "strong") ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-sm ring-2 ring-sky-600 dark:ring-sky-400" /> A strong pairing
-            </span>
-          ) : null}
-          {chart.marks.some(([, , kind]) => kind === "absent") ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-sm border border-dashed border-amber-600 dark:border-amber-400" /> None, where about 3 were expected
-            </span>
-          ) : null}
-        </p>
-      ) : null}
-    </div>
-  );
+function compareSeries(chart: Extract<Insight["chart"], { kind: "compare" }>, rows: CompareRow[]): GroupSeries[] {
+  const sameOf = (side: "leftOf" | "rightOf") => {
+    const sizes = new Set(rows.map((row) => row[side]));
+    return sizes.size === 1 ? rows[0]?.[side] : undefined;
+  };
+  const [left, right] = chart.sequence === "time" ? [GREY, ACCENT] : [ACCENT, GREY];
+  return [
+    { key: "left", label: chart.leftLabel, color: left, of: sameOf("leftOf") },
+    { key: "right", label: chart.rightLabel, color: right, of: sameOf("rightOf") },
+  ];
 }
 
 function CompareChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }) {
   const chart = insight.chart;
   if (chart.kind !== "compare") return null;
-  const max = Math.max(...chart.rows.flatMap((row) => [row.left, row.right]), 10);
-  const scale = (value: number) => `${(value / max) * 100}%`;
+  const counted = chart.rows.every((row) => row.leftCount !== undefined && row.rightCount !== undefined && row.leftOf && row.rightOf);
+  const toRow = (row: CompareRow): GroupRow => ({
+    key: `${row.group ?? ""}|${row.label}`,
+    label: row.label,
+    tag: row.tag,
+    emphasis: row.asked,
+    values: counted ? [row.leftCount as number, row.rightCount as number] : [row.left, row.right],
+    of: counted ? [row.leftOf, row.rightOf] : undefined,
+    paperIds: row.paperIds,
+  });
   const groups = [...new Set(chart.rows.map((row) => row.group ?? ""))];
   return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-slate-500 bg-white dark:border-[#8f8f8f] dark:bg-black" /> {chart.leftLabel}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-900 dark:bg-white" /> {chart.rightLabel}
-        </span>
-        <span>Share of papers, %</span>
-      </div>
-      {groups.map((group) => (
-        <div key={group || "all"} className="mt-2 first:mt-0">
-          {group ? <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-[#8f8f8f]">{group}</p> : null}
-          <ul className="space-y-2.5">
-            {chart.rows
-              .filter((row) => (row.group ?? "") === group)
-              .map((row) => {
-                const low = Math.min(row.left, row.right);
-                const high = Math.max(row.left, row.right);
-                return (
-                  <li key={`${group}|${row.label}`} className="grid gap-1 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
-                    <p className="min-w-0 text-sm leading-5 text-slate-800 dark:text-[#e5e5e5]">
-                      <PapersButton ids={row.paperIds} label={row.label} onOpen={onOpen}>
-                        {row.label}
-                      </PapersButton>
-                      {row.tag ? (
-                        <span
-                          className={`ml-2 inline-flex rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
-                            row.tag === "gaining"
-                              ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                              : "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-                          }`}
-                        >
-                          {row.tag}
-                        </span>
-                      ) : null}
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <div className="relative h-5 flex-1" aria-hidden>
-                        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-[#262626]" />
-                        <span
-                          className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-slate-400 dark:bg-[#5c5c5c]"
-                          style={{ left: scale(low), width: `calc(${scale(high)} - ${scale(low)})` }}
-                        />
-                        <span
-                          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-500 bg-white dark:border-[#8f8f8f] dark:bg-black"
-                          style={{ left: scale(row.left) }}
-                        />
-                        <span
-                          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-900 dark:bg-white"
-                          style={{ left: scale(row.right) }}
-                        />
-                      </div>
-                      <span className="w-20 flex-none text-right text-xs tabular-nums text-slate-600 dark:text-[#a3a3a3]">
-                        {row.left}% {chart.sequence === "time" ? "→" : "vs"} {row.right}%
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-          </ul>
-        </div>
-      ))}
+    <div className="space-y-6">
+      {groups.map((group) => {
+        const rows = chart.rows.filter((row) => (row.group ?? "") === group);
+        return (
+          <div key={group || "all"}>
+            {group ? <p className="mb-2 text-sm font-semibold text-ink">{group}</p> : null}
+            <GroupedBars series={compareSeries(chart, rows)} rows={rows.map(toRow)} measure={counted ? "papers" : "percentOnly"} onOpen={onOpen} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -263,23 +93,15 @@ const STATUS: Record<LifecycleRow["status"], { label: string; tone: string }> = 
   burst: { label: "One burst", tone: "bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-300" },
 };
 
-function Sparkline({ series }: { series: number[] }) {
-  const max = Math.max(...series, 1);
+/** Papers per year for one theme, on the chart's shared years: every theme on the same scale. */
+function Sparkline({ series, max }: { series: number[]; max: number }) {
   const width = 100 / Math.max(series.length, 1);
   return (
     <svg viewBox="0 0 100 24" preserveAspectRatio="none" className="h-6 w-full" aria-hidden>
-      <line x1="0" y1="23.5" x2="100" y2="23.5" className="stroke-slate-200 dark:stroke-[#262626]" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+      <line x1="0" y1="23.5" x2="100" y2="23.5" className="stroke-hairline-strong" strokeWidth="1" vectorEffect="non-scaling-stroke" />
       {series.map((value, index) =>
         value > 0 ? (
-          <rect
-            key={index}
-            x={index * width + width * 0.15}
-            width={width * 0.7}
-            y={24 - (value / max) * 22}
-            height={(value / max) * 22}
-            rx="0.8"
-            className="fill-slate-700 dark:fill-[#d4d4d4]"
-          />
+          <rect key={index} x={index * width + width * 0.15} width={width * 0.7} y={24 - (value / max) * 22} height={(value / max) * 22} rx="0.8" className="fill-accent" />
         ) : null
       )}
     </svg>
@@ -291,27 +113,27 @@ function LifecyclesChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPa
   if (chart.kind !== "lifecycles") return null;
   const first = chart.years[0];
   const last = chart.years[chart.years.length - 1];
+  const max = Math.max(1, ...chart.rows.flatMap((row) => row.series));
   return (
-    <div>
+    <div data-chart="lifecycles">
+      <p className="mb-3 text-xs font-medium text-body">Papers on each theme per year, {first}–{last}; the tallest mark is {max} paper{max === 1 ? "" : "s"}</p>
       <ul className="space-y-2">
         {chart.rows.map((row) => (
           <li key={row.label} className="grid gap-1 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_7rem] sm:items-center sm:gap-4">
-            <p className="flex min-w-0 items-center gap-2 text-sm leading-5 text-slate-800 dark:text-[#e5e5e5]">
-              <span className={`inline-flex flex-none rounded-full px-1.5 py-0.5 text-[11px] font-medium ${STATUS[row.status].tone}`}>
-                {STATUS[row.status].label}
-              </span>
+            <p className="flex min-w-0 items-center gap-2 text-sm leading-5 text-ink">
+              <span className={`inline-flex flex-none rounded-full px-1.5 py-0.5 text-[11px] font-medium ${STATUS[row.status].tone}`}>{STATUS[row.status].label}</span>
               <PapersButton ids={row.paperIds} label={row.label} onOpen={onOpen}>
                 <span className="line-clamp-2">{row.label}</span>
               </PapersButton>
             </p>
-            <Sparkline series={row.series} />
-            <p className="text-xs tabular-nums text-slate-600 dark:text-[#a3a3a3] sm:text-right">
+            <Sparkline series={row.series} max={max} />
+            <p className="text-xs tabular-nums text-body sm:text-right">
               {row.first === row.last ? row.first : `${row.first}–${row.last}`} · {row.papers} papers
             </p>
           </li>
         ))}
       </ul>
-      <p className="mt-2 flex justify-between text-[11px] tabular-nums text-slate-500 dark:text-[#8f8f8f] sm:ml-[17rem] sm:mr-[8rem]">
+      <p className="mt-2 flex justify-between text-[11px] tabular-nums text-mute sm:ml-[17rem] sm:mr-[8rem]">
         <span>{first}</span>
         <span>{last}</span>
       </p>
@@ -323,35 +145,98 @@ function ListChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }
   const chart = insight.chart;
   if (chart.kind !== "list") return null;
   return (
-    <ul className="divide-y divide-slate-100 dark:divide-[#1a1a1a]">
+    <ul className="divide-y divide-hairline" data-chart="list">
       {chart.rows.map((row) => (
         <li key={row.title} className="py-2.5 first:pt-0 last:pb-0">
-          <p className="text-sm font-medium leading-5 text-slate-900 dark:text-[#f2f2f2]">
+          <p className="text-sm font-medium leading-5 text-ink">
             <PapersButton ids={row.paperIds} label={row.title} onOpen={onOpen}>
               {row.title}
             </PapersButton>
           </p>
-          <p className="mt-0.5 text-[13px] leading-5 text-slate-600 dark:text-[#a3a3a3]">{row.detail}</p>
+          <p className="mt-0.5 text-[13px] leading-5 text-body">{row.detail}</p>
         </li>
       ))}
     </ul>
   );
 }
 
-export default function InsightChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }) {
-  switch (insight.chart.kind) {
-    case "bars":
-      return <BarsChart insight={insight} onOpen={onOpen} />;
+export default function InsightChart({ insight, onOpen, paperTitles }: { insight: Insight; onOpen: OpenPapers; paperTitles?: Map<string, string> }) {
+  const chart = insight.chart;
+  const total = insight.population?.papers;
+  switch (chart.kind) {
+    case "bars": {
+      if (chart.layout === "columns") {
+        return (
+          <YearColumns
+            points={chart.rows.map((row) => ({ key: row.label, label: row.label, value: row.value, paperIds: row.paperIds }))}
+            measure={chart.unit === "papers" ? "papers" : "value"}
+            onOpen={onOpen}
+            paperTitles={paperTitles}
+          />
+        );
+      }
+      const rows: BarDatum[] = chart.rows.map((row) => ({
+        key: row.label,
+        label: row.label,
+        sub: legacyShare(row.detail) ? undefined : row.detail,
+        value: row.value,
+        paperIds: row.paperIds,
+        emphasis: chart.emphasis?.includes(row.label),
+      }));
+      return chart.unit === "papers" ? (
+        <Bars rows={rows} measure="papers" total={total} onOpen={onOpen} paperTitles={paperTitles} />
+      ) : (
+        <Bars rows={rows} measure="value" unit={chart.unit === "percent" ? "%" : chart.unit} axisLabel={chart.valueLabel} onOpen={onOpen} />
+      );
+    }
     case "pairs":
-      return <PairsChart insight={insight} onOpen={onOpen} />;
+      return (
+        <Bars
+          rows={chart.rows.map((row) => ({
+            key: `${row.a}|${row.b}`,
+            label: `${row.a} with ${row.b}`,
+            sub: `${Math.round(row.lift * 10) / 10} times as often as their sizes predict (${row.aPapers} and ${row.bPapers} papers)`,
+            value: row.together,
+            paperIds: row.paperIds,
+          }))}
+          measure="papers"
+          total={total}
+          axisLabel={`Papers on both themes${total ? `, out of ${total}` : ""}`}
+          onOpen={onOpen}
+          paperTitles={paperTitles}
+        />
+      );
     case "matrix":
-      return <MatrixChart insight={insight} onOpen={onOpen} />;
+      return (
+        <HeatGrid
+          rowLabel={chart.rowLabel}
+          colLabel={chart.colLabel}
+          rows={chart.rows}
+          cols={chart.cols}
+          values={chart.values}
+          paperIds={chart.paperIds}
+          rowTotals={chart.rowTotals}
+          marks={chart.marks}
+          onOpen={onOpen}
+        />
+      );
     case "compare":
       return <CompareChart insight={insight} onOpen={onOpen} />;
     case "lifecycles":
       return <LifecyclesChart insight={insight} onOpen={onOpen} />;
     case "list":
       return <ListChart insight={insight} onOpen={onOpen} />;
+    case "table":
+      return (
+        <DataTable
+          columns={chart.columns}
+          rows={chart.rows.map((row) => ({ key: row.key, cells: row.cells, paperId: row.paperIds.length === 1 ? row.paperIds[0] : undefined }))}
+          onOpen={onOpen}
+          caption={insight.question}
+        />
+      );
+    case "stat":
+      return <StatTile value={chart.value} label={chart.label} detail={chart.detail} paperIds={insight.paperIds} onOpen={onOpen} />;
     default:
       return null;
   }

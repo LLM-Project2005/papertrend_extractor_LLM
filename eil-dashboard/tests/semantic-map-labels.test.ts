@@ -147,9 +147,12 @@ test("a neighborhood label is clamped rather than running down the panel", () =>
 test("one neighborhood is explained rather than left looking broken", () => {
   // Colouring by neighborhood when there is only one paints every paper the
   // same colour, and nothing said so: the control appears not to work.
+  // Now it opens coloured by research area or year instead, and says why (docs/38).
   const map = source("components/workspace/RepositorySemanticMap.tsx");
-  assert.match(map, /map\.clusters\.length === 1 \?/);
-  assert.match(map, /did not separate into distinct neighborhoods/);
+  const colours = source("lib/semantic-map-colors.ts");
+  assert.match(map, /chosenColorMode \?\? defaultColorMode\(map\)/);
+  assert.match(map, /These papers form one neighborhood, so the map is coloured by/);
+  assert.match(colours, /these papers form one: they are too close in meaning to split into groups/);
 });
 
 test("relationship lines are legible rather than hairlines", () => {
