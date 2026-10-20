@@ -3681,6 +3681,31 @@ export function withResearchAreas(result: ChartStepResult, corpus: InsightCorpus
   };
 }
 
+/**
+ * Research areas for every chart of papers that has none yet. Chart mode adds
+ * them as it draws, but a word count asked for with its chart ("count the
+ * words in each paper and then show the bar chart") is drawn by the word-count
+ * step and came out in one colour on the pilot (2026-10-21). Only when a chart
+ * has rows that are papers; the areas come from the dashboard's own data.
+ */
+async function attachResearchAreas(context: RepositoryContext, charts: RepositoryChartPayload[]): Promise<RepositoryChartPayload[]> {
+  const needs = charts.some((chart) => chart.chartType !== "insight" && !chart.groups && chart.data.some((row) => row.paperId !== undefined));
+  if (!needs || context.papers.length === 0) return charts;
+  try {
+    const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
+    const corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, new Set(context.papers.map((paper) => String(paper.paperId))));
+    const grouped = withResearchAreas({ answer: "", citations: [], charts, coverage: completeCoverage(context, 0), limitations: [] }, corpus).charts ?? charts;
+    // A chart that already had its areas keeps them.
+    return grouped.map((chart, index) => {
+      const before = charts[index];
+      return before.chartType !== "insight" && before.groups ? before : chart;
+    });
+  } catch (error) {
+    console.warn("chat_chart_areas_failed", { message: error instanceof Error ? error.message : "unknown_error" });
+    return charts;
+  }
+}
+
 /** The papers a chart is about, found by checking every paper in scope; null to chart them all. */
 async function chartSubset(
   input: RepositoryChatInput,
@@ -3870,7 +3895,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
   return {
     answer: sections.join("\n\n"),
     citations: [...citations.values()],
-    charts,
+    charts: await attachResearchAreas(context, charts),
     passageSources,
     coverage: {
       eligiblePapers,
@@ -4885,6 +4910,7 @@ async function runRepositoryChatWithContext(
     return {
       handled: true,
       ...result,
+      charts: await attachResearchAreas(context, result.charts),
       plan: lengthPlan,
       execution,
       coverage: completeCoverage(context, context.papers.length),
@@ -5036,6 +5062,7 @@ async function runRepositoryChatWithContext(
   return {
     handled: true,
     ...result,
+    charts: await attachResearchAreas(context, result.charts),
     plan,
     execution,
     coverage: completeCoverage(context, context.papers.length),
