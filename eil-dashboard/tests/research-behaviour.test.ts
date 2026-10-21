@@ -255,6 +255,34 @@ test("each chosen paper is read whole, and the answer is written from the facts 
   assert.deepEqual([...new Set(world.calls.map((call) => call.model))], ["openai/gpt-6-luna-20260922"]);
 });
 
+test("at Max with GPT-6.1 Sol, Luna plans and reads and Sol writes; a run the allowance cannot cover is not started", async () => {
+  // 2026-10-22: Sol counts about twenty Luna tokens a token, so it writes only;
+  // reading every paper on it would need several days' allowance.
+  const sol = "openai/gpt-6.1-sol-20260929";
+  const h = await workspace();
+  const planned = await research(h, h.owner, { action: "plan", message: QUESTION, model: sol, projectId: PROJECT, knowledgeScope: { kind: "project", projectId: PROJECT } });
+  assert.equal(planned.status, 200);
+  const write = planned.body.deepResearchSession.steps.find((step: { tool_name: string }) => step.tool_name === "dr2_write");
+  assert.equal(write.input_payload.model, sol, "the plan names its writer");
+  await start(h, h.owner, planned.body.thread.id, planned.body.deepResearchSession.id);
+  assert.ok(calls("plan_reading").length > 0 && calls("record_paper").length > 0, "it planned and read");
+  for (const call of world.calls.filter((entry) => entry.tool !== "report")) assert.equal(call.model, "openai/gpt-6-luna-20260922", call.tool);
+  assert.deepEqual([...new Set(calls("report").map((call) => call.model))], [sol], "Sol writes the answer");
+
+  // With 700,000 of the day's 1,000,000 used, a Sol run (about 530,000) does not start, and costs no Max unit.
+  await h.db.query(
+    `INSERT INTO ai_usage_events(owner_user_id, usage_kind, units, metadata) VALUES ($1, 'chat_message', 700000, '{"metric":"tokens","cost_usd":0}'::jsonb)`,
+    [OWNER]
+  );
+  const units = await researchUnits(h);
+  const next = await research(h, h.owner, { action: "plan", message: "What did the teacher observe?", model: sol, projectId: PROJECT, knowledgeScope: { kind: "project", projectId: PROJECT } });
+  const refused = await start(h, h.owner, next.body.thread.id, next.body.deepResearchSession.id);
+  assert.equal(refused.status, 429);
+  assert.match(refused.body.error, /^A Max answer written by GPT-6\.1 Sol usually uses about 53% of a day's AI allowance/);
+  assert.equal(await sessionStatus(h, next.body.deepResearchSession.id), "planned");
+  assert.equal(await researchUnits(h), units, "no Max unit was charged");
+});
+
 test("a paper High would read is read too, even when the planner passed it over", async () => {
   const h = await workspace();
   const run2 = "7c8d9e0f-a1b2-4c3d-8e4f-5a6b7c8d9e01";

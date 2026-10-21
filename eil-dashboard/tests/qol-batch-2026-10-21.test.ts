@@ -255,7 +255,7 @@ test("Ask again sends the question again in its place, in the mode it was asked 
   assert.match(client, /await resendUserMessage\(message, prompt\);/, "an edit goes the same way");
   assert.match(client, /editMessageId: message\.id\.startsWith\("local-"\) \? undefined : message\.id/);
   assert.match(client, /toolMode: askedToolMode\(question, answer\)/);
-  assert.match(client, /if \(choice\.effort === "max"\) \{\s*setEffort\("max"\);\s*focusComposerWithDraft\(question\.content\);/);
+  assert.match(client, /if \(choice\.effort === "max"\) \{\s*setEffort\("max"\);\s*setSelectedModel\(choice\.model\);\s*focusComposerWithDraft\(question\.content\);/);
   assert.match(client, /message === visibleMessages\[visibleMessages\.length - 1\] && canPersist \? \(\s*<AskAgainMenu/, "only under the latest answer");
 });
 

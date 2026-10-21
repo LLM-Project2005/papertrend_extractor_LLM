@@ -165,6 +165,13 @@ LOG_METRICS = {
         f'resource.type="cloud_run_revision" AND resource.labels.service_name=("{WEB_SERVICE}" OR "{WORKER_SERVICE}") '
         'AND "site_daily_spend_limit_reached"',
     ),
+    # Logged at most hourly per instance while this month's AI spend is at or
+    # past 80% of AI_MONTHLY_BUDGET_USD (eil-dashboard/src/lib/spend-limits.ts).
+    "papertrend_ai_monthly_budget_80": (
+        "Requests made while this month's AI spend is at 80% or more of the monthly budget",
+        f'resource.type="cloud_run_revision" AND resource.labels.service_name="{WEB_SERVICE}" '
+        'AND "ai_monthly_budget_80"',
+    ),
 }
 # Replaced by papertrend_job_failures, which counts final failures only.
 RETIRED_METRICS = ["papertrend_research_failures"]
@@ -268,6 +275,11 @@ def policies(web_check: str, worker_check: str) -> list[dict]:
             "displayName": f"{PREFIX}: AI spending limit reached",
             "documentation": {"content": "Today's model spend reached the site-wide limit (AI_DAILY_USD_LIMIT_SITE). New AI requests are refused and uploaded papers wait until midnight UTC. Check the ai_usage_events rows for who spent it.", "mimeType": "text/markdown"},
             "conditions": [threshold("Held requests", log_metric("papertrend_spend_limit_reached"), 0, "3600s")],
+        },
+        {
+            "displayName": f"{PREFIX}: AI spend at 80% of the monthly budget",
+            "documentation": {"content": "This month's model spend for the whole site (every account's AI use and paper analysis, from the ai_usage_events rows) reached 80% of AI_MONTHLY_BUDGET_USD. Nothing is refused because of it. Top up OpenRouter credit, or lower the daily limits (AI_DAILY_TOKEN_LIMIT, AI_DAILY_USD_LIMIT_SITE). Admins see the figure in the chat's usage meter.", "mimeType": "text/markdown"},
+            "conditions": [threshold("Requests over 80%", log_metric("papertrend_ai_monthly_budget_80"), 0, "3600s")],
         },
         {
             "displayName": f"{PREFIX}: database CPU high",

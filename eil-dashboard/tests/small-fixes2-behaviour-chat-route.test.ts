@@ -89,15 +89,45 @@ test("one person has at most two answers in flight; a third is refused before an
   }
 });
 
-test("an answer is written by GPT-6 Luna, whatever model the request names", async () => {
-  // One model since 2026-10-09 (docs/34): a model named by the browser, an
-  // earlier one or a costly one, never reaches the answer.
+test("an answer is written by GPT-6 Luna or GPT-6.1 Sol, whatever other model the request names", async () => {
+  // GPT-6 Luna since 2026-10-09 (docs/34), and GPT-6.1 Sol as a choice since
+  // 2026-10-22: any other model named by the browser, an earlier one or a
+  // costly one, never reaches the answer.
   const { owner, ask, asked } = await chat();
   for (const model of ["openai/gpt-6-luna-20260922", "google/gemini-3.7-flash", "openai/gpt-5.6-luna-20260709", "anthropic/some-costly-model", undefined]) {
     const response = await ask(owner, { message: "What is in these papers?", ...(model ? { model } : {}) });
     assert.equal(response.status, 200);
   }
   assert.deepEqual(asked.map((input) => input.model), Array(5).fill("openai/gpt-6-luna-20260922"));
+});
+
+test("a GPT-6.1 Sol answer starts while what is left covers one, and is refused before anything is saved when not", async () => {
+  // Sol counts about twenty GPT-6 Luna tokens a token (model-prices.ts), so a
+  // usual Medium answer needs about 700,000 of the day's 1,000,000.
+  const { db, owner, ask, asked } = await chat();
+  const sol = "openai/gpt-6.1-sol-20260929";
+  const first = await ask(owner, { message: "What is in these papers?", model: sol, effort: "medium" });
+  assert.equal(first.status, 200);
+  assert.equal(asked.at(-1)?.model, sol, "Sol writes it");
+
+  await db.query(
+    `INSERT INTO ai_usage_events(owner_user_id, usage_kind, units, metadata) VALUES ($1, 'chat_message', 600000, '{"metric":"tokens","cost_usd":0}'::jsonb)`,
+    [OWNER]
+  );
+  const count = async (table: string) => Number((await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table} WHERE owner_user_id = $1`, [OWNER])).rows[0].n);
+  const before = { asked: asked.length, threads: await count("workspace_threads"), messages: await count("workspace_messages") };
+  const refused = await ask(owner, { message: "And their methods?", model: sol, effort: "medium" });
+  assert.equal(refused.status, 429);
+  assert.match((await refused.json()).error, /usually uses about 70% of a day's AI allowance .*and 40% is left today/);
+  assert.deepEqual(
+    { asked: asked.length, threads: await count("workspace_threads"), messages: await count("workspace_messages") },
+    before,
+    "nothing was started or saved"
+  );
+  // Luna still answers: it may start while anything is left.
+  const luna = await ask(owner, { message: "And their methods?", effort: "medium" });
+  assert.equal(luna.status, 200);
+  assert.equal(asked.at(-1)?.model, "openai/gpt-6-luna-20260922");
 });
 
 test("the Adaptive insights request carries no free text to the model", async () => {

@@ -8,29 +8,10 @@
  * provider balance fall, which is how this project discovered it was nearly out
  * of credit.
  *
- * Prices are per million tokens, in US dollars, as OpenRouter lists them. They
- * change, so they are labelled with the date they were taken and a wrong price
- * produces a wrong estimate rather than a wrong answer.
+ * Prices are per million tokens, in US dollars, as OpenRouter lists them, in
+ * one table (model-prices.ts) that the daily allowance reads too.
  */
-
-/**
- * Prices taken from OpenRouter's model list on 2026-09-29, per million tokens,
- * USD. The two chat models were wrong until then - Gemini 3.7 Flash ten times
- * too low, Luna twelve times too high - so every recorded estimate was off.
- */
-const PRICES: Record<string, { prompt: number; completion: number }> = {
-  "openai/gpt-6-luna-20260922": { prompt: 0.1, completion: 0.5 },
-  "openai/gpt-6-luna": { prompt: 0.1, completion: 0.5 },
-  "google/gemini-3.8-flash": { prompt: 0.75, completion: 3.75 },
-  // Earlier models, for answers recorded before 2026-10-09.
-  "openai/gpt-5.6-luna-20260709": { prompt: 0.2, completion: 1.2 },
-  "openai/gpt-5.6-luna": { prompt: 0.2, completion: 1.2 },
-  "google/gemini-3.7-flash": { prompt: 0.75, completion: 3.75 },
-  "google/gemini-3.1-flash-lite": { prompt: 0.25, completion: 1.5 },
-  "google/gemini-2.5-flash-lite": { prompt: 0.1, completion: 0.4 },
-  "openai/gpt-4o": { prompt: 2.5, completion: 10 },
-  "openai/text-embedding-3-small": { prompt: 0.02, completion: 0 },
-};
+import { isPricedModel, priceOf } from "@/lib/model-prices";
 
 /**
  * One web search through OpenRouter's web plugin on the Exa engine, which
@@ -54,15 +35,6 @@ export function spendUsd(
   return { usd: Math.round(estimate * 1_000_000) / 1_000_000, source: "estimate" };
 }
 
-/**
- * Used when a model is not in the table above.
- *
- * Deliberately the price of the expensive model rather than an average: an
- * unknown model showing a cost that is too high prompts someone to look, and
- * one showing a cost that is too low does not.
- */
-const UNKNOWN_MODEL_PRICE = { prompt: 2.5, completion: 10 };
-
 export interface ModelSpend {
   model: string;
   promptTokens: number;
@@ -70,13 +42,13 @@ export interface ModelSpend {
   usd: number;
 }
 
+/** A model's input and output price per million tokens (model-prices.ts holds the table). */
 export function priceFor(model: string): { prompt: number; completion: number } {
-  return PRICES[model] ?? UNKNOWN_MODEL_PRICE;
+  const price = priceOf(model);
+  return { prompt: price.input, completion: price.output };
 }
 
-export function isPricedModel(model: string): boolean {
-  return model in PRICES;
-}
+export { isPricedModel };
 
 /** Cost of one model call, in US dollars. */
 export function costOfCall(model: string, promptTokens: number, completionTokens: number): number {

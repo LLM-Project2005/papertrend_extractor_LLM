@@ -141,6 +141,7 @@ export default function ThinkingEffort({
   models = [],
   model,
   onModelChange,
+  note = null,
 }: {
   value: ThinkingEffortLevel;
   onChange: (level: ThinkingEffortLevel) => void;
@@ -150,6 +151,8 @@ export default function ThinkingEffort({
   models?: ReadonlyArray<ModelChoice>;
   model?: string;
   onModelChange?: (model: string) => void;
+  /** A line under the slider about how the choice runs (Max with another model). */
+  note?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"effort" | "models">("effort");
@@ -309,6 +312,7 @@ export default function ThinkingEffort({
                 {level.label}. {level.hint}
               </p>
               {maxUnavailable ? <p className="mt-2 px-1 text-xs leading-5 text-body">{maxUnavailable}</p> : null}
+              {note ? <p className="mt-2 px-1 text-xs leading-5 text-body">{note}</p> : null}
             </>
           ) : (
             <div>

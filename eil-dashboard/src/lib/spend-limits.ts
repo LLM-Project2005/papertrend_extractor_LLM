@@ -113,9 +113,11 @@ async function siteSpendToday(day: string): Promise<number> {
   return usd;
 }
 
-/** Test seam: forget the cached site-wide total. */
+/** Test seam: forget the cached site-wide totals and when the budget was last warned about. */
 export function resetSpendCache(): void {
   siteCache = null;
+  monthCache = null;
+  lastBudgetWarning = 0;
 }
 
 export async function readSpendToday(ownerUserId: string): Promise<SpendState> {
@@ -141,13 +143,91 @@ export function spendMetadata(
     { calls: usage.calls, byModel: usage.byModel ?? [], reportedUsd: usage.reportedUsd, reportedCalls: usage.reportedCalls },
     webSearches
   );
+  // The cache split, where the provider gave it: the units count cached input
+  // at its own (lower) weight, and these say how much of the prompt that was.
+  const cached = (usage.byModel ?? []).reduce((sum, row) => sum + (row.cachedTokens ?? 0), 0);
+  const written = (usage.byModel ?? []).reduce((sum, row) => sum + (row.cacheWriteTokens ?? 0), 0);
   return {
     metric: "tokens",
     prompt_tokens: usage.promptTokens,
     completion_tokens: usage.completionTokens,
+    ...(cached > 0 ? { cached_tokens: cached } : {}),
+    ...(written > 0 ? { cache_write_tokens: written } : {}),
     model_calls: usage.calls,
     cost_usd: spend.usd,
     cost_source: spend.source,
     source,
   };
+}
+
+/*
+ * The monthly AI budget for the whole site (2026-10-22): every account's
+ * requests and every paper analysed, as the spend rows record them. At 80% the
+ * web service logs `ai_monthly_budget_80`, which an alert policy emails to the
+ * owner (scripts/ops/apply_monitoring.py), and admins see it in the usage
+ * meter. Nothing is refused because of it; the daily limits above do that.
+ *
+ * Evaluation runs made with the same OpenRouter key leave no spend row, so
+ * OpenRouter's own figure can be a little higher.
+ */
+export const DEFAULT_MONTHLY_BUDGET_USD = 100;
+export const BUDGET_ALERT_SHARE = 0.8;
+
+export function monthlyBudgetUsd(env: Record<string, string | undefined> = process.env): number {
+  return parseUsd(env.AI_MONTHLY_BUDGET_USD, DEFAULT_MONTHLY_BUDGET_USD);
+}
+
+/** The month starts at midnight UTC on its first day, like the daily limits. */
+export function utcMonthStart(now = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+export interface MonthlyBudget {
+  monthUsd: number;
+  budgetUsd: number;
+  share: number;
+}
+
+export function monthlyBudgetState(monthUsd: number, budgetUsd = monthlyBudgetUsd()): MonthlyBudget {
+  return { monthUsd: Math.round(monthUsd * 100) / 100, budgetUsd, share: budgetUsd > 0 ? monthUsd / budgetUsd : 0 };
+}
+
+const MONTH_CACHE_MS = 10 * 60_000;
+let monthCache: { month: string; usd: number; at: number } | null = null;
+
+/** This month's spend for the whole site, read at most every ten minutes per instance. */
+export async function siteSpendThisMonth(now = new Date()): Promise<number> {
+  const month = utcMonthStart(now);
+  if (monthCache && monthCache.month === month && Date.now() - monthCache.at < MONTH_CACHE_MS) return monthCache.usd;
+  const usd = await withCloudSqlServiceTransaction(async (client) => {
+    const result = await client.query<{ site_usd: number }>(SITE_SPEND_SQL, [month]);
+    return Number(result.rows[0]?.site_usd ?? 0);
+  });
+  monthCache = { month, usd, at: Date.now() };
+  return usd;
+}
+
+const BUDGET_WARNING_EVERY_MS = 60 * 60_000;
+let lastBudgetWarning = 0;
+
+/**
+ * Logs `ai_monthly_budget_80` once an hour per instance while this month's
+ * spend is at or past 80% of the budget. Never throws: a request is not
+ * refused because the budget could not be read.
+ */
+export async function noteMonthlyBudget(
+  now = new Date(),
+  readMonth: (now: Date) => Promise<number> = siteSpendThisMonth
+): Promise<MonthlyBudget | null> {
+  try {
+    const state = monthlyBudgetState(await readMonth(now));
+    if (state.share >= BUDGET_ALERT_SHARE && Date.now() - lastBudgetWarning >= BUDGET_WARNING_EVERY_MS) {
+      lastBudgetWarning = Date.now();
+      console.warn("ai_monthly_budget_80", JSON.stringify({ monthUsd: state.monthUsd, budgetUsd: state.budgetUsd, percent: Math.round(state.share * 100) }));
+    }
+    return state;
+  } catch (error) {
+    console.info("ai_monthly_budget_unreadable", { message: error instanceof Error ? error.message : "unknown_error" });
+    return null;
+  }
 }

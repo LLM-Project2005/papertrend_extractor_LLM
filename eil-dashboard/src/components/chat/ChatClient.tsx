@@ -113,6 +113,7 @@ const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"
 import ReportActions from "@/components/chat/ReportActions";
 import UsageMeter from "@/components/chat/UsageMeter";
 import MarkdownActions, { downloadMarkdown } from "@/components/chat/MarkdownActions";
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModelDescription, chatModelLabel } from "@/lib/chat-models";
 import AskAgainMenu, { type AskAgainChoice } from "@/components/chat/AskAgainMenu";
 import { answerMarkdown, conversationMarkdown, isFinishedAnswer, markdownFileName } from "@/lib/answer-export";
 import type { Insight } from "@/lib/insights/types";
@@ -253,7 +254,6 @@ export function readPinnedThreadIds(value: unknown): string[] {
 }
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
 const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
-const DEFAULT_CHAT_MODEL = "openai/gpt-6-luna-20260922";
 
 type ChatGenerationParameters = {
   temperature: number;
@@ -318,12 +318,15 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
   budget: STRICT_RESEARCH_BUDGET,
 };
 
-// One model since 2026-10-09 (docs/34): the evidence is chosen on the reader's
-// model, and Gemini never narrowed it (docs/25). A second entry brings the
-// picker back.
-const MODEL_OPTIONS = [
-  { value: "openai/gpt-6-luna-20260922", label: "GPT-6 Luna", description: "By OpenAI.", Mark: OpenAIIcon },
-] as const;
+// GPT-6 Luna, and since 2026-10-22 GPT-6.1 Sol (chat-models.ts). The evidence
+// is chosen on the reader's model (docs/25); Sol counts about twenty times Luna
+// against the daily allowance, which its description says.
+const MODEL_OPTIONS = CHAT_MODELS.map((model) => ({
+  value: model.value,
+  label: model.label,
+  description: chatModelDescription(model.value),
+  Mark: OpenAIIcon,
+}));
 
 
 const CHART_INTENT_PATTERN =
@@ -2517,6 +2520,7 @@ export default function ChatClient() {
     if (!question) return;
     if (choice.effort === "max") {
       setEffort("max");
+      setSelectedModel(choice.model);
       focusComposerWithDraft(question.content);
       return;
     }
@@ -2835,6 +2839,8 @@ export default function ChatClient() {
         sessionId: deepSession?.status === "planned" ? deepSession.id : undefined,
         chatMode: "deep_research",
         action: "plan",
+        // A model dearer than GPT-6 Luna writes the answer; Luna still reads the papers.
+        model: selectedModel,
         researchSourcePolicy: effectiveResearchSourcePolicy,
       });
       applyPayload(payload);
@@ -4469,6 +4475,11 @@ export default function ChatClient() {
                       models={MODEL_OPTIONS}
                       model={selectedModel}
                       onModelChange={setSelectedModel}
+                      note={
+                        effort === "max" && selectedModel !== DEFAULT_CHAT_MODEL
+                          ? `At Max, GPT-6 Luna reads the papers and ${chatModelLabel(selectedModel)} writes the answer.`
+                          : null
+                      }
                     />
                     <button
                       type="submit"

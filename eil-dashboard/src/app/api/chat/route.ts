@@ -26,7 +26,8 @@ import {
   type KnowledgeScopeSnapshot,
 } from "@/lib/knowledge-scope";
 import { getDatabaseProvider } from "@/lib/server-env";
-import { GuardError, assertAiTokenBudget, persistAiTokenUsage } from "@/lib/security-guards";
+import { GuardError, assertAiTokenBudget, assertModelAllowance, persistAiTokenUsage } from "@/lib/security-guards";
+import { resolveChatModel } from "@/lib/chat-models";
 import { withAiTokenUsageTracking, type AiTokenUsageTotals } from "@/lib/ai-token-usage";
 import { spendUsd, summarizeSpend } from "@/lib/answer-cost";
 import { adviseOnFailure } from "@/lib/model-failure";
@@ -214,19 +215,6 @@ function parseChatRequestBody(value: unknown): ChatRequestBody {
   return parsed.data as ChatRequestBody;
 }
 
-const DEFAULT_CHAT_MODEL = "openai/gpt-6-luna-20260922";
-const TOOL_CAPABLE_CHAT_MODELS = [
-  "openai/gpt-6-luna-20260922",
-] as const;
-
-function resolveChatModel(model?: string | null) {
-  const normalized = String(model ?? "").trim();
-  return TOOL_CAPABLE_CHAT_MODELS.includes(
-    normalized as (typeof TOOL_CAPABLE_CHAT_MODELS)[number]
-  )
-    ? normalized
-    : DEFAULT_CHAT_MODEL;
-}
 
 async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: string): Promise<NextResponse> {
   const currentMessage =
@@ -238,6 +226,13 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
   if (!currentMessage?.trim()) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
+
+  // GPT-6.1 Sol counts about twenty times GPT-6 Luna against the allowance:
+  // the reader hears before the question is saved if what is left today will
+  // not cover a usual answer (chat-models.ts).
+  const selectedModel = resolveChatModel(body.model);
+  const chartRequested = (body.toolMode ?? "auto") === "chart" || Boolean(body.chartRequest);
+  await assertModelAllowance(ownerUserId, selectedModel, chartRequested ? "chart" : body.effort ?? "medium");
 
   const requestId = randomUUID();
   const knowledgeScope = normalizeKnowledgeScope({
@@ -324,10 +319,6 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
   }
 
   const requestedToolMode: ChatToolMode = body.toolMode ?? "auto";
-  const chartRequested =
-    requestedToolMode === "chart" ||
-    Boolean(body.chartRequest);
-  const selectedModel = resolveChatModel(body.model);
 
   if (!thread) throw new Error("The conversation could not be opened.");
   const startedAt = Date.now();
@@ -549,6 +540,8 @@ async function handlePost(request: Request) {
       }
       const research = {
         message: body.message,
+        // At Max a dearer model writes while GPT-6 Luna reads (deep-research/actions.ts).
+        model: resolveChatModel(body.model),
         threadId: body.threadId,
         sessionId: body.sessionId,
         projectId: body.projectId,
