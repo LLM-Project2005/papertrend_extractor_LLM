@@ -69,3 +69,7 @@ papers-*.zip
 
 # Pipeline evaluation cache (downloaded PDFs, extracted text)
 .eval-cache/
+
+# ── Product video (kept locally, not in the repository) ──
+video/
+docs/37-product-video.md

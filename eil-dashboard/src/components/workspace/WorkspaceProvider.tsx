@@ -283,7 +283,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         profileDirtyRef.current = false;
         setProfile(remoteProfile);
       }
-      setProfileFromAccount(Boolean(authProfile?.workspace_profile));
+      // The account's profile has loaded, saved before or not: a change now
+      // cannot overwrite something the account holds but this page has not read.
+      setProfileFromAccount(Boolean(authProfile));
 
       setHydrated(true);
       return;

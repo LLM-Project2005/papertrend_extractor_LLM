@@ -60,6 +60,8 @@ export interface PaperStepper {
   onNext: (() => void) | null;
   /** The button the reader stepped with, which keeps focus on the next paper. */
   focus?: "previous" | "next" | null;
+  /** Why the last step did not happen (the paper could not be opened); this one stays. */
+  notice?: string | null;
 }
 
 /** Arrow keys step only when they would do nothing else: not while typing, choosing or with a modifier (Alt+← is Back). */
@@ -744,6 +746,12 @@ export function PaperExplorerPanel({
               </button>
             </div>
           </div>
+
+          {stepper?.notice ? (
+            <p role="status" className="mt-3 text-xs text-red-700 dark:text-red-300">
+              {stepper.notice}
+            </p>
+          ) : null}
 
           {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
               looked like two buttons with a third cut off. */}

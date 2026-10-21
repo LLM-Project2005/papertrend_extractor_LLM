@@ -268,7 +268,7 @@ test("pinned chats are saved with the account, once its profile is in hand", () 
   assert.match(client, /window\.localStorage\.removeItem\(PINNED_THREADS_STORAGE_KEY\)/, "this browser's pins move into the account once");
   assert.doesNotMatch(client, /localStorage\.setItem\(\s*PINNED_THREADS_STORAGE_KEY/);
   const provider = read("src/components/workspace/WorkspaceProvider.tsx");
-  assert.match(provider, /setProfileFromAccount\(Boolean\(authProfile\?\.workspace_profile\)\)/);
+  assert.match(provider, /setProfileFromAccount\(Boolean\(authProfile\)\)/, "once the account's profile has loaded, saved before or not");
   assert.match(provider, /pinnedChatThreadIds: current\.pinnedChatThreadIds/, "resetting the research profile keeps the pins");
   assert.match(read("src/types/workspace.ts"), /pinnedChatThreadIds\?: string\[\];/);
 });

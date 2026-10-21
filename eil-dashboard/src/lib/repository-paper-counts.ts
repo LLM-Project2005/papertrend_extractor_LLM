@@ -4,6 +4,8 @@
  * failed upload is not a paper in the repository, and Trash is left out. A
  * canceled analysis is neither a paper nor in progress.
  */
+import { runProjectId } from "@/lib/recent-papers";
+
 export interface RepositoryPaperStats {
   papers: number;
   inProgress: number;
@@ -36,9 +38,8 @@ export function repositoryPaperStats(
   }
   for (const run of runs) {
     if (run.trashed_at) continue;
-    const payloadProjectId = typeof run.input_payload?.project_id === "string" ? run.input_payload.project_id : null;
     // A paper filed in a folder belongs to the folder's repository.
-    const projectId = run.folder_id ? folderProject.get(run.folder_id) ?? payloadProjectId : payloadProjectId;
+    const projectId = runProjectId(run, folderProject);
     const current = projectId ? stats.get(projectId) : null;
     if (!current) continue;
     if (run.status === "succeeded") current.papers += 1;

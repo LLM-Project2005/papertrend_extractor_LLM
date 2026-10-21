@@ -2583,6 +2583,9 @@ export default function ChatClient() {
     setParameterMenuOpen(false);
     setEditingMessageId(null);
     setEditingDraft("");
+    // Kept, so a request that is refused (a GPT-6.1 Sol answer the allowance
+    // will not cover) or fails gives the conversation back as it was.
+    const previousMessages = messages;
     setMessages(nextMessages);
 
     const toolMode = overrides.toolMode ?? (webSearchEnabled ? "web_search" : "auto");
@@ -2636,6 +2639,7 @@ export default function ChatClient() {
       }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setMessages(previousMessages);
       setError(
         nextError instanceof Error ? nextError.message : "Failed to edit message."
       );

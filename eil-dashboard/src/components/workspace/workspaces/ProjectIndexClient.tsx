@@ -59,12 +59,22 @@ export default function ProjectIndexClient() {
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
-    void fetch("/api/workspace/library?includeTrashed=false", { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
-      .then((response) => (response.ok ? (response.json() as Promise<{ runs?: IngestionRunRow[] }>) : null))
-      .then((payload) => {
-        if (payload?.runs) setRuns(payload.runs);
-      })
-      .catch(() => undefined);
+    // Every page of the account's papers (the route gives at most 500 at a
+    // time), so a large account's counts are not cut short.
+    void (async () => {
+      const all: IngestionRunRow[] = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const response = await fetch(`/api/workspace/library?includeTrashed=false&limit=500&page=${page}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { runs?: IngestionRunRow[]; pagination?: { hasMore?: boolean } };
+        all.push(...(payload.runs ?? []));
+        if (!payload.pagination?.hasMore) break;
+      }
+      setRuns(all);
+    })().catch(() => undefined);
     return () => controller.abort();
   }, [token]);
   const paperStats = useMemo(

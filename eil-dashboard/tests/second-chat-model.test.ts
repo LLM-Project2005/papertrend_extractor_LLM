@@ -113,7 +113,22 @@ test("a Sol request that what is left will not cover is refused before it starts
   const never = allowanceRefusal({ ...day, model: SOL_MODEL, kind: "high", used: 0 });
   assert.match(never ?? "", /^An answer at High with GPT-6\.1 Sol usually uses about 190% of a day's AI allowance .*so it can't fit in one day\. Choose a lower effort, or ask with GPT-6 Luna\.$/);
   assert.match(allowanceRefusal({ ...day, model: SOL_MODEL, kind: "max", used: 700_000 }) ?? "", /^A Max answer written by GPT-6\.1 Sol usually uses about 53%/);
-  assert.match(allowanceRefusal({ ...day, model: SOL_MODEL, kind: "chart", used: 900_000 }) ?? "", /^A chart with GPT-6\.1 Sol/);
+  const chart = allowanceRefusal({ ...day, model: SOL_MODEL, kind: "chart", used: 900_000 }) ?? "";
+  assert.match(chart, /^A chart with GPT-6\.1 Sol/);
+  assert.doesNotMatch(chart, /lower effort/, "a chart counts the same at any effort");
+});
+
+test("review fixes: pins wait only for the account's profile, a refused re-ask gives the answer back, a failed step keeps the paper", () => {
+  assert.match(read("src/components/workspace/WorkspaceProvider.tsx"), /setProfileFromAccount\(Boolean\(authProfile\)\);/);
+  const client = read("src/components/chat/ChatClient.tsx");
+  assert.match(client, /const previousMessages = messages;\n\s+setMessages\(nextMessages\);/);
+  assert.match(client, /if \(nextError instanceof Error && nextError.name === "AbortError"\) return;\n\s+setMessages\(previousMessages\);/);
+  const provider = read("src/components/workspace/PaperViewerProvider.tsx");
+  assert.match(provider, /if \(keep\) stepFailureRef\.current = message;\n\s+else \{\n\s+setRun\(null\);/);
+  assert.match(provider, /index: current\.index, notice: `That paper could not be opened\. \$\{failure\}`/);
+  const drop = read("src/components/workspace/PdfDropTarget.tsx");
+  assert.match(drop, /if \(!carriesFiles\(event\.dataTransfer\) \|\| event\.defaultPrevented\) return;\n\s+event\.preventDefault\(\);\n\s+if \(!accepting\(\)\) return;/, "a drop beside a dialog does not open the file");
+  assert.match(read("src/components/workspace/workspaces/ProjectIndexClient.tsx"), /limit=500&page=\$\{page\}/);
 });
 
 test("the chat checks the allowance before the question is saved, and Max hands the model to its writer", () => {

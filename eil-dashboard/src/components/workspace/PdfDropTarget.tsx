@@ -34,25 +34,31 @@ export default function PdfDropTarget({
   const depth = useRef(0);
   const onFilesRef = useRef(onFiles);
   onFilesRef.current = onFiles;
-  const active = !disabled && Boolean(repositoryName);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+  // Listening on any repository page; taking the files only when no dialog is
+  // open (a dialog has its own drop box).
+  const listening = Boolean(repositoryName);
+  const active = listening && !disabled;
 
   useEffect(() => {
-    if (!active) {
+    if (!listening) {
       setDragging(false);
       return;
     }
-    const usable = (event: DragEvent) => carriesFiles(event.dataTransfer) && !hasOpenDialog();
+    const accepting = () => !disabledRef.current && !hasOpenDialog();
     function handleEnter(event: DragEvent) {
-      if (!usable(event)) return;
+      if (!carriesFiles(event.dataTransfer) || !accepting()) return;
       event.preventDefault();
       depth.current += 1;
       setDragging(true);
     }
     function handleOver(event: DragEvent) {
-      if (!usable(event)) return;
-      // Without this the browser opens the file instead of dropping it here.
+      if (!carriesFiles(event.dataTransfer) || event.defaultPrevented) return;
+      // Without this the browser opens the file in place of the page, even
+      // when it is dropped beside a dialog's own drop box.
       event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      if (accepting() && event.dataTransfer) event.dataTransfer.dropEffect = "copy";
     }
     function handleLeave(event: DragEvent) {
       if (!carriesFiles(event.dataTransfer)) return;
@@ -62,8 +68,10 @@ export default function PdfDropTarget({
     function handleDrop(event: DragEvent) {
       depth.current = 0;
       setDragging(false);
-      if (!usable(event)) return;
+      // A dialog's drop box has taken it, or it is not a drag from the computer.
+      if (!carriesFiles(event.dataTransfer) || event.defaultPrevented) return;
       event.preventDefault();
+      if (!accepting()) return;
       const files = Array.from(event.dataTransfer?.files ?? []);
       if (files.length > 0) onFilesRef.current(files);
     }
@@ -78,7 +86,11 @@ export default function PdfDropTarget({
       window.removeEventListener("dragleave", handleLeave);
       window.removeEventListener("drop", handleDrop);
     };
-  }, [active]);
+  }, [listening]);
+
+  useEffect(() => {
+    if (disabled) setDragging(false);
+  }, [disabled]);
 
   if (!dragging || !active) return null;
   return (

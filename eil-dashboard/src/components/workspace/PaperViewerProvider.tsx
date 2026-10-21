@@ -51,7 +51,7 @@ interface PaperViewer {
   openPaper: (target: PaperTarget, options?: { sequence?: PaperTarget[] }) => void;
 }
 
-type Sequence = { items: PaperTarget[]; index: number; focus: "previous" | "next" | null };
+type Sequence = { items: PaperTarget[]; index: number; focus: "previous" | "next" | null; notice?: string | null };
 
 const PaperViewerContext = createContext<PaperViewer | null>(null);
 
@@ -71,8 +71,8 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
   const token = session?.access_token ?? null;
   // Home's "Continue where you left off" lists the papers opened here.
   const { allFolders } = useWorkspaceProfile();
-  const recentContextRef = useRef({ userId: user?.id ?? null, folderProject: new Map<string, string | null | undefined>() });
-  recentContextRef.current = { userId: user?.id ?? null, folderProject: new Map(allFolders.map((folder) => [folder.id, folder.project_id])) };
+  const recentContextRef = useRef({ userId: user?.id ?? null, allFolders });
+  recentContextRef.current = { userId: user?.id ?? null, allFolders };
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -89,6 +89,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
   const [sequence, setSequence] = useState<Sequence | null>(null);
   const tabRef = useRef(tab);
   tabRef.current = tab;
+  const stepFailureRef = useRef<string | null>(null);
   const requestRef = useRef(0);
   const pushedRef = useRef(false);
   /** The run shown or being opened, so the address sync does not open it twice. */
@@ -129,16 +130,22 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
         if (!response.ok || !payload.run) throw new Error(payload.error || "The paper could not be opened.");
         setRun(payload.run);
         setDetail(payload.analysis ?? null);
-        rememberOpenedPaper(recentContextRef.current.userId, {
+        const { userId, allFolders: folders } = recentContextRef.current;
+        rememberOpenedPaper(userId, {
           runId: payload.run.id,
           title: payload.analysis?.title || getRunDisplayTitle(payload.run, payload.run.id),
-          projectId: runProjectId(payload.run, recentContextRef.current.folderProject),
+          projectId: runProjectId(payload.run, new Map(folders.map((folder) => [folder.id, folder.project_id]))),
         });
         return payload.run.id;
       } catch (loadError) {
         if (id === requestRef.current) {
-          setRun(null);
-          setError(loadError instanceof Error ? loadError.message : "The paper could not be opened.");
+          const message = loadError instanceof Error ? loadError.message : "The paper could not be opened.";
+          // A step that fails keeps the paper on screen; step() says what happened.
+          if (keep) stepFailureRef.current = message;
+          else {
+            setRun(null);
+            setError(message);
+          }
         }
         return null;
       } finally {
@@ -193,11 +200,17 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
       const current = sequence;
       const next = current ? current.items[current.index + delta] : null;
       if (!current || !next) return;
-      setSequence({ ...current, index: current.index + delta, focus: delta < 0 ? "previous" : "next" });
+      setSequence({ ...current, index: current.index + delta, focus: delta < 0 ? "previous" : "next", notice: null });
       // The reader's tab comes along, unless the next paper is named with its own passage.
       const target: PaperTarget = next.quote ? next : { ...next, tab: tabRef.current };
+      stepFailureRef.current = null;
       void load(target, true).then((runId) => {
-        if (!runId) return;
+        if (!runId) {
+          // The paper on screen stays, and so does its place in the list.
+          const failure = stepFailureRef.current;
+          if (failure) setSequence((latest) => (latest ? { ...latest, index: current.index, notice: `That paper could not be opened. ${failure}` } : latest));
+          return;
+        }
         writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push", readPaperQuote(target.quote));
         pushedRef.current = true;
       });
@@ -344,6 +357,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
                   onPrevious: sequence.index > 0 ? () => step(-1) : null,
                   onNext: sequence.index < sequence.items.length - 1 ? () => step(1) : null,
                   focus: sequence.focus,
+                  notice: sequence.notice ?? null,
                 }
               : null
           }

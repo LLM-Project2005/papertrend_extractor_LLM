@@ -110,8 +110,10 @@ export function allowanceRefusal(input: {
   const label = chatModelLabel(input.model);
   const what = input.kind === "max" ? `${KIND_NAMES.max} written by ${label}` : `${KIND_NAMES[input.kind]} with ${label}`;
   const counts = `${label} counts about ${multiplier} times GPT-6 Luna`;
+  // A chart is counted the same at any effort, so a lower effort would not help it.
+  const chart = input.kind === "chart";
   if (need > input.limit) {
-    return `${what[0].toUpperCase()}${what.slice(1)} usually uses about ${percentOf(need, input.limit)} of a day's AI allowance (${counts}), so it can't fit in one day. Choose a lower effort, or ask with GPT-6 Luna.`;
+    return `${what[0].toUpperCase()}${what.slice(1)} usually uses about ${percentOf(need, input.limit)} of a day's AI allowance (${counts}), so it can't fit in one day. ${chart ? "Ask with GPT-6 Luna." : "Choose a lower effort, or ask with GPT-6 Luna."}`;
   }
-  return `${what[0].toUpperCase()}${what.slice(1)} usually uses about ${percentOf(need, input.limit)} of a day's AI allowance (${counts}), and ${percentOf(left, input.limit)} is left today. Ask with GPT-6 Luna, choose a lower effort, or try again after the allowance resets at midnight UTC (7:00 in Thailand).`;
+  return `${what[0].toUpperCase()}${what.slice(1)} usually uses about ${percentOf(need, input.limit)} of a day's AI allowance (${counts}), and ${percentOf(left, input.limit)} is left today. ${chart ? "Ask with GPT-6 Luna, or try again" : "Ask with GPT-6 Luna, choose a lower effort, or try again"} after the allowance resets at midnight UTC (7:00 in Thailand).`;
 }
