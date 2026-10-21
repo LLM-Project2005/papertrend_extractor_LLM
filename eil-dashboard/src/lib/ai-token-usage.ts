@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { ModelTokens } from "@/lib/model-prices";
 
 export interface AiTokenUsageTotals {
   promptTokens: number;
@@ -12,7 +13,7 @@ export interface AiTokenUsageTotals {
    * on the fast model and several cents on the reader-facing one, and this
    * pipeline uses both in the same answer.
    */
-  byModel: Array<{ model: string; promptTokens: number; completionTokens: number }>;
+  byModel: ModelTokens[];
   /**
    * What the provider says it charged, in US dollars, summed over the calls
    * that reported it. OpenRouter reports `usage.cost` on every call, and it
@@ -37,6 +38,11 @@ export function recordAiTokenUsage(usage: unknown, model?: string): void {
   const promptTokens = finiteTokenCount(value.prompt_tokens ?? value.input_tokens);
   const completionTokens = finiteTokenCount(value.completion_tokens ?? value.output_tokens);
   const reportedTotal = finiteTokenCount(value.total_tokens);
+  // Which prompt tokens came from the provider's cache, and which were written
+  // to it: GPT-6.1 Sol's cached input counts ten Luna tokens, the rest twenty.
+  const details = (value.prompt_tokens_details ?? value.input_tokens_details) as Record<string, unknown> | undefined;
+  const cachedTokens = Math.min(promptTokens, finiteTokenCount(details?.cached_tokens));
+  const cacheWriteTokens = Math.min(promptTokens - cachedTokens, finiteTokenCount(details?.cache_write_tokens));
   totals.promptTokens += promptTokens;
   totals.completionTokens += completionTokens;
   totals.totalTokens += reportedTotal || promptTokens + completionTokens;
@@ -49,12 +55,13 @@ export function recordAiTokenUsage(usage: unknown, model?: string): void {
 
   const name = model?.trim() || "unknown";
   const row = totals.byModel.find((entry) => entry.model === name);
-  if (row) {
-    row.promptTokens += promptTokens;
-    row.completionTokens += completionTokens;
-  } else {
-    totals.byModel.push({ model: name, promptTokens, completionTokens });
-  }
+  const target = row ?? { model: name, promptTokens: 0, completionTokens: 0 };
+  if (!row) totals.byModel.push(target);
+  target.promptTokens += promptTokens;
+  target.completionTokens += completionTokens;
+  // Kept only where the provider reported them, so a row says nothing it was not told.
+  if (cachedTokens > 0) target.cachedTokens = (target.cachedTokens ?? 0) + cachedTokens;
+  if (cacheWriteTokens > 0) target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + cacheWriteTokens;
 }
 
 export function withAiTokenUsageTracking<T>(

@@ -5,6 +5,11 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
+import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle";
+import PdfDropTarget from "@/components/workspace/PdfDropTarget";
+
+// Add papers opens only when PDFs are dropped on this page.
+const AnalyzeFlowModal = dynamic(() => import("@/components/workspace/AnalyzeFlowModal"), { ssr: false });
 import Sidebar from "@/components/Sidebar";
 import Modal, { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
@@ -71,6 +76,30 @@ const TAB_DEFINITIONS = [
 ] as const;
 
 const DEFAULT_TAB = "semantic_map";
+
+/**
+ * The tab the reader had open last, for a visit that names none (the
+ * sidebar, a plain link): the Dashboard opens where they left it (2026-10-21).
+ * Kept in this browser only; a link with ?tab= always wins.
+ */
+export const DASHBOARD_TAB_STORAGE_KEY = "papertrend_dashboard_tab_v1";
+
+function readRememberedTab(): string | null {
+  try {
+    const value = typeof window === "undefined" ? null : window.localStorage.getItem(DASHBOARD_TAB_STORAGE_KEY);
+    return value && TAB_DEFINITIONS.some((tab) => tab.key === value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberTab(tabKey: string): void {
+  try {
+    window.localStorage.setItem(DASHBOARD_TAB_STORAGE_KEY, tabKey);
+  } catch {
+    // Storage off (a private window): the Dashboard opens on its first tab.
+  }
+}
 
 /** Links and bookmarks to the tabs that were merged or removed land on their successor. */
 const RETIRED_TABS: Record<string, string> = {
@@ -238,7 +267,12 @@ export default function DashboardClient({
     setSelectedTracks,
     searchQuery,
     setSearchQuery,
+    startAnalysisSession,
+    refreshFolders,
   } = useWorkspaceProfile();
+  useTabTitleRepository(currentProject?.name);
+  // PDFs dropped on the page open Add papers with them.
+  const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
   const { session } = useAuth();
   const paperViewer = usePaperViewer();
   const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
@@ -333,7 +367,8 @@ export default function DashboardClient({
     if (tabParam && TAB_DEFINITIONS.some((tab) => tab.key === tabParam)) {
       return tabParam;
     }
-    return DEFAULT_TAB;
+    // This page renders in the browser only (useSearchParams under Suspense), so storage can be read here.
+    return readRememberedTab() ?? DEFAULT_TAB;
   }, [searchParams]);
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
@@ -385,6 +420,9 @@ export default function DashboardClient({
   useEffect(() => {
     setOptimisticTabKey(routeTabKey);
   }, [routeTabKey]);
+  useEffect(() => {
+    rememberTab(currentTabKey);
+  }, [currentTabKey]);
 
   useEffect(() => {
     const tabParam = normalizeTabKey(searchParams.get("tab"));
@@ -1005,9 +1043,13 @@ export default function DashboardClient({
                         <button
                           type="button"
                           onClick={() => {
-                            // Opens over this list, which is still here when the paper closes.
+                            // Opens over this list, which is still here when the paper closes,
+                            // and steps through it with Previous and Next.
                             if (paperViewer) {
-                              paperViewer.openPaper({ paperId: String(paper.paperId) });
+                              paperViewer.openPaper(
+                                { paperId: String(paper.paperId) },
+                                { sequence: drilldownPapers.map((listed) => ({ paperId: String(listed.paperId) })) }
+                              );
                               return;
                             }
                             setDrilldownTarget(null);
@@ -1202,6 +1244,17 @@ export default function DashboardClient({
           </TabPanel>
         </section>
       </div>
+      <PdfDropTarget repositoryName={currentProject?.name} disabled={Boolean(droppedFiles)} onFiles={setDroppedFiles} />
+      <AnalyzeFlowModal
+        open={Boolean(droppedFiles)}
+        onClose={() => setDroppedFiles(null)}
+        initialFiles={droppedFiles}
+        onCreated={(createdRuns, context) => {
+          const queued = createdRuns.filter((run) => run.status !== "failed");
+          if (queued.length > 0) startAnalysisSession(queued, context);
+          void refreshFolders();
+        }}
+      />
     </div>
   );
 }

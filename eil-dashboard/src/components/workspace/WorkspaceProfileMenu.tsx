@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import {
   BookOpenIcon,
   HomeIcon,
+  KeyboardIcon,
   LogoutIcon,
   SettingsIcon,
   UserIcon,
@@ -28,10 +29,13 @@ function getInitials(value: string) {
 
 interface WorkspaceProfileMenuProps {
   variant?: "workspace" | "marketing";
+  /** Inside the workspace, where "?" lists the keyboard shortcuts. */
+  onShowShortcuts?: () => void;
 }
 
 export default function WorkspaceProfileMenu({
   variant = "workspace",
+  onShowShortcuts,
 }: WorkspaceProfileMenuProps) {
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -154,6 +158,20 @@ export default function WorkspaceProfileMenu({
               <BookOpenIcon className="h-4 w-4" />
               <span>Documentation</span>
             </Link>
+            {onShowShortcuts ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onShowShortcuts();
+                }}
+                className={`${itemClass} w-full`}
+              >
+                <KeyboardIcon className="h-4 w-4" />
+                <span>Keyboard shortcuts</span>
+                <kbd className="ml-auto rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-mute">?</kbd>
+              </button>
+            ) : null}
           </div>
           <div className="mt-1.5 border-t border-hairline pt-1.5">
             <button

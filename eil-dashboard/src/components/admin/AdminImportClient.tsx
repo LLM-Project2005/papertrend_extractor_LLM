@@ -13,14 +13,17 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
+import PdfDropTarget from "@/components/workspace/PdfDropTarget";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal, {
   PAPER_EXPLORER_TABS,
   type PaperExplorerTab,
 } from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import { readPaperQuote } from "@/lib/paper-address";
+import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
 import dynamic from "next/dynamic";
@@ -296,7 +299,7 @@ const ReferencesDialog = dynamic(() => import("@/components/admin/ReferencesDial
 export default function AdminImportClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const {
     currentProject,
     allFolders,
@@ -340,6 +343,9 @@ export default function AdminImportClient() {
   const [analysisTab, setAnalysisTab] = useState<PaperExplorerTab>("overview");
   // A passage a chat citation asked to see (?quote=), for the paper it named only.
   const [analysisQuote, setAnalysisQuote] = useState<{ runId: string; quote: string } | null>(null);
+  // Previous and Next step through the papers in view; the button used keeps focus.
+  const [stepFocus, setStepFocus] = useState<"previous" | "next" | null>(null);
+  const steppedPaperRef = useRef(false);
   // Permanent deletion from Trash: one paper, or everything in Trash.
   const [deleteTarget, setDeleteTarget] = useState<{ runs: IngestionRunRow[]; all: boolean } | null>(null);
   // Several papers at once (docs/32, 4.5): the selection, by run, and the
@@ -359,6 +365,7 @@ export default function AdminImportClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
   // ?paper= is the explorer's own address; ?runId= is the older form links still use.
@@ -389,6 +396,8 @@ export default function AdminImportClient() {
     () => allProjects.find((project) => project.id === libraryProjectId) ?? null,
     [allProjects, libraryProjectId]
   );
+  // The tab names the repository open here, which need not be the app's current one.
+  useTabTitleRepository(showTrash ? null : libraryProject?.name);
 
   const projectStats = useMemo(() => {
     // "Papers" counts what was analysed; a failed upload is not a paper in the
@@ -577,6 +586,7 @@ export default function AdminImportClient() {
 
   async function handleViewAnalysis(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
     autoOpenedRunIdRef.current = `run:${run.id}`;
+    setStepFocus(null);
     setAnalysisTab(tab);
     setAnalysisRun(run);
     setAnalysisDetail(null);
@@ -586,6 +596,12 @@ export default function AdminImportClient() {
     try {
       const detail = await fetchAnalysisDetail(run.id);
       setAnalysisDetail(detail);
+      // For Home's "Continue where you left off".
+      rememberOpenedPaper(user?.id, {
+        runId: run.id,
+        title: detail.title || titleOf(run),
+        projectId: runProjectId(run, new Map([...folderById].map(([id, folder]) => [id, folder.project_id]))),
+      });
     } catch (analysisLoadError) {
       setAnalysisError(
         analysisLoadError instanceof Error
@@ -705,6 +721,9 @@ export default function AdminImportClient() {
     const firstRun = navigationKeyRef.current === null;
     const navigated = !firstRun && navigationKey !== navigationKeyRef.current;
     navigationKeyRef.current = navigationKey;
+    // A step to the next paper replaces the entry, so Back still closes the window.
+    const stepped = steppedPaperRef.current;
+    steppedPaperRef.current = false;
     if (next === current) return;
 
     // Closing a paper that was opened here goes back to the entry before it,
@@ -715,7 +734,7 @@ export default function AdminImportClient() {
       return;
     }
     const legacyLink = /[?&](runId|paperId)=/.test(window.location.search);
-    if (navigated && !legacyLink) {
+    if (navigated && !legacyLink && !stepped) {
       window.history.pushState(null, "", next);
       if (analysisRun) pushedPaperRef.current = true;
     } else {
@@ -1111,6 +1130,15 @@ export default function AdminImportClient() {
   ]);
 
   const rootGridFiles = visibleEntries;
+  const steppableRuns = useMemo(() => visibleEntries.map((entry) => entry.run).filter((run) => hasUsableAnalysis(run)), [visibleEntries]);
+  const analysisIndex = analysisRun ? steppableRuns.findIndex((run) => run.id === analysisRun.id) : -1;
+  function stepAnalysis(delta: -1 | 1) {
+    const nextRun = steppableRuns[analysisIndex + delta];
+    if (analysisIndex < 0 || !nextRun) return;
+    steppedPaperRef.current = true;
+    void handleViewAnalysis(nextRun, analysisTab).catch(() => undefined);
+    setStepFocus(delta < 0 ? "previous" : "next");
+  }
 
   // A selection holds only what is in view: a paper a filter hides is never
   // acted on unseen, and switching to Trash or another repository starts afresh.
@@ -2487,9 +2515,22 @@ export default function AdminImportClient() {
         </section>
       )}
 
+      {/* Inside a repository, not on the list of them or in Trash. */}
+      <PdfDropTarget
+        repositoryName={showTrash ? null : libraryProject?.name}
+        disabled={showUploadModal}
+        onFiles={(files) => {
+          setDroppedFiles(files);
+          setShowUploadModal(true);
+        }}
+      />
       <AnalyzeFlowModal
         open={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
+        onClose={() => {
+          setShowUploadModal(false);
+          setDroppedFiles(null);
+        }}
+        initialFiles={droppedFiles}
         projectId={libraryProject?.id ?? currentProject?.id ?? null}
         onCreated={(createdRuns, context) => {
           setRuns((current) => {
@@ -2707,8 +2748,18 @@ export default function AdminImportClient() {
 
       {analysisRun ? (
         <PaperAnalysisExplorerModal
-          key={analysisRun.id}
           run={analysisRun}
+          stepper={
+            analysisIndex >= 0 && steppableRuns.length > 1
+              ? {
+                  position: analysisIndex + 1,
+                  total: steppableRuns.length,
+                  onPrevious: analysisIndex > 0 ? () => stepAnalysis(-1) : null,
+                  onNext: analysisIndex < steppableRuns.length - 1 ? () => stepAnalysis(1) : null,
+                  focus: stepFocus,
+                }
+              : null
+          }
           initialTab={analysisTab}
           onTabChange={setAnalysisTab}
           quote={analysisQuote?.runId === analysisRun.id ? analysisQuote.quote : null}

@@ -33,6 +33,10 @@ export function useWorkspaceProfile() {
     createProject: idle,
     renameProject: idle,
     setSelectedProjectId: () => undefined,
+    currentProject: null,
+    profile: {},
+    profileFromAccount: false,
+    updateProfile: () => undefined,
     ...(globalThis.__profiledashWorkspace ?? {}),
   };
 }

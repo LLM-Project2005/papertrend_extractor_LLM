@@ -45,6 +45,7 @@ import {
   panelClass,
   type ChipTone,
 } from "@/components/ui/controls";
+import { NotifyWhenDoneToggle } from "@/components/workspace/WorkspaceTabTitle";
 
 type StageStatus = "done" | "active" | "waiting" | "failed";
 type OverallTone = "active" | "done" | "failed";
@@ -896,7 +897,8 @@ export default function AnalysisStatusCard({
 
   if (compact) {
     const hasFooter =
-      (hasActiveRuns && onCancelAll) ||
+      // While papers are in progress there is always the notification choice.
+      hasActiveRuns ||
       (isLikelyStalled && onRetryQueue) ||
       (hasQueuedWithoutProcessing && onStartProcessing);
     return (
@@ -961,6 +963,7 @@ export default function AnalysisStatusCard({
             {hasActiveRuns && onCancelAll ? (
               <CancelAllButton onConfirm={onCancelAll} size="sm" className="mr-auto" />
             ) : null}
+            {hasActiveRuns ? <NotifyWhenDoneToggle /> : null}
             {isLikelyStalled && onRetryQueue ? (
               <button type="button" onClick={() => void onRetryQueue()} className={buttonClass("primary", "sm")}>
                 Retry processing
@@ -1036,6 +1039,7 @@ export default function AnalysisStatusCard({
             {hasActiveRuns && onCancelAll ? (
               <CancelAllButton onConfirm={onCancelAll} size="md" />
             ) : null}
+            {hasActiveRuns ? <NotifyWhenDoneToggle className="h-10" /> : null}
           </div>
         </div>
 

@@ -53,7 +53,10 @@ test("a model call's tokens are counted under the model that served it, and reco
     );
     assert.equal(rows.rows.length, 1);
     assert.equal(rows.rows[0].usage_kind, "chat_message");
-    assert.equal(rows.rows[0].units, 240);
+    // The allowance counts GPT-6 Luna tokens (model-prices.ts): the fast model
+    // is Luna, 120; GPT-5.6 Luna costs twice Luna's input and 2.4 times its
+    // output, 100 x 2 + 20 x 2.4 = 248.
+    assert.equal(rows.rows[0].units, 368);
     assert.equal(rows.rows[0].metadata.metric, "tokens");
     assert.equal(rows.rows[0].metadata.model_calls, 2);
     assert.ok(Number(rows.rows[0].metadata.cost_usd) > 0, "priced per model");

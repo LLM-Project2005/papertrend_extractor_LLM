@@ -62,3 +62,27 @@ export function parsePaperHref(href: string | null | undefined): PaperTarget | n
     ...(quote ? { quote } : {}),
   };
 }
+
+/** One paper, however it was named: by its run, or by the paper behind it. */
+export function paperKey(target: PaperTarget): string | null {
+  return target.runId ? `run:${target.runId}` : target.paperId ? `paper:${target.paperId}` : null;
+}
+
+/**
+ * The list a paper was opened from, without repeats (a paper cited twice is
+ * one stop), and the paper's place in it. Null when there is nothing to step
+ * to: no list, one paper, or a paper that is not in it.
+ */
+export function paperSequence(target: PaperTarget, items: PaperTarget[] | null | undefined): { items: PaperTarget[]; index: number } | null {
+  if (!items || items.length < 2) return null;
+  const seen = new Set<string>();
+  const unique = items.filter((item) => {
+    const key = paperKey(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const key = paperKey(target);
+  const index = key ? unique.findIndex((item) => paperKey(item) === key) : -1;
+  return unique.length > 1 && index >= 0 ? { items: unique, index } : null;
+}

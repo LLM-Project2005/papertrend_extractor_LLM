@@ -52,6 +52,12 @@ interface AnalysisSession {
 interface WorkspaceContextValue {
   profile: WorkspaceProfile;
   hydrated: boolean;
+  /**
+   * The profile is the one saved with the account, not this browser's copy
+   * while it loads. A change made before then would be saved over the
+   * account's profile, so account-wide settings (pinned chats) wait for it.
+   */
+  profileFromAccount: boolean;
   workspaceLoading: boolean;
   workspaceLoadError: string | null;
   analysisSession: AnalysisSession | null;
@@ -137,6 +143,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     saveWorkspaceProfile: saveWorkspaceProfileRemote,
   } = useAuth();
   const [profile, setProfile] = useState(DEFAULT_WORKSPACE_PROFILE);
+  const [profileFromAccount, setProfileFromAccount] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [analysisSession, setAnalysisSession] = useState<AnalysisSession | null>(null);
   const [organizations, setOrganizations] = useState<WorkspaceOrganizationRow[]>([]);
@@ -276,6 +283,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         profileDirtyRef.current = false;
         setProfile(remoteProfile);
       }
+      // The account's profile has loaded, saved before or not: a change now
+      // cannot overwrite something the account holds but this page has not read.
+      setProfileFromAccount(Boolean(authProfile));
 
       setHydrated(true);
       return;
@@ -283,6 +293,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     loadedKeyRef.current = "anonymous";
     profileDirtyRef.current = false;
+    setProfileFromAccount(false);
     setProfile(loadWorkspaceProfile());
     setOrganizations([]);
     setProjects([]);
@@ -1032,6 +1043,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => ({
       profile,
       hydrated,
+      profileFromAccount,
       workspaceLoading,
       workspaceLoadError,
       analysisSession,
@@ -1060,10 +1072,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       resetProfile: () => {
         profileDirtyRef.current = true;
-        setProfile({
+        // Pinned chats are not part of the research profile being reset.
+        setProfile((current) => ({
           ...DEFAULT_WORKSPACE_PROFILE,
+          ...(current.pinnedChatThreadIds ? { pinnedChatThreadIds: current.pinnedChatThreadIds } : {}),
           updatedAt: new Date().toISOString(),
-        });
+        }));
       },
       startAnalysisSession: (runs, options) => {
         const runIds = runs.map((run) => run.id).filter(Boolean);
@@ -1238,6 +1252,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       hydrated,
       organizations,
       profile,
+      profileFromAccount,
       projects,
       refreshFolders,
       refreshOrganizations,

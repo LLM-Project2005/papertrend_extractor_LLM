@@ -97,7 +97,8 @@ test("an answer's spend is recorded whether it streams or not, and the same way"
     cost_source: "provider",
     source: "chat",
   };
-  assert.deepEqual(rows.rows, [{ units: 1_500, metadata: recorded }, { units: 1_500, metadata: recorded }], "one row per answer, streamed or not");
+  // Gemini 3.7 Flash costs 7.5 times GPT-6 Luna, so its 1,500 tokens count 11,250 Luna tokens (model-prices.ts).
+  assert.deepEqual(rows.rows, [{ units: 11_250, metadata: recorded }, { units: 11_250, metadata: recorded }], "one row per answer, streamed or not");
 });
 
 test("failing to record the cost never fails the answer", async () => {

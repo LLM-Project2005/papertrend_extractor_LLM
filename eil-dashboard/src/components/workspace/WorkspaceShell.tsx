@@ -29,8 +29,11 @@ import AnalysisStatusCard, { AnalysisTrayPill } from "@/components/workspace/Ana
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
 import WorkspaceLoadingState from "@/components/workspace/WorkspaceLoadingState";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
+import RepositorySwitcher from "@/components/workspace/RepositorySwitcher";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
+import WorkspaceTabTitle from "@/components/workspace/WorkspaceTabTitle";
+import KeyboardShortcuts, { openKeyboardShortcuts } from "@/components/workspace/KeyboardShortcuts";
 import { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
 
@@ -152,11 +155,12 @@ export const STUCK_NAVIGATION_MS = 12_000;
 const PROJECT_OPTIONAL_ROUTES = ["/workspace/settings"];
 
 function WorkspaceBreadcrumb({
-  projectName,
   onNavigate,
+  onDone,
 }: {
-  projectName: string;
   onNavigate?: (href: string) => void;
+  /** After a repository is chosen: the phone drawer closes. */
+  onDone?: () => void;
 }) {
   return (
     <div className="min-w-0">
@@ -184,9 +188,8 @@ function WorkspaceBreadcrumb({
         <span aria-hidden="true" className="hidden flex-none text-slate-300 dark:text-[#4f4f4f] sm:inline">
           &gt;
         </span>
-        <span className="min-w-0 truncate text-slate-500 dark:text-[#9b9b9b]">
-          {projectName || "Select repository"}
-        </span>
+        {/* The name opens the list of repositories, to switch without going to /workspaces. */}
+        <RepositorySwitcher onNavigate={onNavigate} onDone={onDone} />
       </div>
     </div>
   );
@@ -252,12 +255,10 @@ function DesktopSidebar({
 
 function MobileSidebar({
   pathname,
-  projectName,
   onClose,
   onNavigate,
 }: {
   pathname: string;
-  projectName: string;
   onClose: () => void;
   onNavigate: (href: string) => void;
 }) {
@@ -270,7 +271,8 @@ function MobileSidebar({
               <LogoMarkIcon className="h-7 w-7" />
             </span>
             <WorkspaceBreadcrumb
-              projectName={projectName}
+              onNavigate={onNavigate}
+              onDone={onClose}
             />
           </div>
           <button
@@ -549,10 +551,7 @@ export default function WorkspaceShell({
               <LogoMarkIcon className="h-7 w-7" />
             </Link>
 
-            <WorkspaceBreadcrumb
-              projectName={currentProject?.name ?? ""}
-              onNavigate={handleNavigate}
-            />
+            <WorkspaceBreadcrumb onNavigate={handleNavigate} />
           </div>
 
           <div className="ml-auto flex items-center gap-2">
@@ -568,7 +567,7 @@ export default function WorkspaceShell({
               <span className="hidden md:inline">Docs</span>
             </Link>
             <ThemeToggle compact />
-            <WorkspaceProfileMenu />
+            <WorkspaceProfileMenu onShowShortcuts={openKeyboardShortcuts} />
           </div>
         </div>
         {/*
@@ -605,7 +604,6 @@ export default function WorkspaceShell({
         >
           <MobileSidebar
             pathname={pathname}
-            projectName={currentProject?.name ?? ""}
             onClose={() => setSidebarOpen(false)}
             onNavigate={handleNavigate}
           />
@@ -646,6 +644,9 @@ export default function WorkspaceShell({
             </div>
           )}
         </main>
+
+        <WorkspaceTabTitle runs={activeRuns} />
+        <KeyboardShortcuts />
 
         {analysisSession &&
         (analysisSession.minimized ||

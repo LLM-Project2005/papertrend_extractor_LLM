@@ -10,7 +10,8 @@
 import { getChatRepository } from "@/lib/chat-repository";
 import { legacyPlanForExecution, loadRepositoryContext, planRepositoryExecution, selectEvidence, type RepositoryContext } from "@/lib/repository-chat";
 import { normalizeKnowledgeScope, type KnowledgeScope } from "@/lib/knowledge-scope";
-import { assertAndRecordAiUsage } from "@/lib/security-guards";
+import { assertAndRecordAiUsage, assertModelAllowance } from "@/lib/security-guards";
+import { DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
 import type { ChatThreadDetail, DeepResearchSessionRecord } from "@/types/research";
 import { callTool } from "@/lib/deep-research/model";
 import { dedupeStudies, fallbackPlan, mergeSelection, parsePlan, planMessages, planSummary, planTool, studyCards, studyOf } from "@/lib/deep-research/plan";
@@ -27,10 +28,12 @@ import {
   startSession,
 } from "@/lib/deep-research/store";
 import { enqueueResearchRun, researchQueue } from "@/lib/deep-research/tasks";
-import { CHAT_MODEL, isCurrentEngine, type ResearchPlan } from "@/lib/deep-research/types";
+import { CHAT_MODEL, isCurrentEngine, sessionWriterModel, type ResearchPlan } from "@/lib/deep-research/types";
 
 export interface ResearchRequest {
   message?: string;
+  /** The reader's model: a dearer one than GPT-6 Luna writes the answer (types.ts sessionWriterModel). */
+  model?: string;
   threadId?: string;
   sessionId?: string;
   projectId?: string;
@@ -172,7 +175,8 @@ export async function planResearch(body: ResearchRequest, ownerUserId: string): 
       folderId: knowledgeScope.folderId ?? null,
       runIds: knowledgeScope.runIds ?? [],
     },
-    model: null,
+    // Luna is the task default (null); another model writes and corrects.
+    model: body.model && body.model !== DEFAULT_CHAT_MODEL ? body.model : null,
   });
   return detailOf(ownerUserId, thread.id);
 }
@@ -198,6 +202,10 @@ export async function startResearch(body: ResearchRequest, ownerUserId: string, 
   // before it ever ran; a retry of a run that already did work is free.
   const neverRan = (session.steps ?? []).every((step) => !(step.output_payload as { engine?: string } | undefined)?.engine);
   if (session.status === "planned" || (session.status === "canceled" && neverRan)) {
+    // A run counts as one of the day's Max answers whoever writes it; a dearer
+    // writer's tokens count at its price in the allowance, so a run it cannot
+    // cover is not started.
+    await assertModelAllowance(ownerUserId, sessionWriterModel(session) ?? CHAT_MODEL, "max");
     await assertAndRecordAiUsage(ownerUserId, "deep_research", { action: "start", sessionId: session.id });
   }
   const started = await startSession(ownerUserId, session.id);

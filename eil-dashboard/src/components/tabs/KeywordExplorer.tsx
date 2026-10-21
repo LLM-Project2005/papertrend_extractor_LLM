@@ -598,7 +598,7 @@ export default function KeywordExplorer({
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                   Related papers
                 </h3>
-                <div className="mt-4 space-y-3">
+                <div data-paper-list="" className="mt-4 space-y-3">
                   {conceptResult.papers.length > 0 ? (
                     conceptResult.papers.map((paper) => (
                       <div

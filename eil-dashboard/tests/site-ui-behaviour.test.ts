@@ -631,7 +631,8 @@ test("a chat citation, a paper link and an old papers address all lead to the pa
 
   const { default: PaperLink } = await import("../src/components/workspace/PaperLink");
   const link = renderToStaticMarkup(createElement(PaperLink, { paper: { paperId: "42" }, children: "Open paper" }));
-  assert.match(link, /^<a href="\/workspace\/library\?paperId=42">Open paper<\/a>$/);
+  // data-paper-link: the paper window steps through the links listed with it.
+  assert.match(link, /^<a href="\/workspace\/library\?paperId=42" data-paper-link="">Open paper<\/a>$/);
 
   const { default: WorkspacePapersPage } = await import("../src/app/workspace/papers/page");
   const redirected = async (searchParams: Record<string, string | string[] | undefined>) => {
