@@ -20,6 +20,19 @@ export function openInPlace(event: MouseEvent<HTMLElement>): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
+/**
+ * The papers listed with a link: every paper link inside the nearest element
+ * marked `data-paper-list`, in the order shown. The paper window steps through
+ * them with Previous and Next.
+ */
+export function listedPapers(link: Element | null | undefined): PaperTarget[] | undefined {
+  const list = typeof link?.closest === "function" ? link.closest("[data-paper-list]") : null;
+  if (!list) return undefined;
+  return [...list.querySelectorAll("a[data-paper-link]")]
+    .map((anchor) => parsePaperHref(anchor.getAttribute("href")))
+    .filter((target): target is PaperTarget => Boolean(target));
+}
+
 export default function PaperLink({ paper, children, onClick, ...rest }: Props) {
   const viewer = usePaperViewer();
   const resolved = typeof paper === "string" ? parsePaperHref(paper) : paper;
@@ -28,11 +41,12 @@ export default function PaperLink({ paper, children, onClick, ...rest }: Props) 
     <a
       {...rest}
       href={href}
+      data-paper-link=""
       onClick={(event) => {
         onClick?.(event);
         if (event.defaultPrevented || !viewer || !resolved || !openInPlace(event)) return;
         event.preventDefault();
-        viewer.openPaper(resolved);
+        viewer.openPaper(resolved, { sequence: listedPapers(event.currentTarget) });
       }}
     >
       {children}

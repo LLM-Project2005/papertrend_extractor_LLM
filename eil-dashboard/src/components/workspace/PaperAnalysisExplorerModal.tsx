@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+// React in scope: the test runner compiles JSX the classic way.
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import PdfViewer, { prefetchPdf } from "@/components/workspace/PdfViewer";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
   ChartIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CloseIcon,
   DownloadIcon,
   ExternalLinkIcon,
@@ -40,7 +43,35 @@ type Props = {
   onTabChange?: (tab: PaperExplorerTab) => void;
   /** A passage a chat answer quoted from this paper: shown, and marked in the PDF. */
   quote?: string | null;
+  /** The list this paper was opened from, to step through with Previous and Next. */
+  stepper?: PaperStepper | null;
 };
+
+/**
+ * The paper's place in the list it was opened from (a chart's papers, a
+ * search, the Library), so the next one is a click or an arrow key away
+ * instead of a trip back to the list (2026-10-21).
+ */
+export interface PaperStepper {
+  /** 1-based. */
+  position: number;
+  total: number;
+  onPrevious: (() => void) | null;
+  onNext: (() => void) | null;
+  /** The button the reader stepped with, which keeps focus on the next paper. */
+  focus?: "previous" | "next" | null;
+  /** Why the last step did not happen (the paper could not be opened); this one stays. */
+  notice?: string | null;
+}
+
+/** Arrow keys step only when they would do nothing else: not while typing, choosing or with a modifier (Alt+← is Back). */
+export function stepFromKey(event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "target">): -1 | 1 | null {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return null;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null;
+  const target = event.target as HTMLElement | null;
+  if (target && typeof target.closest === "function" && target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="slider"], [role="tablist"], [role="listbox"], [role="menu"]')) return null;
+  return event.key === "ArrowLeft" ? -1 : 1;
+}
 
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -368,7 +399,22 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
   );
 }
 
-export default function PaperAnalysisExplorerModal({
+/**
+ * The window stays open while the reader steps from paper to paper; only what
+ * is inside it starts afresh for each one. The heading keeps one id, which
+ * names the dialog.
+ */
+export default function PaperAnalysisExplorerModal(props: Props) {
+  const headingId = useId();
+  return (
+    <Modal onClose={props.onClose}>
+      <PaperExplorerPanel key={props.run.id} {...props} headingId={headingId} />
+    </Modal>
+  );
+}
+
+/** What the window shows for one paper; exported for the render tests, which draw it without the dialog. */
+export function PaperExplorerPanel({
   run,
   detail,
   loading,
@@ -385,7 +431,40 @@ export default function PaperAnalysisExplorerModal({
   initialTab,
   onTabChange,
   quote,
-}: Props) {
+  stepper,
+  headingId,
+}: Props & { headingId?: string }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const stepping = Boolean(stepper && stepper.total > 1);
+  const previousRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const stepperRef = useRef(stepper);
+  stepperRef.current = stepper;
+  // A step keeps focus on the button it was made with, now on the next paper.
+  const firstFocus = useRef(stepper?.focus ?? null);
+  useEffect(() => {
+    const wanted = firstFocus.current;
+    if (!wanted) return;
+    // At either end of the list that button is off, so the other one takes focus.
+    const [first, other] = wanted === "previous" ? [previousRef.current, nextRef.current] : [nextRef.current, previousRef.current];
+    (first && !first.disabled ? first : other)?.focus({ preventScroll: true });
+  }, []);
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const current = stepperRef.current;
+      if (!current || event.defaultPrevented) return;
+      // Keys pressed in a dialog opened over this one (Rename) are its own.
+      const target = event.target as Node | null;
+      if (target && target !== document.body && !panelRef.current?.contains(target)) return;
+      const step = stepFromKey(event);
+      const move = step === -1 ? current.onPrevious : step === 1 ? current.onNext : null;
+      if (!move) return;
+      event.preventDefault();
+      move();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
   const [activeTab, setActiveTab] = useState<PaperExplorerTab>(initialTab ?? "overview");
   // Hidden by the reader until a different passage is asked for.
   const [hiddenQuote, setHiddenQuote] = useState<string | null>(null);
@@ -512,10 +591,18 @@ export default function PaperAnalysisExplorerModal({
   }, [run.id, previewAttempt]);
 
   return (
-    <Modal onClose={onClose}>
-      <div className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-2xl border border-hairline bg-surface shadow-overlay">
+    <>
+      <div ref={panelRef} className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-2xl border border-hairline bg-surface shadow-overlay">
         <div className="flex-none border-b border-hairline px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
-          <div className="flex items-start justify-between gap-4">
+          {/* With Previous and Next beside it, a phone's title had a third of the
+              width; there the controls take their own row above it. */}
+          <div
+            className={
+              stepping
+                ? "flex flex-col-reverse gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                : "flex items-start justify-between gap-4"
+            }
+          >
             <div className="min-w-0">
               {correcting ? (
                 <form
@@ -575,7 +662,7 @@ export default function PaperAnalysisExplorerModal({
                   ) : null}
                 </form>
               ) : (
-                <h2 className="text-xl font-semibold leading-snug tracking-tight text-ink sm:text-2xl">
+                <h2 id={headingId} className="text-xl font-semibold leading-snug tracking-tight text-ink sm:text-2xl">
                   {detail?.title || titleOf(run)}
                 </h2>
               )}
@@ -621,15 +708,50 @@ export default function PaperAnalysisExplorerModal({
               ) : null}
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
-              aria-label="Close paper explorer"
-            >
-              <CloseIcon className="h-4 w-4" />
-            </button>
+            <div className={`flex flex-none items-center gap-1 ${stepping ? "-mr-2 -mt-2 self-end sm:mr-0 sm:mt-0 sm:self-auto" : ""}`}>
+              {stepper && stepping ? (
+                <div role="group" aria-label="Papers in this list" className="flex items-center" title="Previous and next paper (← →)">
+                  <button
+                    ref={previousRef}
+                    type="button"
+                    onClick={() => stepper.onPrevious?.()}
+                    disabled={!stepper.onPrevious}
+                    aria-label="Previous paper"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <ChevronLeftIcon className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-mute" aria-live="polite">
+                    {stepper.position} of {stepper.total}
+                  </span>
+                  <button
+                    ref={nextRef}
+                    type="button"
+                    onClick={() => stepper.onNext?.()}
+                    disabled={!stepper.onNext}
+                    aria-label="Next paper"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <ChevronRightIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
+                aria-label="Close paper explorer"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
           </div>
+
+          {stepper?.notice ? (
+            <p role="status" className="mt-3 text-xs text-red-700 dark:text-red-300">
+              {stepper.notice}
+            </p>
+          ) : null}
 
           {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
               looked like two buttons with a third cut off. */}
@@ -1231,6 +1353,6 @@ export default function PaperAnalysisExplorerModal({
           ) : null}
         </div>
       </div>
-    </Modal>
+    </>
   );
 }

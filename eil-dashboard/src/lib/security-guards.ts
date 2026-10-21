@@ -14,7 +14,9 @@ import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/
 import { isQuotaExemptRole } from "@/lib/quota-policy";
 import { safeReturnPath } from "@/lib/safe-return-path";
 import { withAiTokenUsageTracking, type AiTokenUsageTotals } from "@/lib/ai-token-usage";
-import { readSpendToday, spendMetadata, spendRefusal, type SpendSource } from "@/lib/spend-limits";
+import { noteMonthlyBudget, readSpendToday, spendMetadata, spendRefusal, type SpendSource } from "@/lib/spend-limits";
+import { allowanceUnits, usageMultiplier } from "@/lib/model-prices";
+import { allowanceRefusal, type AllowanceKind } from "@/lib/chat-models";
 
 export class GuardError extends Error {
   status: number;
@@ -328,7 +330,11 @@ export async function assertSpendAllowed(ownerUserId: string): Promise<void> {
     throw new GuardError("Usage could not be checked just now. Try again in a moment.", 503);
   }
   const refusal = spendRefusal(state);
-  if (!refusal) return;
+  if (!refusal) {
+    // The monthly budget is watched here too, where spending starts (ten-minute cache).
+    await noteMonthlyBudget();
+    return;
+  }
   // The "AI spending limit reached" alert counts the site-wide ones. Info, not
   // error: every refused request logs one, and the error alerts would repeat it.
   if (refusal.scope === "site") console.info("site_daily_spend_limit_reached", { siteUsd: state.siteUsd });
@@ -363,15 +369,18 @@ export async function trackModelSpend<T>(ownerUserId: string, source: SpendSourc
   });
 }
 
-export async function assertAiTokenBudget(ownerUserId: string): Promise<number> {
-  await assertSpendAllowed(ownerUserId);
-  const limit = getAiDailyTokenLimit();
+/**
+ * Today's use of the daily allowance, in GPT-6 Luna tokens (model-prices.ts),
+ * and whether the account is exempt. The rows a request records hold what it
+ * used already weighted, so this is their sum.
+ */
+export async function tokensUsedToday(ownerUserId: string): Promise<{ exempt: boolean; used: number }> {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const since = today.toISOString();
 
   if (getDatabaseProvider() === "cloud-sql") {
-    const budget = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const profile = await client.query<{ role: string | null }>(
         `SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`,
         [ownerUserId]
@@ -386,14 +395,6 @@ export async function assertAiTokenBudget(ownerUserId: string): Promise<number> 
       );
       return { exempt: false, used: Number(result.rows[0]?.units ?? 0) };
     });
-    if (budget.exempt) return Number.MAX_SAFE_INTEGER;
-    if (budget.used >= limit) {
-      throw new GuardError(
-        `Daily chat token limit reached (${limit.toLocaleString()} tokens). Please try again tomorrow.`,
-        429
-      );
-    }
-    return Math.max(0, limit - budget.used);
   }
 
   const supabase = getSupabaseAdmin();
@@ -402,7 +403,7 @@ export async function assertAiTokenBudget(ownerUserId: string): Promise<number> 
     .select("role")
     .eq("id", ownerUserId)
     .maybeSingle();
-  if (isQuotaExemptRole(profile?.role)) return Number.MAX_SAFE_INTEGER;
+  if (isQuotaExemptRole(profile?.role)) return { exempt: true, used: 0 };
   const { data, error } = await supabase
     .from("ai_usage_events")
     .select("units")
@@ -411,14 +412,37 @@ export async function assertAiTokenBudget(ownerUserId: string): Promise<number> 
     .contains("metadata", { metric: "tokens" })
     .gte("created_at", since);
   if (error) throw new Error(error.message);
-  const used = (data ?? []).reduce((total, row) => total + Number(row.units ?? 0), 0);
-  if (used >= limit) {
+  return { exempt: false, used: (data ?? []).reduce((total, row) => total + Number(row.units ?? 0), 0) };
+}
+
+export async function assertAiTokenBudget(ownerUserId: string): Promise<number> {
+  await assertSpendAllowed(ownerUserId);
+  const limit = getAiDailyTokenLimit();
+  const budget = await tokensUsedToday(ownerUserId);
+  if (budget.exempt) return Number.MAX_SAFE_INTEGER;
+  if (budget.used >= limit) {
     throw new GuardError(
       `Daily chat token limit reached (${limit.toLocaleString()} tokens). Please try again tomorrow.`,
       429
     );
   }
-  return Math.max(0, limit - used);
+  return Math.max(0, limit - budget.used);
+}
+
+/**
+ * Before a request on a model dearer than GPT-6 Luna (GPT-6.1 Sol), whether
+ * what is left today covers what such a request usually uses. If not, the
+ * reader is told before anything is spent, rather than the answer running the
+ * allowance out. Luna requests are not checked here; assertAiTokenBudget
+ * already let them start.
+ */
+export async function assertModelAllowance(ownerUserId: string, model: string, kind: AllowanceKind): Promise<void> {
+  if (usageMultiplier(model) <= 1) return;
+  const budget = await tokensUsedToday(ownerUserId);
+  const refusal = allowanceRefusal({ model, kind, used: budget.used, limit: getAiDailyTokenLimit(), exempt: budget.exempt });
+  if (!refusal) return;
+  console.info("model_allowance_refused", JSON.stringify({ model, kind, used: budget.used }));
+  throw new GuardError(refusal, 429);
 }
 
 /**
@@ -433,8 +457,10 @@ export async function persistAiTokenUsage(
 ): Promise<void> {
   if (usage.totalTokens <= 0 && usage.calls <= 0) return;
   const metadata = spendMetadata(usage, source);
-  // units > 0 is a table constraint; a call that reported no tokens still cost something.
-  const units = Math.max(1, usage.totalTokens);
+  // The allowance counts GPT-6 Luna tokens: each model's tokens are weighted by
+  // their price over Luna's (model-prices.ts). units > 0 is a table
+  // constraint; a call that reported no tokens still cost something.
+  const units = Math.max(1, usage.byModel?.length ? allowanceUnits(usage.byModel) : usage.totalTokens);
   if (getDatabaseProvider() === "cloud-sql") {
     await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       await client.query(

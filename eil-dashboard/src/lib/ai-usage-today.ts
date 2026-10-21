@@ -1,6 +1,7 @@
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { isQuotaExemptRole } from "@/lib/quota-policy";
 import { AI_USAGE_COUNT_SQL } from "@/lib/security-guards";
+import { noteMonthlyBudget, type MonthlyBudget } from "@/lib/spend-limits";
 import {
   getAiDailyDeepResearchLimit,
   getAiDailyMessageLimit,
@@ -21,7 +22,7 @@ export interface UsageAgainstLimit {
 }
 
 export interface AiUsageToday {
-  /** Admins have no daily limits; their use is still shown. */
+  /** Admins have no daily limits; their use is still shown. Tokens are GPT-6 Luna tokens (model-prices.ts). */
   exempt: boolean;
   tokens: UsageAgainstLimit;
   messages: UsageAgainstLimit;
@@ -29,6 +30,8 @@ export interface AiUsageToday {
   webSearches: UsageAgainstLimit;
   /** When the counts start again: the next UTC midnight. */
   resetsAt: string;
+  /** For admins only: the whole site's AI spend this month against its budget (spend-limits.ts). */
+  account?: MonthlyBudget | null;
 }
 
 export function utcDayBounds(now = new Date()): { since: string; resetsAt: string } {
@@ -40,7 +43,7 @@ export function utcDayBounds(now = new Date()): { since: string; resetsAt: strin
 
 export async function readAiUsageToday(ownerUserId: string, now = new Date()): Promise<AiUsageToday> {
   const { since, resetsAt } = utcDayBounds(now);
-  return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+  const today: AiUsageToday = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
     const profile = await client.query<{ role: string | null }>(`SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`, [ownerUserId]);
     // The token rows the chat token budget counts (assertAiTokenBudget).
     const tokens = await client.query<{ units: string }>(
@@ -52,8 +55,9 @@ export async function readAiUsageToday(ownerUserId: string, now = new Date()): P
     );
     const count = async (kind: string) =>
       Number((await client.query<{ count: string }>(AI_USAGE_COUNT_SQL, [ownerUserId, kind, since])).rows[0]?.count ?? 0);
+    const exempt = isQuotaExemptRole(profile.rows[0]?.role);
     return {
-      exempt: isQuotaExemptRole(profile.rows[0]?.role),
+      exempt,
       tokens: { used: Number(tokens.rows[0]?.units ?? 0), limit: getAiDailyTokenLimit() },
       messages: { used: await count("chat_message"), limit: getAiDailyMessageLimit() },
       deepResearch: { used: await count("deep_research"), limit: getAiDailyDeepResearchLimit() },
@@ -61,4 +65,6 @@ export async function readAiUsageToday(ownerUserId: string, now = new Date()): P
       resetsAt,
     };
   });
+  // Read after the person's own transaction, in a service one of its own.
+  return today.exempt ? { ...today, account: await noteMonthlyBudget(now) } : today;
 }

@@ -257,7 +257,10 @@ test("tracked work records its calls' tokens and the provider's charge, even whe
     );
     const rows = await ledger(db, "topic-themes");
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].units, 2_400);
+    // Counted in GPT-6 Luna tokens (model-prices.ts). The calls ran on a model
+    // the price table does not list (the test's default), which counts as an
+    // expensive one, never a cheap one: 2 x (1,000 x 25 + 200 x 20).
+    assert.equal(rows[0].units, 58_000);
     assert.deepEqual(rows[0].metadata, {
       metric: "tokens",
       prompt_tokens: 2_000,

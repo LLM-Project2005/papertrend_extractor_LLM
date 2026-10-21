@@ -388,7 +388,9 @@ test("opening the tab never calls a model; writing up is metered, bounded and ca
       [["chart", "insights"], ["chat_message", "insights"]],
       "one write-up against the daily quota, and its tokens against the daily limits"
     );
-    assert.equal(charged[1].units, 1200);
+    // Counted in GPT-6 Luna tokens (model-prices.ts): Gemini 3.1 Flash-Lite costs
+    // 2.5 times Luna's input and 3 times its output, 900 x 2.5 + 300 x 3.
+    assert.equal(charged[1].units, 3150);
     assert.equal(charged[1].metadata.metric, "tokens");
 
     const again = await open({ mode: "write" });

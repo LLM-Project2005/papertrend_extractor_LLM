@@ -23,6 +23,20 @@ export function isV2Session(session: { steps?: Array<{ tool_name?: string | null
   return Boolean(session?.steps?.some((step) => String(step.tool_name ?? "").startsWith("dr2_")));
 }
 
+/**
+ * The model that writes a run's answer, when the reader chose one dearer than
+ * GPT-6 Luna (2026-10-22): Luna still plans and reads the papers, and the
+ * chosen model writes from Luna's notes and makes its corrections. Null is
+ * Luna, as every run before then.
+ */
+export function sessionWriterModel(
+  session: { steps?: Array<{ tool_name?: string | null; input_payload?: unknown }> } | null | undefined
+): string | null {
+  const write = session?.steps?.find((step) => step.tool_name === "dr2_write");
+  const model = (write?.input_payload as { model?: unknown } | undefined)?.model;
+  return typeof model === "string" && model ? model : null;
+}
+
 /** A session this engine planned and can run; v2's passage-search runs cannot be resumed by it. */
 export function isCurrentEngine(
   session: { steps?: Array<{ tool_name?: string | null; input_payload?: unknown }> } | null | undefined

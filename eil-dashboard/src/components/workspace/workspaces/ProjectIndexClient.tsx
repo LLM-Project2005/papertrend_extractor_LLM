@@ -11,15 +11,19 @@ import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/
 import { BooksIcon, LogoMarkIcon, PencilSquareIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
+import { repositoryPaperStats } from "@/lib/repository-paper-counts";
+import type { IngestionRunRow } from "@/types/database";
 
 const PROJECT_ANALYSIS_PROFILES_ENABLED =
   process.env.NEXT_PUBLIC_PROJECT_ANALYSIS_PROFILES_ENABLED === "true";
 
 export default function ProjectIndexClient() {
   const router = useRouter();
-  const { hydrated, user } = useAuth();
+  const { hydrated, user, session } = useAuth();
   const {
     allProjects,
+    allFolders,
+    currentProject,
     organizations,
     selectedOrganizationId,
     workspaceLoading,
@@ -47,6 +51,36 @@ export default function ProjectIndexClient() {
     }
     refreshOrganizations().catch(() => undefined);
   }, [hydrated, refreshOrganizations, router, user]);
+
+  // Each repository's papers, read once, so the list says what is in each
+  // (2026-10-21). Nothing is shown until they are in.
+  const [runs, setRuns] = useState<IngestionRunRow[] | null>(null);
+  const token = session?.access_token ?? null;
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    // Every page of the account's papers (the route gives at most 500 at a
+    // time), so a large account's counts are not cut short.
+    void (async () => {
+      const all: IngestionRunRow[] = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const response = await fetch(`/api/workspace/library?includeTrashed=false&limit=500&page=${page}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { runs?: IngestionRunRow[]; pagination?: { hasMore?: boolean } };
+        all.push(...(payload.runs ?? []));
+        if (!payload.pagination?.hasMore) break;
+      }
+      setRuns(all);
+    })().catch(() => undefined);
+    return () => controller.abort();
+  }, [token]);
+  const paperStats = useMemo(
+    () => (runs ? repositoryPaperStats(allProjects, runs, new Map(allFolders.map((folder) => [folder.id, folder.project_id]))) : null),
+    [allFolders, allProjects, runs]
+  );
 
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -221,26 +255,43 @@ export default function ProjectIndexClient() {
         ) : null}
 
         <ul className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visibleProjects.map((project) => (
+          {visibleProjects.map((project) => {
+            const open = project.id === currentProject?.id;
+            const stats = paperStats?.get(project.id) ?? null;
+            return (
             <li key={project.id} className="group relative">
               <button
                 type="button"
+                aria-current={open ? "true" : undefined}
                 onClick={() => {
                   setSelectedProjectId(project.id);
                   router.push("/workspace/home");
                 }}
-                className="flex h-full min-h-44 w-full flex-col rounded-xl border border-hairline bg-surface p-5 text-left shadow-raise transition-[border-color,box-shadow,transform] duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-hairline-strong hover:shadow-float active:translate-y-0 motion-reduce:hover:translate-y-0"
+                className={`flex h-full min-h-44 w-full flex-col rounded-xl border bg-surface p-5 text-left shadow-raise transition-[border-color,box-shadow,transform] duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-hairline-strong hover:shadow-float active:translate-y-0 motion-reduce:hover:translate-y-0 ${
+                  open ? "border-hairline-strong ring-1 ring-inset ring-hairline-strong" : "border-hairline"
+                }`}
               >
                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-subtle text-body ring-1 ring-inset ring-hairline">
                   <BooksIcon className="h-5 w-5" />
                 </span>
-                <span className="mt-4 block truncate pr-8 text-base font-semibold tracking-tight text-ink">
-                  {project.name}
+                <span className="mt-4 flex min-w-0 items-center gap-2 pr-8">
+                  <span className="min-w-0 truncate text-base font-semibold tracking-tight text-ink">{project.name}</span>
+                  {open ? (
+                    <span className="flex-none rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-body ring-1 ring-inset ring-hairline">Open now</span>
+                  ) : null}
                 </span>
                 {project.description ? (
                   <span className="mt-1.5 line-clamp-2 text-sm leading-6 text-body">{project.description}</span>
                 ) : null}
                 <span className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-5 text-xs text-mute">
+                  {stats ? (
+                    <span className="tabular-nums">
+                      <span className="font-medium text-body">
+                        {stats.papers} paper{stats.papers === 1 ? "" : "s"}
+                      </span>
+                      {stats.inProgress > 0 ? <span> · {stats.inProgress} analyzing</span> : null}
+                    </span>
+                  ) : null}
                   {PROJECT_ANALYSIS_PROFILES_ENABLED && project.analysis_profile ? (
                     <span className="rounded-full bg-subtle px-2 py-0.5 font-medium text-body">
                       {project.analysis_profile.displayName}
@@ -268,7 +319,8 @@ export default function ProjectIndexClient() {
                 <PencilSquareIcon className="h-4 w-4" />
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
 
         {!workspaceLoadError && visibleProjects.length === 0 ? (

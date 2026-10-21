@@ -53,7 +53,7 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
               Close
             </button>
           </div>
-          <ul className="mt-2 space-y-1.5">
+          <ul data-paper-list="" className="mt-2 space-y-1.5">
             {listed.map((paper) => (
               <li key={paper.id} className="text-sm leading-5">
                 <PaperLink paper={{ paperId: paper.id }} className="text-slate-800 underline-offset-2 hover:underline dark:text-[#e5e5e5]">

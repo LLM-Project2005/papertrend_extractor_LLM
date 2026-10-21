@@ -1,7 +1,8 @@
 "use client";
 
-import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
+import { usePaperViewer, type PaperTarget } from "@/components/workspace/PaperViewerProvider";
 import { hasOpenDialog } from "@/components/ui/Modal";
+import { isSearchShortcut, isTypingTarget } from "@/components/workspace/KeyboardShortcuts";
 import {
   useDeferredValue,
   useEffect,
@@ -58,6 +59,8 @@ interface SearchResult {
   icon: ComponentType<{ className?: string }>;
   featured?: boolean;
   searchText: string;
+  /** A paper that opens in the paper window. */
+  paperRunId?: string;
   onSelect: () => void;
 }
 
@@ -238,16 +241,16 @@ export default function WorkspaceGlobalSearch({
       }
       // "/" opens search from anywhere, as the badge on the button promises,
       // unless the reader is typing in a field (where "/" is just a slash) or
-      // a dialog is open over the page.
+      // a dialog is open over the page. Ctrl+K (⌘K) works from a field too.
       if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !hasOpenDialog()) {
-        const target = event.target as HTMLElement | null;
-        const typing =
-          target?.isContentEditable ||
-          (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
-        if (!typing) {
+        if (!isTypingTarget(event.target)) {
           event.preventDefault();
           setOpen(true);
         }
+      } else if (isSearchShortcut(event) && !hasOpenDialog()) {
+        event.preventDefault();
+        setOpen(true);
+        window.requestAnimationFrame(() => inputRef.current?.focus());
       }
     }
 
@@ -310,6 +313,9 @@ export default function WorkspaceGlobalSearch({
   const projectIcon =
     pageItems.find((item) => item.id === "project-overview")?.icon ?? HomeIcon;
 
+  // The papers the search showed, in order: an opened one steps through them.
+  const shownPapersRef = useRef<PaperTarget[]>([]);
+
   const allResults = useMemo<SearchResult[]>(() => {
     const navigate = (href: string) => {
       if (href.startsWith("/workspace/library")) {
@@ -352,9 +358,10 @@ export default function WorkspaceGlobalSearch({
         // What a reader would type: the title, the file name, the state. Model
         // names, storage paths and stock words matched almost any query.
         searchText: [titleOf(run), run.source_filename ?? "", getRunStatusLabel(run)].join(" "),
+        paperRunId: hasUsableAnalysis(run) ? run.id : undefined,
         onSelect: () => {
           if (hasUsableAnalysis(run) && paperViewer) {
-            paperViewer.openPaper({ runId: run.id });
+            paperViewer.openPaper({ runId: run.id }, { sequence: shownPapersRef.current });
             return;
           }
           setSelectedFolderId("all");
@@ -444,6 +451,7 @@ export default function WorkspaceGlobalSearch({
   // audit SHELL-8): the palette was a list of buttons the keyboard could only
   // Tab through, with nothing telling a screen reader it was a list of choices.
   const shownResults = useMemo(() => groupedResults.flatMap((group) => group.items), [groupedResults]);
+  shownPapersRef.current = shownResults.flatMap((result: SearchResult) => (result.paperRunId ? [{ runId: result.paperRunId }] : []));
   const [activeIndex, setActiveIndex] = useState(0);
   const listboxId = useId();
   const optionId = (index: number) => `${listboxId}-option-${index}`;
@@ -485,7 +493,7 @@ export default function WorkspaceGlobalSearch({
         aria-expanded={open}
         className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-surface text-mute shadow-raise transition-[border-color,color] duration-150 hover:border-hairline-strong hover:text-ink sm:w-[184px] sm:justify-start sm:gap-2 sm:px-3"
         aria-label="Search repository"
-        aria-keyshortcuts="/"
+        aria-keyshortcuts="/ Control+K Meta+K"
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>

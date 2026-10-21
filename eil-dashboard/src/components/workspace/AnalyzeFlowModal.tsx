@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
@@ -66,6 +66,8 @@ interface AnalyzeFlowModalProps {
       sourceKind: string;
     }
   ) => void;
+  /** PDFs dropped on the page that opened this: they start in the list, to check before sending. */
+  initialFiles?: File[] | null;
 }
 
 type QueuedSummary = {
@@ -86,6 +88,7 @@ export default function AnalyzeFlowModal({
   onClose,
   projectId,
   onCreated,
+  initialFiles,
 }: AnalyzeFlowModalProps) {
   const router = useRouter();
   const { session, user } = useAuth();
@@ -210,6 +213,16 @@ export default function AnalyzeFlowModal({
 
   const activeAnalysisProfile = targetProject?.analysis_profile ?? createGeneralAnalysisProfile();
   const projectName = targetProject?.name ?? "this repository";
+
+  // Each drop is added once, to whatever is already in the list.
+  const addedDropRef = useRef<File[] | null>(null);
+  useEffect(() => {
+    if (!open || !initialFiles?.length || addedDropRef.current === initialFiles) return;
+    addedDropRef.current = initialFiles;
+    if (!uploading) selectPdfFiles(initialFiles);
+    // selectPdfFiles reads the list as it is now, which is what a drop adds to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFiles, open]);
 
   function selectPdfFiles(nextFiles: File[]) {
     const validFiles = nextFiles.filter((file) =>

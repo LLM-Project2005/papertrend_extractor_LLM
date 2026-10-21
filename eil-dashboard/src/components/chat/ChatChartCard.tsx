@@ -68,7 +68,7 @@ function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sour
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-700 hover:text-slate-950 dark:text-[#d4d4d4] dark:hover:text-white">
         Where each value comes from ({sources.length})
       </summary>
-      <ul className="max-h-[420px] space-y-3 overflow-auto px-4 pb-4">
+      <ul data-paper-list="" className="max-h-[420px] space-y-3 overflow-auto px-4 pb-4">
         {sources.map((source, index) => (
           <li key={`${source.paperId}-${index}`} className="text-sm leading-6">
             <p className="text-slate-900 dark:text-white">

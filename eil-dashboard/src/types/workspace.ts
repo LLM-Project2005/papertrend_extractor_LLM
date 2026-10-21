@@ -91,4 +91,6 @@ export interface WorkspaceProfile {
   projectCorpusTopicCacheByProject: Record<string, WorkspaceProjectCorpusTopicCache>;
   onboardingComplete: boolean;
   updatedAt: string | null;
+  /** Chats pinned to the top of the list, newest pin first; saved with the account. */
+  pinnedChatThreadIds?: string[];
 }

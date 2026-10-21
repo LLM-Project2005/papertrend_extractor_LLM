@@ -113,6 +113,8 @@ const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"
 import ReportActions from "@/components/chat/ReportActions";
 import UsageMeter from "@/components/chat/UsageMeter";
 import MarkdownActions, { downloadMarkdown } from "@/components/chat/MarkdownActions";
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModelDescription, chatModelLabel } from "@/lib/chat-models";
+import AskAgainMenu, { type AskAgainChoice } from "@/components/chat/AskAgainMenu";
 import { answerMarkdown, conversationMarkdown, isFinishedAnswer, markdownFileName } from "@/lib/answer-export";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
@@ -242,10 +244,16 @@ interface ChatSearchResult {
   groupLabel: string;
 }
 
+/** Where this browser kept pins before they were saved with the account; read once to move them. */
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
+const MAX_PINNED_THREADS = 50;
+
+export function readPinnedThreadIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 80))];
+}
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
 const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
-const DEFAULT_CHAT_MODEL = "openai/gpt-6-luna-20260922";
 
 type ChatGenerationParameters = {
   temperature: number;
@@ -310,12 +318,15 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
   budget: STRICT_RESEARCH_BUDGET,
 };
 
-// One model since 2026-10-09 (docs/34): the evidence is chosen on the reader's
-// model, and Gemini never narrowed it (docs/25). A second entry brings the
-// picker back.
-const MODEL_OPTIONS = [
-  { value: "openai/gpt-6-luna-20260922", label: "GPT-6 Luna", description: "By OpenAI.", Mark: OpenAIIcon },
-] as const;
+// GPT-6 Luna, and since 2026-10-22 GPT-6.1 Sol (chat-models.ts). The evidence
+// is chosen on the reader's model (docs/25); Sol counts about twenty times Luna
+// against the daily allowance, which its description says.
+const MODEL_OPTIONS = CHAT_MODELS.map((model) => ({
+  value: model.value,
+  label: model.label,
+  description: chatModelDescription(model.value),
+  Mark: OpenAIIcon,
+}));
 
 
 const CHART_INTENT_PATTERN =
@@ -487,6 +498,26 @@ function SourceLink({ href, className, children }: { href: string; className?: s
       {children}
     </Link>
   );
+}
+
+/** The effort an answer was given at, from what the server recorded. */
+function answeredEffort(metadata?: Record<string, unknown> | null): ThinkingEffortLevel | null {
+  const value = metadata?.effort;
+  return value === "low" || value === "medium" || value === "high" ? value : null;
+}
+
+/**
+ * The mode a question was asked in, for asking it again: the question's own
+ * record when this page sent it, else what its answer shows (a chart, web
+ * sources).
+ */
+function askedToolMode(question: MessageView | null, answer: MessageView): "auto" | "web_search" | "chart" {
+  const asked = question?.metadata?.toolMode;
+  if (asked === "chart" || asked === "web_search") return asked;
+  const meta = answer.metadata ?? {};
+  if (meta.toolMode === "chart" || chartsFromMetadata(meta).length > 0) return "chart";
+  if (answer.citations.some((citation) => citation.sourceType === "web")) return "web_search";
+  return "auto";
 }
 
 function sortThreads(
@@ -926,7 +957,7 @@ function ResearchSources({ sources }: { sources: CitationSource[] }) {
   return (
     <section className="mt-10 border-t border-slate-200 pt-6 dark:border-[#1f1f1f]">
       <h2 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">Sources</h2>
-      <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
+      <ol data-paper-list="" className="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
         {sources.map((source) => (
           <li key={source.paperId} className="flex gap-3">
             <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-[#8e8e8e]">{source.number}.</span>
@@ -1297,6 +1328,9 @@ export default function ChatClient() {
     searchQuery,
     startAnalysisSession,
     refreshFolders,
+    profile: workspaceProfile,
+    profileFromAccount,
+    updateProfile,
   } = useWorkspaceProfile();
   // Starts on the open repository: starting on "all" asked for a summary of
   // every repository first, then this one's (docs/32, 3.2).
@@ -1424,7 +1458,34 @@ export default function ChatClient() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
-  const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
+  // Pinned chats are saved with the account (2026-10-21), so they follow the
+  // reader to another browser; they used to live in this browser only.
+  const pinnedThreadIds = useMemo(() => readPinnedThreadIds(workspaceProfile.pinnedChatThreadIds), [workspaceProfile.pinnedChatThreadIds]);
+  const setPinnedThreadIds = useCallback(
+    (next: (current: string[]) => string[]) => {
+      if (!profileFromAccount) return;
+      updateProfile({ pinnedChatThreadIds: next(pinnedThreadIds).slice(0, MAX_PINNED_THREADS) });
+    },
+    [pinnedThreadIds, profileFromAccount, updateProfile]
+  );
+  // Pins made in this browser before then move into the account, once.
+  const movedLocalPinsRef = useRef(false);
+  useEffect(() => {
+    if (!profileFromAccount || movedLocalPinsRef.current) return;
+    movedLocalPinsRef.current = true;
+    let local: string[] = [];
+    try {
+      local = readPinnedThreadIds(JSON.parse(window.localStorage.getItem(PINNED_THREADS_STORAGE_KEY) ?? "[]"));
+      window.localStorage.removeItem(PINNED_THREADS_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (local.length === 0) return;
+    const merged = [...new Set([...readPinnedThreadIds(workspaceProfile.pinnedChatThreadIds), ...local])];
+    updateProfile({ pinnedChatThreadIds: merged.slice(0, MAX_PINNED_THREADS) });
+    // Once, when the account's profile is first in hand.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileFromAccount]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   /** The transcript's scroll box, and whether the reader is at its bottom (docs/32, 2.7). */
@@ -1720,11 +1781,6 @@ export default function ChatClient() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const rawPinned = window.localStorage.getItem(PINNED_THREADS_STORAGE_KEY);
-      if (rawPinned) {
-        const parsed = JSON.parse(rawPinned) as string[];
-        if (Array.isArray(parsed)) setPinnedThreadIds(parsed.filter(Boolean));
-      }
       setSelectedModel(
         normalizeStoredModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY))
       );
@@ -1737,17 +1793,9 @@ export default function ChatClient() {
         });
       }
     } catch {
-      setPinnedThreadIds([]);
+      // Unreadable settings: the defaults stand.
     }
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      PINNED_THREADS_STORAGE_KEY,
-      JSON.stringify(pinnedThreadIds)
-    );
-  }, [pinnedThreadIds]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2165,6 +2213,20 @@ export default function ChatClient() {
     }
   }, [canPersist, session?.access_token]);
 
+  // Home's "Continue" links to a conversation by its address (?thread=). It
+  // opens once the list loads; the parameter is then dropped, so a reload
+  // returns to whatever is open by then.
+  const linkedThreadRef = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linked = params.get("thread")?.trim() ?? "";
+    if (!linked) return;
+    if (/^[A-Za-z0-9-]{1,80}$/.test(linked)) linkedThreadRef.current = linked;
+    params.delete("thread");
+    const rest = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  }, []);
+
   useEffect(() => {
     if (!canPersist) {
       setThreads([]);
@@ -2173,7 +2235,9 @@ export default function ChatClient() {
       setDeepSession(null);
       return;
     }
-    void refreshThreads(null);
+    const linked = linkedThreadRef.current;
+    linkedThreadRef.current = null;
+    void refreshThreads(linked);
   }, [canPersist, refreshThreads]);
 
   useEffect(() => {
@@ -2443,6 +2507,31 @@ export default function ChatClient() {
     setEditingDraft(message.content);
   }
 
+  /**
+   * "Ask again" under the latest answer: its question, answered afresh at the
+   * chosen effort and model, in the same mode (a chart stays a chart, a web
+   * answer searches the web again). Max goes to the box, as editing a Max
+   * question does.
+   */
+  function askAgain(answer: MessageView, choice: AskAgainChoice) {
+    if (loading) return;
+    const answerIndex = messages.findIndex((item) => item.id === answer.id);
+    const question = answerIndex > 0 ? [...messages.slice(0, answerIndex)].reverse().find((item) => item.role === "user") : null;
+    if (!question) return;
+    if (choice.effort === "max") {
+      setEffort("max");
+      setSelectedModel(choice.model);
+      focusComposerWithDraft(question.content);
+      return;
+    }
+    forceScrollRef.current = true;
+    void resendUserMessage(question, question.content, {
+      model: choice.model,
+      effort: choice.effort,
+      toolMode: askedToolMode(question, answer),
+    });
+  }
+
   function cancelEditingUserMessage() {
     setEditingMessageId(null);
     setEditingDraft("");
@@ -2451,7 +2540,18 @@ export default function ChatClient() {
   async function submitEditedUserMessage(message: MessageView) {
     const prompt = editingDraft.trim();
     if (!prompt) return;
+    await resendUserMessage(message, prompt);
+  }
 
+  /**
+   * Sends a question again in its place, dropping what came after it: an
+   * edited question, or "Ask again" at another effort or model.
+   */
+  async function resendUserMessage(
+    message: MessageView,
+    prompt: string,
+    overrides: { model?: string; effort?: Exclude<ThinkingEffortLevel, "max">; toolMode?: "auto" | "web_search" | "chart" } = {}
+  ) {
     const editIndex = messages.findIndex((item) => item.id === message.id);
     if (editIndex < 0) {
       cancelEditingUserMessage();
@@ -2483,12 +2583,16 @@ export default function ChatClient() {
     setParameterMenuOpen(false);
     setEditingMessageId(null);
     setEditingDraft("");
+    // Kept, so a request that is refused (a GPT-6.1 Sol answer the allowance
+    // will not cover) or fails gives the conversation back as it was.
+    const previousMessages = messages;
     setMessages(nextMessages);
 
+    const toolMode = overrides.toolMode ?? (webSearchEnabled ? "web_search" : "auto");
     try {
       const payload = await sendRequest({
         message: prompt,
-        model: selectedModel,
+        model: overrides.model ?? selectedModel,
         generationParameters: {
           temperature: chatParameters.temperature,
           topP: chatParameters.topP,
@@ -2509,10 +2613,10 @@ export default function ChatClient() {
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds: editedRunIds,
-        toolMode: webSearchEnabled ? "web_search" : "auto",
-        webSearchEnabled,
+        toolMode,
+        webSearchEnabled: toolMode === "web_search",
         threadId: activeThread?.id,
-        effort: requestEffort,
+        effort: overrides.effort ?? requestEffort,
         editMessageId: message.id.startsWith("local-") ? undefined : message.id,
         chatMode: "normal",
         action: "message",
@@ -2535,6 +2639,7 @@ export default function ChatClient() {
       }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setMessages(previousMessages);
       setError(
         nextError instanceof Error ? nextError.message : "Failed to edit message."
       );
@@ -2738,6 +2843,8 @@ export default function ChatClient() {
         sessionId: deepSession?.status === "planned" ? deepSession.id : undefined,
         chatMode: "deep_research",
         action: "plan",
+        // A model dearer than GPT-6 Luna writes the answer; Luna still reads the papers.
+        model: selectedModel,
         researchSourcePolicy: effectiveResearchSourcePolicy,
       });
       applyPayload(payload);
@@ -3470,13 +3577,26 @@ export default function ChatClient() {
                           )}
                           <AnswerCaveats metadata={message.metadata} />
                           {(message.kind !== "deep_research_report" || answerFromEngine(message)) && isFinishedAnswer(message) ? (
-                            <MarkdownActions
-                              markdown={() => answerMarkdown(message.content, message.citations, message.metadata)}
-                              fileName={markdownFileName(questionBefore(visibleMessages, messageIndex) || pageTitle, "papertrend-answer")}
-                              copyLabel="Copy"
-                              label="Answer actions"
-                              compact
-                            />
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <MarkdownActions
+                                markdown={() => answerMarkdown(message.content, message.citations, message.metadata)}
+                                fileName={markdownFileName(questionBefore(visibleMessages, messageIndex) || pageTitle, "papertrend-answer")}
+                                copyLabel="Copy"
+                                label="Answer actions"
+                                compact
+                              />
+                              {/* Only the latest answer: asking an earlier one again would drop everything after it. */}
+                              {message.role === "assistant" && message.kind !== "deep_research_report" && message === visibleMessages[visibleMessages.length - 1] && canPersist ? (
+                                <AskAgainMenu
+                                  models={MODEL_OPTIONS}
+                                  model={selectedModel}
+                                  answeredAt={answeredEffort(message.metadata)}
+                                  maxUnavailable={askedToolMode(null, message) === "chart"}
+                                  disabled={loading}
+                                  onAsk={(choice) => askAgain(message, choice)}
+                                />
+                              ) : null}
+                            </div>
                           ) : null}
                           {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading && isFinishedAnswer(message) ? (
                             <FollowUpSuggestions
@@ -3490,7 +3610,7 @@ export default function ChatClient() {
                             />
                           ) : null}
                           {message.citations.length > 0 ? (
-                            <div className="max-w-[720px] space-y-1.5">
+                            <div data-paper-list="" className="max-w-[720px] space-y-1.5">
                               {citationPreview.visible.map((citation) => (
                                 <CitationLink
                                   key={`${message.id}-${citation.sourceType ?? "paper"}-${citation.paperId}`}
@@ -4359,6 +4479,11 @@ export default function ChatClient() {
                       models={MODEL_OPTIONS}
                       model={selectedModel}
                       onModelChange={setSelectedModel}
+                      note={
+                        effort === "max" && selectedModel !== DEFAULT_CHAT_MODEL
+                          ? `At Max, GPT-6 Luna reads the papers and ${chatModelLabel(selectedModel)} writes the answer.`
+                          : null
+                      }
                     />
                     <button
                       type="submit"
@@ -4417,7 +4542,7 @@ export default function ChatClient() {
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
                 {conversationSources.length > 0 ? (
-                  <div className="space-y-2">
+                  <div data-paper-list="" className="space-y-2">
                     {conversationSources.map((citation) => (
                       <CitationLink
                         key={`conversation-${citation.sourceType ?? "paper"}-${citation.paperId}-${citation.href}`}
