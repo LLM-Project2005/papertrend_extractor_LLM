@@ -59,7 +59,8 @@ const classesOf = (element: ReactElement<Record<string, unknown>> | undefined) =
 test("paper explorer tabs stay above the content, across the full width of the scrolling area", async () => {
   // The bar scrolled away with the content, and an inset bar let the content
   // show at its sides.
-  const { default: PaperAnalysisExplorerModal } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
+  // The window's contents: the default export adds only the dialog around them.
+  const { PaperExplorerPanel: PaperAnalysisExplorerModal } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
   const root = await headlessRoot();
   let tree: ReactNode = null;
   await root.render(captured(PaperAnalysisExplorerModal, explorerProps(), (next) => (tree = next)));
@@ -93,7 +94,8 @@ test("the paper window resolves its PDF address once, without cancelling itself"
   // The effect depended on its own loading flag and on a resolver the parent
   // recreates every render. Setting the flag re-ran it, the cleanup cancelled
   // the request in flight, and the viewer stayed on "Loading the PDF…".
-  const { default: PaperAnalysisExplorerModal } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
+  // The window's contents: the default export adds only the dialog around them.
+  const { PaperExplorerPanel: PaperAnalysisExplorerModal } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
   const { default: PdfViewer } = await import("../src/components/workspace/PdfViewer");
   const root = await headlessRoot();
   let tree: ReactNode = null;
@@ -118,7 +120,8 @@ test("the paper window resolves its PDF address once, without cancelling itself"
 test("a link to a paper's tab opens on that tab", async () => {
   // The window reset itself to Overview whenever the paper changed - on mount
   // too - so /workspace/library?paper=...&tab=evidence opened on Overview.
-  const { default: PaperAnalysisExplorerModal } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
+  // The window's contents: the default export adds only the dialog around them.
+  const { PaperExplorerPanel: PaperAnalysisExplorerModal } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
   const root = await headlessRoot();
   let tree: ReactNode = null;
   const shown: string[] = [];

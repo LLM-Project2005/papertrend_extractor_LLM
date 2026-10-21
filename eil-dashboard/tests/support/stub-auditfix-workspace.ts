@@ -41,6 +41,9 @@ export function useWorkspaceProfile() {
     setAnalysisMinimized: nothing,
     removeAnalysisRunIds: nothing,
     clearAnalysisSession: nothing,
+    profile: {},
+    profileFromAccount: false,
+    updateProfile: nothing,
     ...(globalThis.__auditfixWorkspace ?? {}),
   };
 }

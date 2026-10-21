@@ -28,6 +28,7 @@ import {
   ArrowsDownUpGlyph as ArrowsDownUpIcon,
   ArrowsInGlyph as ArrowsInIcon,
   ArrowsOutGlyph as ArrowsOutIcon,
+  BellGlyph as PhBell,
   BookOpenGlyph as PhBookOpen,
   BooksGlyph as PhBooks,
   CaretDownGlyph as CaretDownIcon,
@@ -63,6 +64,7 @@ import {
   HouseGlyph as HouseIcon,
   ImageGlyph as PhImage,
   InfoGlyph as PhInfo,
+  KeyboardGlyph as PhKeyboard,
   KeyGlyph as PhKey,
   LightningGlyph as PhLightning,
   ListBulletsGlyph as ListBulletsIcon,
@@ -241,6 +243,8 @@ export const InfoIcon = /*#__PURE__*/ glyph(PhInfo, "InfoIcon");
 export const WarningIcon = /*#__PURE__*/ glyph(PhWarning, "WarningIcon");
 export const WarningCircleIcon = /*#__PURE__*/ glyph(PhWarningCircle, "WarningCircleIcon");
 export const QuestionIcon = /*#__PURE__*/ glyph(PhQuestion, "QuestionIcon");
+export const BellIcon = /*#__PURE__*/ glyph(PhBell, "BellIcon");
+export const KeyboardIcon = /*#__PURE__*/ glyph(PhKeyboard, "KeyboardIcon");
 export const ClockIcon = /*#__PURE__*/ glyph(PhClock, "ClockIcon");
 export const HourglassIcon = /*#__PURE__*/ glyph(PhHourglass, "HourglassIcon");
 

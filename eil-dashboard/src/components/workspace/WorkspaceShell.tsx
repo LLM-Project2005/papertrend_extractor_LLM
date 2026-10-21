@@ -32,6 +32,8 @@ import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 import RepositorySwitcher from "@/components/workspace/RepositorySwitcher";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
+import WorkspaceTabTitle from "@/components/workspace/WorkspaceTabTitle";
+import KeyboardShortcuts, { openKeyboardShortcuts } from "@/components/workspace/KeyboardShortcuts";
 import { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
 
@@ -565,7 +567,7 @@ export default function WorkspaceShell({
               <span className="hidden md:inline">Docs</span>
             </Link>
             <ThemeToggle compact />
-            <WorkspaceProfileMenu />
+            <WorkspaceProfileMenu onShowShortcuts={openKeyboardShortcuts} />
           </div>
         </div>
         {/*
@@ -642,6 +644,9 @@ export default function WorkspaceShell({
             </div>
           )}
         </main>
+
+        <WorkspaceTabTitle runs={activeRuns} />
+        <KeyboardShortcuts />
 
         {analysisSession &&
         (analysisSession.minimized ||

@@ -25,6 +25,7 @@ import {
   PAPER_QUOTE_PARAM,
   PAPER_TAB_PARAM,
   libraryPaperHref,
+  paperSequence,
   readPaperQuote,
   readPaperTab,
   type PaperExplorerTab,
@@ -35,6 +36,8 @@ import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
 import { SpinnerIcon } from "@/components/ui/Icons";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import { getRunDisplayTitle } from "@/lib/ingestion-status";
+import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { IngestionRunRow, RunAnalysisDetail } from "@/types/database";
 
 // The paper window and its PDF reader load when a paper is opened; they were
@@ -44,8 +47,11 @@ const PaperAnalysisExplorerModal = dynamic(() => import("@/components/workspace/
 });
 
 interface PaperViewer {
-  openPaper: (target: PaperTarget) => void;
+  /** `sequence`: the list the paper was opened from, to step through with Previous and Next. */
+  openPaper: (target: PaperTarget, options?: { sequence?: PaperTarget[] }) => void;
 }
+
+type Sequence = { items: PaperTarget[]; index: number; focus: "previous" | "next" | null };
 
 const PaperViewerContext = createContext<PaperViewer | null>(null);
 
@@ -61,8 +67,12 @@ function isLibraryPath(pathname: string): boolean {
 }
 
 export function PaperViewerProvider({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const token = session?.access_token ?? null;
+  // Home's "Continue where you left off" lists the papers opened here.
+  const { allFolders } = useWorkspaceProfile();
+  const recentContextRef = useRef({ userId: user?.id ?? null, folderProject: new Map<string, string | null | undefined>() });
+  recentContextRef.current = { userId: user?.id ?? null, folderProject: new Map(allFolders.map((folder) => [folder.id, folder.project_id])) };
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -76,6 +86,9 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
+  const [sequence, setSequence] = useState<Sequence | null>(null);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const requestRef = useRef(0);
   const pushedRef = useRef(false);
   /** The run shown or being opened, so the address sync does not open it twice. */
@@ -85,12 +98,15 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
 
   const authHeaders = useCallback((): Record<string, string> => (tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : {}), []);
 
+  // `keep`: a step to the next paper leaves this one on screen until that one arrives.
   const load = useCallback(
-    async (target: PaperTarget) => {
+    async (target: PaperTarget, keep = false) => {
       const id = (requestRef.current += 1);
       setOpen(true);
-      setRun(null);
-      setDetail(null);
+      if (!keep) {
+        setRun(null);
+        setDetail(null);
+      }
       setError(null);
       setLoading(true);
       setTab(target.tab ?? "overview");
@@ -113,9 +129,17 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
         if (!response.ok || !payload.run) throw new Error(payload.error || "The paper could not be opened.");
         setRun(payload.run);
         setDetail(payload.analysis ?? null);
+        rememberOpenedPaper(recentContextRef.current.userId, {
+          runId: payload.run.id,
+          title: payload.analysis?.title || getRunDisplayTitle(payload.run, payload.run.id),
+          projectId: runProjectId(payload.run, recentContextRef.current.folderProject),
+        });
         return payload.run.id;
       } catch (loadError) {
-        if (id === requestRef.current) setError(loadError instanceof Error ? loadError.message : "The paper could not be opened.");
+        if (id === requestRef.current) {
+          setRun(null);
+          setError(loadError instanceof Error ? loadError.message : "The paper could not be opened.");
+        }
         return null;
       } finally {
         if (id === requestRef.current) setLoading(false);
@@ -144,13 +168,15 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openPaper = useCallback(
-    (target: PaperTarget) => {
+    (target: PaperTarget, options?: { sequence?: PaperTarget[] }) => {
       if (!target.runId && !target.paperId) return;
       // The Library has its own window and file list; send the paper there.
       if (isLibraryPath(window.location.pathname)) {
         router.push(libraryPaperHref(target));
         return;
       }
+      const list = paperSequence(target, options?.sequence);
+      setSequence(list ? { ...list, focus: null } : null);
       void load(target).then((runId) => {
         if (!runId) return;
         writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push", readPaperQuote(target.quote));
@@ -160,9 +186,29 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
     [load, router, writeAddress]
   );
 
+  // Stepping replaces the address rather than adding to it: Back still closes
+  // the window, whichever paper of the list it is on.
+  const step = useCallback(
+    (delta: -1 | 1) => {
+      const current = sequence;
+      const next = current ? current.items[current.index + delta] : null;
+      if (!current || !next) return;
+      setSequence({ ...current, index: current.index + delta, focus: delta < 0 ? "previous" : "next" });
+      // The reader's tab comes along, unless the next paper is named with its own passage.
+      const target: PaperTarget = next.quote ? next : { ...next, tab: tabRef.current };
+      void load(target, true).then((runId) => {
+        if (!runId) return;
+        writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push", readPaperQuote(target.quote));
+        pushedRef.current = true;
+      });
+    },
+    [load, sequence, writeAddress]
+  );
+
   const close = useCallback(() => {
     requestRef.current += 1;
     shownRunIdRef.current = null;
+    setSequence(null);
     setOpen(false);
     setRun(null);
     setDetail(null);
@@ -189,6 +235,7 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
         pushedRef.current = false;
         shownRunIdRef.current = null;
         requestRef.current += 1;
+        setSequence(null);
         setOpen(false);
         setRun(null);
         setDetail(null);
@@ -199,7 +246,9 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
       const nextTab = readPaperTab(params.get(PAPER_TAB_PARAM));
       const nextQuote = readPaperQuote(params.get(PAPER_QUOTE_PARAM));
       if (shownRunIdRef.current !== runId) {
+        // A paper from the address (a reload, Forward) has no list around it.
         shownRunIdRef.current = runId;
+        setSequence(null);
         void load({ runId, tab: nextTab, quote: nextQuote });
       } else {
         setTab(nextTab);
@@ -286,8 +335,18 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
       ) : null}
       {open && run ? (
         <PaperAnalysisExplorerModal
-          key={run.id}
           run={run}
+          stepper={
+            sequence
+              ? {
+                  position: sequence.index + 1,
+                  total: sequence.items.length,
+                  onPrevious: sequence.index > 0 ? () => step(-1) : null,
+                  onNext: sequence.index < sequence.items.length - 1 ? () => step(1) : null,
+                  focus: sequence.focus,
+                }
+              : null
+          }
           initialTab={tab}
           quote={quote}
           onTabChange={(next) => {

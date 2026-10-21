@@ -56,7 +56,8 @@ test("the slider runs Low, Medium, High, Max, and conversations mix them", () =>
   // A question continues its conversation whatever effort asked the last one.
   assert.doesNotMatch(client, /threadId: activeThread\?\.mode === "normal" \? activeThread\.id : undefined/);
   assert.doesNotMatch(client, /threadId: activeThread\?\.mode === "deep_research" \? activeThread\.id : undefined/);
-  assert.equal(client.match(/effort: requestEffort,/g)?.length, 3, "every ordinary question sends its effort");
+  // An edited question, or one asked again, sends the effort it was given (overrides.effort) or the slider's.
+  assert.equal(client.match(/effort: (?:overrides\.effort \?\? )?requestEffort,/g)?.length, 3, "every ordinary question sends its effort");
 });
 
 function session(overrides: Partial<DeepResearchSessionRecord>): DeepResearchSessionRecord {

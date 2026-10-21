@@ -34,6 +34,7 @@ import {
   ChevronRightIcon,
   ClockIcon,
   InfoIcon,
+  PaperIcon,
   SparkIcon,
   SpinnerIcon,
   UploadIcon,
@@ -45,6 +46,10 @@ import Mascot from "@/components/ui/Mascot";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { isDatedYear } from "@/lib/dated-year";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
+import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle";
+import PdfDropTarget from "@/components/workspace/PdfDropTarget";
+import { readRecentPapers, type RecentPaper } from "@/lib/recent-papers";
+import type { WorkspaceThreadSummary } from "@/types/research";
 
 type RankedItem = {
   label: string;
@@ -113,6 +118,51 @@ function formatTimestamp(value?: string | null) {
 }
 
 /* ------------------------------------------------------------ small parts */
+
+/**
+ * "Continue where you left off" (2026-10-21): the last conversation, and the
+ * last paper opened in this repository, a click from Home. Chat is shared by
+ * every repository, so the conversation is the latest one anywhere; the paper
+ * is this repository's. Nothing shows until there is something to continue.
+ */
+export function ContinueRow({ chat, paper }: { chat: WorkspaceThreadSummary | null; paper: RecentPaper | null }) {
+  if (!chat && !paper) return null;
+  const itemClass =
+    "group flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-hairline bg-surface px-4 py-3 shadow-raise transition-[border-color,background-color] duration-150 hover:border-hairline-strong hover:bg-subtle";
+  return (
+    <section aria-labelledby="home-continue">
+      <h2 id="home-continue" className="text-xs font-medium uppercase tracking-[0.06em] text-mute">
+        Continue where you left off
+      </h2>
+      <div className="mt-2.5 flex flex-col gap-2.5 sm:flex-row">
+        {chat ? (
+          <Link href={`/workspace/chat?thread=${encodeURIComponent(chat.id)}`} className={itemClass}>
+            <ChatIcon className="h-4 w-4 flex-none text-mute" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs text-mute">Your last chat{chat.updated_at ? ` · ${formatTimestamp(chat.updated_at)}` : ""}</span>
+              <span className="mt-0.5 block truncate text-sm font-medium text-ink" title={chat.title}>
+                {chat.title || "Untitled chat"}
+              </span>
+            </span>
+            <ArrowRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
+          </Link>
+        ) : null}
+        {paper ? (
+          <PaperLink paper={{ runId: paper.runId }} className={itemClass}>
+            <PaperIcon className="h-4 w-4 flex-none text-mute" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs text-mute">Last paper you opened · {formatTimestamp(paper.openedAt)}</span>
+              <span className="mt-0.5 block truncate text-sm font-medium text-ink" title={paper.title}>
+                {paper.title}
+              </span>
+            </span>
+            <ArrowRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
+          </PaperLink>
+        ) : null}
+      </div>
+    </section>
+  );
+}
 
 function Fact({ value, label, loading }: { value: string; label: string; loading: boolean }) {
   return (
@@ -317,7 +367,7 @@ function GettingStarted({ onAdd }: { onAdd: () => void }) {
 
 export default function WorkspaceHomeClient() {
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const {
     currentProject,
     refreshFolders,
@@ -327,6 +377,28 @@ export default function WorkspaceHomeClient() {
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
+  useTabTitleRepository(currentProject?.name);
+  // Continue where you left off: the last chat (read once) and the last paper
+  // opened in this repository (kept in this browser).
+  const [lastChat, setLastChat] = useState<WorkspaceThreadSummary | null>(null);
+  const [lastPaper, setLastPaper] = useState<RecentPaper | null>(null);
+  // The token refreshes every hour; one read per visit is enough.
+  const chatTokenRef = useRef(session?.access_token ?? null);
+  chatTokenRef.current = session?.access_token ?? null;
+  const signedIn = Boolean(session?.access_token);
+  useEffect(() => {
+    const token = chatTokenRef.current;
+    if (!signedIn || !token) return;
+    const controller = new AbortController();
+    void fetch("/api/chat/threads?limit=1", { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then((response) => (response.ok ? (response.json() as Promise<{ threads?: WorkspaceThreadSummary[] }>) : null))
+      .then((payload) => setLastChat(payload?.threads?.[0] ?? null))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [signedIn]);
+  useEffect(() => {
+    setLastPaper(readRecentPapers(user?.id).find((paper) => paper.projectId === currentProject?.id) ?? null);
+  }, [currentProject?.id, user?.id]);
   const { data, loading, refresh: refreshDashboardData } = useDashboardData("all", [], {
     projectId: currentProject?.id ?? null,
     enabled: Boolean(currentProject?.id),
@@ -341,6 +413,7 @@ export default function WorkspaceHomeClient() {
     refresh,
   } = useAnalysisRuns();
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -729,6 +802,7 @@ export default function WorkspaceHomeClient() {
         <GettingStarted onAdd={() => setShowAnalyzeModal(true)} />
       ) : (
         <>
+          <ContinueRow chat={lastChat} paper={lastPaper} />
           <section className={`${panelClass} p-5 sm:p-6`} aria-labelledby="home-ask">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
               <h2 id="home-ask" className="text-base font-semibold text-ink">
@@ -846,7 +920,7 @@ export default function WorkspaceHomeClient() {
                     {libraryError}
                   </p>
                 ) : recentRuns.length > 0 ? (
-                  <ul>
+                  <ul data-paper-list="">
                     {recentRuns.map((run) => (
                       <RecentPaperRow key={run.id} run={run} />
                     ))}
@@ -875,8 +949,20 @@ export default function WorkspaceHomeClient() {
 
       <AnalyzeFlowModal
         open={showAnalyzeModal}
-        onClose={() => setShowAnalyzeModal(false)}
+        onClose={() => {
+          setShowAnalyzeModal(false);
+          setDroppedFiles(null);
+        }}
         onCreated={handleAnalyzeCreated}
+        initialFiles={droppedFiles}
+      />
+      <PdfDropTarget
+        repositoryName={currentProject?.name}
+        disabled={showAnalyzeModal}
+        onFiles={(files) => {
+          setDroppedFiles(files);
+          setShowAnalyzeModal(true);
+        }}
       />
     </div>
   );
