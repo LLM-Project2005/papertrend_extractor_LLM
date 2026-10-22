@@ -2,7 +2,7 @@
 
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
-import PdfViewer, { prefetchPdf } from "@/components/workspace/PdfViewer";
+import PdfViewer, { prefetchPdf, type PdfMark } from "@/components/workspace/PdfViewer";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
@@ -107,10 +107,6 @@ function splitIntoBullets(value: string | null | undefined, maxItems = 3): strin
   return [cleaned.slice(0, 260)];
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function normalizeSearchText(value: string | null | undefined): string {
   return cleanDisplayText(value).toLowerCase();
 }
@@ -184,42 +180,6 @@ function inferEvidenceSection(
   }
 
   return "Full text";
-}
-
-function HighlightedText({
-  text,
-  terms,
-}: {
-  text: string;
-  terms: string[];
-}) {
-  const activeTerms = terms.map(cleanDisplayText).filter((term) => term.length >= 3);
-  if (!text || activeTerms.length === 0) {
-    return <>{text}</>;
-  }
-
-  const pattern = new RegExp(`(${activeTerms.map(escapeRegExp).join("|")})`, "ig");
-  const parts = text.split(pattern);
-
-  return (
-    <>
-      {parts.map((part, index) => {
-        const isMatch = activeTerms.some(
-          (term) => part.toLowerCase() === term.toLowerCase()
-        );
-        return isMatch ? (
-          <mark
-            key={`${part}-${index}`}
-            className="rounded bg-amber-100 px-1 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100"
-          >
-            {part}
-          </mark>
-        ) : (
-          <span key={`${part}-${index}`}>{part}</span>
-        );
-      })}
-    </>
-  );
 }
 
 function buildTrackBadges(detail: RunAnalysisDetail | null): string[] {
@@ -524,22 +484,23 @@ export function PaperExplorerPanel({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
   const trackBadges = useMemo(() => buildTrackBadges(detail), [detail]);
   const facetGroups = useMemo(() => summarizeFacetGroups(detail), [detail]);
   const keywordEvidenceRows = useMemo(
     () => buildKeywordEvidenceRows(detail),
     [detail]
   );
-  const fullTextEvidenceMatchCount = useMemo(
+  // Every keyword's evidence, marked on the PDF together (Evidence tab).
+  const evidenceMarks = useMemo<PdfMark[]>(
     () =>
-      keywordEvidenceRows.filter(
-        (row) =>
-          row.matchType === "evidence_match" || row.matchType === "keyword_match"
-      ).length,
+      keywordEvidenceRows.map((row) => ({
+        id: `${row.index}`,
+        label: row.keyword,
+        detail: row.section === "Section not resolved" || row.section === "Full text" ? undefined : row.section,
+        candidates: [row.evidence, row.context].filter((text) => text.trim().length > 0),
+      })),
     [keywordEvidenceRows]
   );
-  const selectedEvidence = keywordEvidenceRows[selectedEvidenceIndex] ?? null;
 
   // A different paper opens on the tab it was asked for (a link's ?tab=, or
   // Overview). Resetting to Overview here, on mount too, threw away the tab of
@@ -548,7 +509,6 @@ export function PaperExplorerPanel({
   initialTabRef.current = initialTab;
   useEffect(() => {
     setActiveTab(initialTabRef.current ?? "overview");
-    setSelectedEvidenceIndex(0);
   }, [run.id]);
 
   // The address is resolved once per paper, and again only when asked. The
@@ -1100,145 +1060,22 @@ export function PaperExplorerPanel({
               ) : null}
 
               {activeTab === "evidence" ? (
-                <section className="space-y-4">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                          Evidence reader
-                        </p>
-                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                          Select an extracted claim to inspect its stored rationale, matched
-                          text, and source PDF together.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                          {keywordEvidenceRows.length} keywords
-                        </span>
-                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                          {fullTextEvidenceMatchCount} full-text matches
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {keywordEvidenceRows.length > 0 ? (
-                    <div className="grid min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#030303] lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.35fr)]">
-                      <div className="border-b border-slate-200 dark:border-[#1f1f1f] lg:border-b-0 lg:border-r">
-                        <div className="max-h-[620px] overflow-y-auto p-2">
-                          {keywordEvidenceRows.map((row) => {
-                            const isSelected = row.index === selectedEvidenceIndex;
-                            return (
-                              <button
-                                key={`${row.keyword}-${row.index}`}
-                                type="button"
-                                onClick={() => setSelectedEvidenceIndex(row.index)}
-                                aria-pressed={isSelected}
-                                className={`w-full rounded-lg px-3 py-3 text-left transition-colors ${
-                                  isSelected
-                                    ? "bg-slate-100 text-slate-950 dark:bg-[#111111] dark:text-white"
-                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-[#b7b7b7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                                }`}
-                              >
-                                <span className="flex items-start justify-between gap-3">
-                                  <span className="min-w-0">
-                                    <span className="block truncate text-sm font-semibold">
-                                      {row.keyword}
-                                    </span>
-                                    <span className="mt-1 block truncate text-xs text-slate-500 dark:text-[#858585]">
-                                      {row.topic || "Unclassified topic"} | {row.section}
-                                    </span>
-                                  </span>
-                                  <span className="flex-none rounded-full border border-slate-200 px-2 py-0.5 text-[11px] dark:border-[#2a2a2a]">
-                                    {row.frequency}
-                                  </span>
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="min-w-0">
-                        {selectedEvidence ? (
-                          <div className="border-b border-slate-200 p-4 dark:border-[#1f1f1f]">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                                  {selectedEvidence.keyword}
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500 dark:text-[#8e8e8e]">
-                                  {selectedEvidence.section}
-                                </p>
-                              </div>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-[#111111] dark:text-[#cfcfcf]">
-                                {selectedEvidence.matchType === "evidence_match"
-                                  ? "Exact evidence match"
-                                  : selectedEvidence.matchType === "keyword_match"
-                                    ? "Keyword match"
-                                    : "Stored rationale"}
-                              </span>
-                            </div>
-                            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                              <div>
-                                <p className="text-xs font-semibold text-slate-500 dark:text-[#8e8e8e]">
-                                  Stored rationale
-                                </p>
-                                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
-                                  {selectedEvidence.evidence ? (
-                                    <HighlightedText
-                                      text={selectedEvidence.evidence}
-                                      terms={[selectedEvidence.keyword]}
-                                    />
-                                  ) : (
-                                    "No supporting rationale was stored."
-                                  )}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs font-semibold text-slate-500 dark:text-[#8e8e8e]">
-                                  Matched text context
-                                </p>
-                                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
-                                  {selectedEvidence.context ? (
-                                    <HighlightedText
-                                      text={selectedEvidence.context}
-                                      terms={[selectedEvidence.keyword]}
-                                    />
-                                  ) : (
-                                    "No matching extracted-text context could be located."
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {previewError ? (
-                          <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-                            {previewError}
-                          </div>
-                        ) : (
-                          <div className="p-3">
-                            <PdfViewer
-                              cacheKey={run.id}
-                              url={previewUrl}
-                              title={`Source PDF for ${selectedEvidence?.keyword || titleOf(run)}`}
-                              highlight={selectedEvidence ? [selectedEvidence.evidence, selectedEvidence.context] : null}
-                              highlightKey={String(selectedEvidenceIndex)}
-                              heightClass="h-[440px] lg:h-[520px]"
-                            />
-                          </div>
-                        )}
-                      </div>
+                // The PDF alone, every passage the analysis stored marked on
+                // it, and a pager that steps from one to the next across
+                // pages (2026-10-22). The list beside it is gone.
+                <section aria-label="Evidence in the PDF">
+                  {previewError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                      {previewError}
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                        No keyword evidence rows were available for this paper.
-                      </p>
-                    </div>
+                    <PdfViewer
+                      cacheKey={run.id}
+                      url={previewUrl}
+                      title={`Evidence in ${detail?.title || titleOf(run)}`}
+                      marks={evidenceMarks}
+                      heightClass="h-[62vh] lg:h-[68vh]"
+                    />
                   )}
                 </section>
               ) : null}
