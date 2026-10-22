@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+// React in scope: the test runner compiles JSX the classic way.
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import { locateEvidence, type EvidenceLocation, type PageRuns } from "@/lib/pdf-evidence-match";
-import { MinusIcon, PlusIcon } from "@/components/ui/Icons";
+import { ChevronLeftIcon, ChevronRightIcon, MinusIcon, PlusIcon } from "@/components/ui/Icons";
 
 /*
  * The paper itself, drawn with pdf.js, with the evidence marked on the page.
@@ -14,10 +15,14 @@ import { MinusIcon, PlusIcon } from "@/components/ui/Icons";
  * preview tabs share one loaded document per paper, so switching between
  * them does not download the file again.
  *
- * The evidence is found in the PDF's own text (see pdf-evidence-match) and
- * marked with a box over each line it covers, then scrolled into view. When
- * the text is not in the PDF (a scan without a text layer, or evidence that
- * came from a translation) the viewer says so and shows the pages unmarked.
+ * Evidence is found in the PDF's own text (see pdf-evidence-match) and marked
+ * with a box over each line it covers. The preview marks one passage (a chat
+ * citation's). The Evidence tab marks every passage the analysis stored at
+ * once, the one in focus stronger than the rest, and steps from passage to
+ * passage across pages (2026-10-22: the PDF alone, the evidence on it, in
+ * place of a list beside it). A passage the PDF's text does not contain (a
+ * scan without a text layer, or evidence that came from a translation) is
+ * said so rather than marked.
  *
  * If pdf.js cannot load the file at all, the browser's own viewer takes over,
  * so a preview is never lost to this component.
@@ -97,12 +102,81 @@ interface Rect {
   height: number;
 }
 
+/** A passage to mark: what it is evidence for, and the text to find, tried in order. */
+export interface PdfMark {
+  id: string;
+  /** What the passage is evidence for (a keyword), named beside the pager. */
+  label: string;
+  /** Where the analysis placed it (a section), if known. */
+  detail?: string;
+  /** The stored sentence, then the wider passage around it. */
+  candidates: string[];
+}
+
+/** A passage found in the PDF; marks found at the same place are one, with every label. */
+export interface LocatedMark {
+  key: string;
+  labels: string[];
+  details: string[];
+  page: number;
+  runs: number[];
+  trim: { start: number; end: number };
+  quality: EvidenceLocation["quality"];
+}
+
+/**
+ * Where each mark is in the document, in reading order (page, then the line it
+ * starts on), and which ones the PDF's text does not contain. Two keywords
+ * whose evidence is the same sentence are one stop. Pure, so it is tested.
+ */
+export function locateMarks(pages: PageRuns[], marks: PdfMark[]): { located: LocatedMark[]; missing: PdfMark[] } {
+  const byKey = new Map<string, LocatedMark>();
+  const missing: PdfMark[] = [];
+  for (const mark of marks) {
+    let found: EvidenceLocation | null = null;
+    for (const candidate of mark.candidates) {
+      if (!candidate.trim()) continue;
+      found = locateEvidence(pages, candidate);
+      if (found) break;
+    }
+    if (!found) {
+      missing.push(mark);
+      continue;
+    }
+    const key = `${found.page}|${found.runs.join(",")}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      if (!existing.labels.includes(mark.label)) existing.labels.push(mark.label);
+      if (mark.detail && !existing.details.includes(mark.detail)) existing.details.push(mark.detail);
+      continue;
+    }
+    byKey.set(key, {
+      key,
+      labels: [mark.label],
+      details: mark.detail ? [mark.detail] : [],
+      page: found.page,
+      runs: found.runs,
+      trim: found.trim,
+      quality: found.quality,
+    });
+  }
+  const located = [...byKey.values()].sort((left, right) => left.page - right.page || (left.runs[0] ?? 0) - (right.runs[0] ?? 0));
+  return { located, missing };
+}
+
+interface PageHighlight {
+  key: string;
+  runs: number[];
+  trim: { start: number; end: number };
+  active: boolean;
+}
+
 function PdfPage({
   doc,
   pageNumber,
   scale,
   estimatedSize,
-  highlightRuns,
+  highlights,
   onHighlightPlaced,
   scrollRoot,
 }: {
@@ -110,7 +184,7 @@ function PdfPage({
   pageNumber: number;
   scale: number;
   estimatedSize: { width: number; height: number };
-  highlightRuns: { runs: number[]; trim: { start: number; end: number } } | null;
+  highlights: PageHighlight[];
   onHighlightPlaced: (pageTop: number, rect: Rect) => void;
   scrollRoot: HTMLElement | null;
 }) {
@@ -119,12 +193,13 @@ function PdfPage({
   const textLayerRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(pageNumber === 1);
   const [page, setPage] = useState<PDFPageProxy | null>(null);
-  const [rects, setRects] = useState<Rect[]>([]);
-  // Compared by content: the parent builds a new object on every render, and
+  const [rects, setRects] = useState<Array<Rect & { active: boolean }>>([]);
+  // Compared by content: the parent builds new objects on every render, and
   // re-running on identity would pull the page back to the mark on each scroll.
-  const highlightSignature = highlightRuns
-    ? `${highlightRuns.runs.join(",")}|${highlightRuns.trim.start}|${highlightRuns.trim.end}`
-    : "";
+  const highlightSignature = highlights
+    .map((highlight) => `${highlight.key}${highlight.active ? "*" : ""}|${highlight.trim.start}|${highlight.trim.end}`)
+    .join(";");
+  const hasActive = highlights.some((highlight) => highlight.active);
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -142,10 +217,11 @@ function PdfPage({
     return () => observer.disconnect();
   }, [near, scrollRoot]);
 
-  // A highlighted page is drawn at once, wherever it is.
+  // The page with the passage in focus is drawn at once, wherever it is; the
+  // others are drawn, marks and all, as they come into view.
   useEffect(() => {
-    if (highlightSignature) setNear(true);
-  }, [highlightSignature]);
+    if (hasActive) setNear(true);
+  }, [hasActive]);
 
   useEffect(() => {
     if (!near) return;
@@ -206,7 +282,7 @@ function PdfPage({
   }, [page, scale]);
 
   useEffect(() => {
-    if (!page || !highlightRuns?.runs.length) {
+    if (!page || highlights.length === 0) {
       setRects([]);
       return;
     }
@@ -215,38 +291,42 @@ function PdfPage({
       if (cancelled) return;
       const items = textItems(content);
       const viewport = page.getViewport({ scale });
-      const { runs, trim } = highlightRuns;
-      const lastIndex = runs[runs.length - 1];
-      const next = runs
-        .map((index) => ({ index, item: items[index] }))
-        .filter((entry): entry is { index: number; item: TextItem } => Boolean(entry.item) && entry.item.str.trim().length > 0)
-        .map(({ index, item }) => {
-          // The first and last lines are cut to where the passage starts and ends.
-          const from = index === runs[0] ? trim.start : 0;
-          const to = index === lastIndex ? trim.end : 1;
-          const [, , c, d, e, f] = item.transform as number[];
-          const fontHeight = Math.hypot(c, d) || item.height || 10;
-          const [x1, y1, x2, y2] = viewport.convertToViewportRectangle([
-            e + item.width * from,
-            f - fontHeight * 0.22,
-            e + item.width * Math.max(from, to),
-            f + fontHeight * 0.92,
-          ]);
-          return {
-            left: Math.min(x1, x2) - 2,
-            top: Math.min(y1, y2) - 1,
-            width: Math.abs(x2 - x1) + 4,
-            height: Math.abs(y2 - y1) + 2,
-          };
-        });
+      const next = highlights.flatMap((highlight) => {
+        const { runs, trim } = highlight;
+        const lastIndex = runs[runs.length - 1];
+        return runs
+          .map((index) => ({ index, item: items[index] }))
+          .filter((entry): entry is { index: number; item: TextItem } => Boolean(entry.item) && entry.item.str.trim().length > 0)
+          .map(({ index, item }) => {
+            // The first and last lines are cut to where the passage starts and ends.
+            const from = index === runs[0] ? trim.start : 0;
+            const to = index === lastIndex ? trim.end : 1;
+            const [, , c, d, e, f] = item.transform as number[];
+            const fontHeight = Math.hypot(c, d) || item.height || 10;
+            const [x1, y1, x2, y2] = viewport.convertToViewportRectangle([
+              e + item.width * from,
+              f - fontHeight * 0.22,
+              e + item.width * Math.max(from, to),
+              f + fontHeight * 0.92,
+            ]);
+            return {
+              left: Math.min(x1, x2) - 2,
+              top: Math.min(y1, y2) - 1,
+              width: Math.abs(x2 - x1) + 4,
+              height: Math.abs(y2 - y1) + 2,
+              active: highlight.active,
+            };
+          });
+      });
       setRects(next);
-      if (next[0] && wrapperRef.current) onHighlightPlaced(wrapperRef.current.offsetTop, next[0]);
+      const focus = next.find((rect) => rect.active);
+      if (focus && wrapperRef.current) onHighlightPlaced(wrapperRef.current.offsetTop, focus);
     });
     return () => {
       cancelled = true;
     };
-    // onHighlightPlaced and highlightRuns are recreated each render; the
-    // signature is what changes when the highlight does.
+    // onHighlightPlaced and highlights are recreated each render; the
+    // signature is what changes when the marks do.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightSignature, page, scale]);
 
@@ -265,9 +345,10 @@ function PdfPage({
       {page ? <div ref={textLayerRef} className="textLayer" /> : null}
       {rects.map((rect, index) => (
         <span
-          key={index}
+          key={`${index}-${rect.active ? "a" : "s"}`}
           aria-hidden="true"
-          className="pdf-evidence-mark pointer-events-none absolute rounded-[3px]"
+          data-evidence-mark={rect.active ? "active" : "other"}
+          className={`${rect.active ? "pdf-evidence-mark" : "pdf-evidence-mark-soft"} pointer-events-none absolute rounded-[3px]`}
           style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
         />
       ))}
@@ -275,12 +356,16 @@ function PdfPage({
   );
 }
 
+const navButtonClass =
+  "inline-flex h-7 w-7 items-center justify-center rounded-md text-body transition-colors hover:bg-subtle hover:text-ink disabled:pointer-events-none disabled:opacity-40";
+
 export default function PdfViewer({
   cacheKey,
   url,
   title,
   highlight,
   highlightKey,
+  marks,
   heightClass = "h-[70vh]",
   toolbarExtra,
 }: {
@@ -288,12 +373,17 @@ export default function PdfViewer({
   url: string | null;
   title: string;
   /**
-   * Text to find and mark: a stored evidence sentence, or several candidates
-   * tried in order (the sentence, then the wider passage around it).
+   * One passage to find and mark (the preview's): a stored sentence, or
+   * several candidates tried in order (the sentence, then the wider passage).
    */
   highlight?: string | string[] | null;
   /** Changes when the same text should be found and scrolled to again. */
   highlightKey?: string;
+  /**
+   * Every passage to mark at once (the Evidence tab): all are marked, one is
+   * in focus, and the toolbar steps from one to the next across pages.
+   */
+  marks?: PdfMark[] | null;
   heightClass?: string;
   toolbarExtra?: ReactNode;
 }) {
@@ -306,8 +396,10 @@ export default function PdfViewer({
   const [containerWidth, setContainerWidth] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [location, setLocation] = useState<EvidenceLocation | null | "searching">(null);
+  const [found, setFound] = useState<{ located: LocatedMark[]; missing: PdfMark[] } | "searching" | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   const pageTextRef = useRef<Map<number, string[]>>(new Map());
+  const evidenceMode = Array.isArray(marks);
 
   useEffect(() => {
     if (!url) return;
@@ -344,21 +436,27 @@ export default function PdfViewer({
     return () => observer.disconnect();
   }, [doc]);
 
-  // Find the evidence in the document's text, reading each page's text once.
-  const candidates = useMemo(
-    () => (Array.isArray(highlight) ? highlight : highlight ? [highlight] : []).filter((text) => text.trim().length > 0),
-    // The candidates are compared by content, not identity.
+  // What to find: the Evidence tab's passages, or the preview's one. Compared
+  // by content, not identity: the parent builds them on every render.
+  const wantedSignature = evidenceMode
+    ? `marks:${(marks ?? []).map((mark) => `${mark.id}\u0001${mark.label}\u0001${mark.detail ?? ""}\u0001${mark.candidates.join("\u0000")}`).join("\u0002")}`
+    : `one:${Array.isArray(highlight) ? highlight.join("\u0000") : highlight ?? ""}`;
+  const wanted = useMemo<PdfMark[]>(() => {
+    if (evidenceMode) return marks ?? [];
+    const candidates = (Array.isArray(highlight) ? highlight : highlight ? [highlight] : []).filter((text) => text.trim().length > 0);
+    return candidates.length > 0 ? [{ id: "highlight", label: "", candidates }] : [];
+    // wantedSignature stands for marks and highlight.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [Array.isArray(highlight) ? highlight.join("\u0000") : highlight]
-  );
+  }, [wantedSignature]);
 
+  // Find the passages in the document's text, reading each page's text once.
   useEffect(() => {
-    if (!doc || candidates.length === 0) {
-      setLocation(null);
+    if (!doc || wanted.length === 0) {
+      setFound(null);
       return;
     }
     let cancelled = false;
-    setLocation("searching");
+    setFound("searching");
     void (async () => {
       const pages: PageRuns[] = [];
       for (let number = 1; number <= doc.numPages; number += 1) {
@@ -372,19 +470,19 @@ export default function PdfViewer({
         pages.push({ runs });
       }
       if (cancelled) return;
-      let found: EvidenceLocation | null = null;
-      for (const candidate of candidates) {
-        found = locateEvidence(pages, candidate);
-        if (found) break;
-      }
-      setLocation(found);
+      setFound(locateMarks(pages, wanted));
+      setActiveIndex(0);
     })().catch(() => {
-      if (!cancelled) setLocation(null);
+      if (!cancelled) setFound(null);
     });
     return () => {
       cancelled = true;
     };
-  }, [candidates, doc, highlightKey]);
+  }, [wanted, doc, highlightKey]);
+
+  const located = found && found !== "searching" ? found.located : [];
+  const missing = found && found !== "searching" ? found.missing : [];
+  const active = located[Math.min(activeIndex, Math.max(0, located.length - 1))] ?? null;
 
   const fitScale = baseSize && containerWidth ? Math.max(0.3, (containerWidth - 32) / baseSize.width) : 1;
   const scale = fitScale * zoom;
@@ -395,6 +493,15 @@ export default function PdfViewer({
     if (!element) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     element.scrollTo({ top: Math.max(0, pageTop + rect.top - element.clientHeight / 3), behavior: reduce ? "auto" : "smooth" });
+  }
+
+  function scrollToPage(number: number) {
+    const element = scrollRef.current;
+    const target = element?.querySelector<HTMLElement>(`[data-page="${number}"]`);
+    if (!element || !target) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    element.scrollTo({ top: Math.max(0, target.offsetTop - 12), behavior: reduce ? "auto" : "smooth" });
+    setCurrentPage(number);
   }
 
   function onScroll() {
@@ -419,30 +526,46 @@ export default function PdfViewer({
     );
   }
 
-  const status =
-    candidates.length === 0
+  // The preview's one passage says where it is, or why it is not marked.
+  const previewStatus =
+    evidenceMode || wanted.length === 0
       ? null
-      : location === "searching"
+      : found === "searching"
         ? "Finding the passage in the PDF…"
-        : location
-          ? `Marked on page ${location.page + 1}${location.quality === "partial" ? ", where the closest lines match" : ""}.`
+        : active
+          ? `Marked on page ${active.page + 1}${active.quality === "partial" ? ", where the closest lines match" : ""}.`
           : doc
             ? "This passage is not in the PDF's text, so it is not marked. The PDF may be a scan, or the passage came from its translation."
             : null;
 
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  const evidencePages = new Set(located.map((mark) => mark.page)).size;
+
   return (
     <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-hairline bg-subtle">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface px-3 py-2">
-        {/* Not a live region: it changes on every scroll, and was read out each time. */}
-        <p className="text-xs tabular-nums text-mute">
-          {doc ? `Page ${currentPage} of ${doc.numPages}` : "Loading the PDF…"}
-        </p>
+        <div className="flex items-center gap-1">
+          {doc ? (
+            <button type="button" onClick={() => scrollToPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} aria-label="Previous page" className={navButtonClass}>
+              <ChevronLeftIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          {/* Not a live region: it changes on every scroll, and was read out each time. */}
+          <p className="text-xs tabular-nums text-mute">
+            {doc ? `Page ${currentPage} of ${doc.numPages}` : "Loading the PDF…"}
+          </p>
+          {doc ? (
+            <button type="button" onClick={() => scrollToPage(Math.min(doc.numPages, currentPage + 1))} disabled={currentPage >= doc.numPages} aria-label="Next page" className={navButtonClass}>
+              <ChevronRightIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setZoom((value) => Math.max(0.5, Number((value - 0.15).toFixed(2))))}
             aria-label="Zoom out"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-body transition-colors hover:bg-subtle hover:text-ink"
+            className={navButtonClass}
           >
             <MinusIcon className="h-3.5 w-3.5" />
           </button>
@@ -458,16 +581,86 @@ export default function PdfViewer({
             type="button"
             onClick={() => setZoom((value) => Math.min(3, Number((value + 0.15).toFixed(2))))}
             aria-label="Zoom in"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-body transition-colors hover:bg-subtle hover:text-ink"
+            className={navButtonClass}
           >
             <PlusIcon className="h-3.5 w-3.5" />
           </button>
           {toolbarExtra}
         </div>
       </div>
-      {status ? (
+
+      {evidenceMode && doc ? (
+        <div data-evidence-pager="" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-hairline bg-surface px-3 py-2">
+          {found === "searching" ? (
+            <p className="text-xs text-body">Finding the evidence in the PDF…</p>
+          ) : located.length > 0 && active ? (
+            <>
+              <div className="flex items-center gap-1" role="group" aria-label="Evidence in this paper">
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
+                  disabled={activeIndex <= 0}
+                  aria-label="Previous evidence"
+                  className={navButtonClass}
+                >
+                  <ChevronLeftIcon className="h-3.5 w-3.5" />
+                </button>
+                <span className="min-w-[6.5rem] text-center text-xs font-medium tabular-nums text-ink">
+                  Evidence {Math.min(activeIndex, located.length - 1) + 1} of {located.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex((index) => Math.min(located.length - 1, index + 1))}
+                  disabled={activeIndex >= located.length - 1}
+                  aria-label="Next evidence"
+                  className={navButtonClass}
+                >
+                  <ChevronRightIcon className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="min-w-0 flex-1 truncate text-xs text-body" title={active.labels.join(", ")}>
+                <span className="font-medium text-ink">{active.labels.join(", ")}</span>
+                <span className="text-mute">
+                  {" "}
+                  · page {active.page + 1}
+                  {active.details.length > 0 ? ` · ${active.details.join(", ")}` : ""}
+                  {active.quality === "partial" ? " · closest lines" : ""}
+                </span>
+              </p>
+              <p className="text-xs text-mute">
+                {plural(located.length, "passage")} on {plural(evidencePages, "page")}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs leading-5 text-body">
+              {wanted.length === 0
+                ? "No evidence was stored for this paper."
+                : "None of this paper's evidence is in the PDF's text, so nothing is marked. The PDF may be a scan, or the evidence came from its translation."}
+            </p>
+          )}
+          {/* Still readable when they cannot be marked: a scan has no text to mark. */}
+          {missing.length > 0 ? (
+            <details className="group basis-full text-xs text-mute">
+              <summary className="cursor-pointer list-none hover:text-ink">
+                {located.length > 0 ? `${plural(missing.length, "passage")} not found in the PDF's text` : `The ${plural(missing.length, "passage")} as the analysis stored them`}
+                <span className="ml-1 group-open:hidden">· show</span>
+              </summary>
+              <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
+                {missing.map((mark) => (
+                  <li key={mark.id} className="leading-5">
+                    <span className="font-medium text-body">{mark.label}</span>
+                    {mark.candidates[0] ? <span>: “{mark.candidates[0]}”</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+
+      {previewStatus ? (
         <p role="status" className="border-b border-hairline bg-surface px-3 py-2 text-xs leading-5 text-body">
-          {status}
+          {previewStatus}
         </p>
       ) : null}
       <div
@@ -498,11 +691,9 @@ export default function PdfViewer({
                 scale={scale}
                 estimatedSize={baseSize}
                 scrollRoot={scrollRoot}
-                highlightRuns={
-                  location && location !== "searching" && location.page === number - 1
-                    ? { runs: location.runs, trim: location.trim }
-                    : null
-                }
+                highlights={located
+                  .filter((mark) => mark.page === number - 1)
+                  .map((mark) => ({ key: mark.key, runs: mark.runs, trim: mark.trim, active: mark === active }))}
                 onHighlightPlaced={scrollToHighlight}
               />
             ))}
