@@ -368,6 +368,9 @@ test("a scan's OCR text is read in its pages, without the page breaks and Markdo
   ]);
   assert.equal(pages[1].lines.length, 2, "the --- between pages is not a line");
   assert.deepEqual(textPages("No markers here.\nA second line."), [{ number: null, lines: [{ text: "No markers here.", heading: false }, { text: "A second line.", heading: false }] }]);
+  // A Markdown table from the OCR step reads across, without its rule line.
+  assert.deepEqual(textPages("| APA Citation: |\n|:--- |\n| Received | 2022 |\n| :---: | ---: |").map((page) => page.lines.map((line) => line.text)), [["APA Citation:", "Received · 2022"]]);
+  assert.deepEqual(textPages("*LEARN Journal: Vol. 15 (2022)* *194*\n* Corresponding author").map((page) => page.lines.map((line) => line.text)), [["LEARN Journal: Vol. 15 (2022) 194", "* Corresponding author"]], "italic marks off, a footnote's star kept");
   assert.deepEqual(lineSegments("abcdefgh", [{ start: 2, end: 5, active: false }, { start: 4, end: 6, active: true }]), [
     { text: "ab", mark: "none" },
     { text: "cd", mark: "soft" },

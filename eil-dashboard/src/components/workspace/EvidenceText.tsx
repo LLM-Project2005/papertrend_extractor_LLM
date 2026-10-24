@@ -39,7 +39,20 @@ export function textPages(raw: string): TextPage[] {
     const lines = body
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line && !/^-{3,}$/.test(line))
+      // The OCR step writes tables in Markdown: a rule line ("|:---|") is dropped,
+      // and a row's cells are read across ("| Received | 2022 |" -> "Received · 2022").
+      .filter((line) => line && !/^-{3,}$/.test(line) && !(/-{3,}/.test(line) && /^[|:\-\s]+$/.test(line)))
+      .map((line) =>
+        /^\|.*\|$/.test(line)
+          ? line
+              .slice(1, -1)
+              .split("|")
+              .map((cell) => cell.trim())
+              .filter(Boolean)
+              .join(" · ")
+          : line
+      )
+      .filter(Boolean)
       .map((line) => {
         const heading = /^#{1,6}\s/.test(line);
         // Bold and italic marks off; a lone "*" (a footnote's) stays.
