@@ -69,9 +69,9 @@ export default function KeywordExplorer({
   themeColors = NO_THEME_COLORS,
   onDrilldown,
 }: Props) {
-  const { theme, hydrated } = useTheme();
-  const ct = chartTheme(hydrated && theme === "dark");
-  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
+  const { theme: themeMode, hydrated } = useTheme();
+  const ct = chartTheme(hydrated && themeMode === "dark");
+  const themedTooltip = tooltipTheme(hydrated && themeMode === "dark");
   const keywordLabels = labelColumn(useIsNarrow(), { width: 210, chars: 32 });
   const { session } = useAuth();
   const [query, setQuery] = useState("");
@@ -151,9 +151,9 @@ export default function KeywordExplorer({
     () =>
       sharedKeywords.slice(0, 15).map((row) => {
         const theme = keywordTheme.get(keywordThemeKey(row.keyword)) ?? "";
-        return { ...row, theme, color: themeColor(themeColors, theme) };
+        return { ...row, theme, color: themeColor(themeColors, theme, hydrated && themeMode === "dark") };
       }),
-    [keywordTheme, sharedKeywords, themeColors]
+    [hydrated, keywordTheme, sharedKeywords, themeColors, themeMode]
   );
   const barThemes = useMemo(() => {
     const seen = new Map<string, string>();

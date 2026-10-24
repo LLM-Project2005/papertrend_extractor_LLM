@@ -232,7 +232,7 @@ export const readingAPaperPage: DocsPageBase = {
       title: "Topics",
       body: [
         "Every topic found in the paper, largest first, with its keywords under it: how often each appears and the sentence it was found in (click a sentence to read all of it). A keyword is only kept when it actually appears in the paper. **Show in PDF** opens the Evidence tab at that keyword's passage.",
-        "Each topic names its theme in the repository and wears that theme's colour, the same as on the dashboard. Grey is a theme outside the eight largest, one only this paper has, or a research method. Every facet (the paper's objective, population, setting and similar labels) follows under **Also found**, with its supporting text.",
+        "Each topic names its theme in the repository and wears that theme's colour, the same as on the dashboard. Grey is a theme outside the sixteen largest, one only this paper has, or a research method. Every facet (the paper's objective, population, setting and similar labels) follows under **Also found**, with its supporting text.",
       ],
     },
     {
@@ -240,7 +240,7 @@ export const readingAPaperPage: DocsPageBase = {
       title: "Evidence",
       body: [
         "The PDF itself, with every passage the analysis stored highlighted on it; the one in focus is the stronger yellow. **Previous evidence** and **Next evidence** step from passage to passage in reading order, across pages, and the page buttons turn one page at a time. When two keywords share a sentence, it is one passage carrying both.",
-        "A passage can only be highlighted where the PDF has text. On a scanned PDF the tab says so and lists the passages the analysis found with OCR; on a partly scanned one it names the pages it cannot mark. A paper analysed in an English translation has English evidence, which cannot be matched to its Thai PDF, and the tab says that too.",
+        "A passage can only be highlighted where the PDF has text. A scanned PDF's pages are pictures of text, so for a scan the tab shows the text Papertrend read from it with OCR instead, page by page, with every passage marked in it and the same **Previous evidence** and **Next evidence**; **Preview** still shows the PDF itself. On a partly scanned PDF the tab names the pages it cannot mark. A paper analysed in an English translation has English evidence, which cannot be matched to its Thai PDF, and the tab says that too.",
       ],
     },
     {

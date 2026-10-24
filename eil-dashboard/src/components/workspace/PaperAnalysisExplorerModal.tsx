@@ -3,6 +3,7 @@
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import PdfViewer, { prefetchPdf, type PdfMark } from "@/components/workspace/PdfViewer";
+import EvidenceText from "@/components/workspace/EvidenceText";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail, RunAnalysisExtracted } from "@/types/database";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { useRepositoryTrends } from "@/hooks/useData";
 import { runProjectId } from "@/lib/recent-papers";
 import { OTHER_THEME_COLOR, paperThemes, themeColorMap, tint, topicKey, type PaperTheme } from "@/lib/theme-colors";
@@ -304,7 +306,16 @@ function ThemeDot({ color }: { color: string }) {
 }
 
 /** One keyword under its topic: how often, the sentence it was found in, and a way to it in the PDF. */
-function KeywordRow({ row, onShowInPdf }: { row: KeywordEvidenceRow; onShowInPdf?: (row: KeywordEvidenceRow) => void }) {
+function KeywordRow({
+  row,
+  onShowInPdf,
+  showLabel = "Show in PDF",
+}: {
+  row: KeywordEvidenceRow;
+  onShowInPdf?: (row: KeywordEvidenceRow) => void;
+  /** "Show in text" for a scan, whose evidence is shown in its OCR text. */
+  showLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   const evidence = cleanDisplayText(row.evidence);
   return (
@@ -335,7 +346,7 @@ function KeywordRow({ row, onShowInPdf }: { row: KeywordEvidenceRow; onShowInPdf
           className="inline-flex h-8 items-center gap-1.5 justify-self-start whitespace-nowrap rounded-md px-2 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink"
         >
           <FilePdfIcon className="h-3.5 w-3.5" />
-          Show in PDF
+          {showLabel}
         </button>
       ) : null}
     </li>
@@ -348,11 +359,13 @@ function TopicsTab({
   facets,
   themesKnown,
   onShowInPdf,
+  showLabel,
 }: {
   groups: TopicGroup[];
   facets: RunAnalysisDetail["facets"];
   themesKnown: boolean;
   onShowInPdf?: (row: KeywordEvidenceRow) => void;
+  showLabel?: string;
 }) {
   if (groups.length === 0) {
     return (
@@ -365,7 +378,7 @@ function TopicsTab({
     <div className="space-y-4">
       {themesKnown ? (
         <p className="text-xs leading-5 text-body">
-          Each topic carries the colour of its theme in this repository, the same as on the dashboard. Grey is a theme outside the largest eight, one only this paper has, or a research method.
+          Each topic carries the colour of its theme in this repository, the same as on the dashboard. Grey is a theme outside the largest sixteen, one only this paper has, or a research method.
         </p>
       ) : null}
       {groups.map((group) => {
@@ -397,7 +410,7 @@ function TopicsTab({
             {group.rows.length > 0 ? (
               <ul>
                 {group.rows.map((row) => (
-                  <KeywordRow key={`${group.key}-${row.index}`} row={row} onShowInPdf={onShowInPdf} />
+                  <KeywordRow key={`${group.key}-${row.index}`} row={row} onShowInPdf={onShowInPdf} showLabel={showLabel} />
                 ))}
               </ul>
             ) : group.evidence ? (
@@ -593,10 +606,12 @@ export default function PaperAnalysisExplorerModal(props: Props) {
     [allFolders, props.run]
   );
   const trends = useRepositoryTrends(projectId, Boolean(props.detail?.available));
+  const { theme: mode, hydrated } = useTheme();
+  const dark = hydrated && mode === "dark";
   const themes = useMemo(() => {
     if (!trends || !props.detail?.paper_id) return null;
-    return paperThemes(trends, props.detail.paper_id, themeColorMap(trends));
-  }, [props.detail?.paper_id, trends]);
+    return paperThemes(trends, props.detail.paper_id, themeColorMap(trends), dark);
+  }, [dark, props.detail?.paper_id, trends]);
   return (
     <Modal onClose={props.onClose}>
       <PaperExplorerPanel key={props.run.id} {...props} themes={props.themes ?? themes} headingId={headingId} />
@@ -742,7 +757,11 @@ export function PaperExplorerPanel({
   };
   // Whether the PDF is a scan: from the analysis's record, or from its pages once the viewer has read them.
   const [viewerTextKind, setViewerTextKind] = useState<PdfTextKind | null>(null);
-  const textChip = textKindChip(effectiveTextKind(detail?.extracted?.textSource?.kind, viewerTextKind));
+  const textKind = effectiveTextKind(detail?.extracted?.textSource?.kind, viewerTextKind);
+  const textChip = textKindChip(textKind);
+  // A scan's evidence is shown in the text the analysis read from it, not on
+  // its pictures of pages (2026-10-24 review); the PDF stays on Preview.
+  const scanText = textKind === "scanned" && evidenceMarks.length > 0 ? String(detail?.raw_text ?? "").trim() : "";
 
   // A different paper opens on the tab it was asked for (a link's ?tab=, or
   // Overview). Resetting to Overview here, on mount too, threw away the tab of
@@ -1251,8 +1270,10 @@ export function PaperExplorerPanel({
                 // The PDF alone, every passage the analysis stored marked on
                 // it, and a pager that steps from one to the next across
                 // pages (2026-10-22). The list beside it is gone.
-                <section aria-label="Evidence in the PDF">
-                  {previewError ? (
+                <section aria-label={scanText ? "Evidence in the paper's text" : "Evidence in the PDF"}>
+                  {scanText ? (
+                    <EvidenceText text={scanText} marks={evidenceMarks} focusMark={focusMark} heightClass="h-[62vh] lg:h-[68vh]" />
+                  ) : previewError ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                       {previewError}
                     </div>
@@ -1272,7 +1293,7 @@ export function PaperExplorerPanel({
               ) : null}
 
               {activeTab === "topics" ? (
-                <TopicsTab groups={topicGroups} facets={detail.facets} themesKnown={Boolean(themes && themes.size > 0)} onShowInPdf={previewError ? undefined : showInPdf} />
+                <TopicsTab groups={topicGroups} facets={detail.facets} themesKnown={Boolean(themes && themes.size > 0)} onShowInPdf={previewError && !scanText ? undefined : showInPdf} showLabel={scanText ? "Show in text" : "Show in PDF"} />
               ) : null}
 
               {activeTab === "preview" ? (

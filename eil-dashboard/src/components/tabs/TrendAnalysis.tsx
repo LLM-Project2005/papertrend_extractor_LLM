@@ -90,7 +90,7 @@ export function seriesColors(themes: string[], colors: ThemeColors, isDark: bool
   let grey = 0;
   const result: Record<string, string> = {};
   for (const theme of themes) {
-    result[theme] = hasThemeColor(colors, theme) ? themeColor(colors, theme) : greys[grey++ % greys.length];
+    result[theme] = hasThemeColor(colors, theme) ? themeColor(colors, theme, isDark) : greys[grey++ % greys.length];
   }
   return result;
 }
@@ -215,7 +215,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
         value: entry.papers,
         paperIds: entry.paperIds,
         // Themes without a colour of their own are a quiet grey here, so the eight stand out.
-        fill: hasThemeColor(themeColors, entry.topic) ? themeColor(themeColors, entry.topic) : isDark ? "#43474d" : "#c9ccd1",
+        fill: hasThemeColor(themeColors, entry.topic) ? themeColor(themeColors, entry.topic, isDark) : isDark ? "#43474d" : "#c9ccd1",
       })),
     [isDark, themeColors, themes, treeN]
   );
@@ -254,7 +254,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
         }${gaining.length > 0 && losing.length > 0 ? "; " : ""}${
           losing.length > 0 ? `${named(losing)} ${losing.length === 1 ? "is" : "are"} losing it` : ""
         }.`;
-  const key = colouredThemes(themeColors);
+  const key = colouredThemes(themeColors, isDark);
   // A theme without a colour of its own is a dashed grey line, told from another by its shade.
   const legendItems = shown.map((topic) => ({
     label: topic,
@@ -328,7 +328,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                 className={onDrilldown ? "cursor-pointer" : undefined}
               >
                 {rows.map((row) => (
-                  <Cell key={row.topic} fill={hasThemeColor(themeColors, row.topic) ? themeColor(themeColors, row.topic) : ct.barFill} />
+                  <Cell key={row.topic} fill={hasThemeColor(themeColors, row.topic) ? themeColor(themeColors, row.topic, isDark) : ct.barFill} />
                 ))}
               </Bar>
             </BarChart>
@@ -443,7 +443,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
             <div className="mt-4 flex flex-wrap gap-2" aria-label="Themes to compare">
               {shared.slice(0, PICKABLE_THEMES).map((entry) => {
                 const on = shown.includes(entry.topic);
-                const color = themeColor(themeColors, entry.topic);
+                const color = themeColor(themeColors, entry.topic, isDark);
                 return (
                   <button
                     key={entry.topic}
@@ -638,7 +638,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
             </thead>
             <tbody>
               {visibleThemes.map((row) => {
-                const color = themeColor(themeColors, row.topic);
+                const color = themeColor(themeColors, row.topic, isDark);
                 return (
                   <tr key={row.topic} className="border-t border-slate-200 align-top hover:bg-slate-50 dark:border-[#1f1f1f] dark:hover:bg-[#0a0a0a]">
                     <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
