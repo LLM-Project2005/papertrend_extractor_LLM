@@ -3,14 +3,19 @@
  * (2026-10-24 review: a theme's colour should mean that theme, and its
  * keywords should wear it too).
  *
- * The eight themes with the most papers in the whole repository take the
- * eight chart colours (chart-palette.ts), in that order, and keep them; every
- * other theme is grey and is named by its label. Eight is where colours stop
- * being told apart - a ninth would only look like one of the eight, so the
- * rest fold into grey rather than cycle (the dataviz rule). The ranking is of
- * the whole repository's papers, never of what a filter leaves, so filtering
- * by year or research area does not repaint a theme. Method themes (how a
- * study was done) are not ranked: theme colours are for what papers study.
+ * The sixteen themes with the most papers in the whole repository take a
+ * colour each, in that order, and keep it; every other theme is grey and is
+ * named by its label. The first eight take the eight chart colours
+ * (chart-palette.ts); the next eight take a deeper shade of the same eight
+ * hues (the user chose sixteen over eight on 2026-10-24: in testtest it
+ * colours a theme in 38 of 41 papers instead of 30). Past eight, colours
+ * cannot all be told apart by colour alone, so every chart that shows a theme
+ * also names it - a legend, a label or the theme line - and the shades are set
+ * per light and dark page, each set checked with the dataviz validator. The
+ * ranking is of the whole repository's papers, never of what a filter leaves,
+ * so filtering by year or research area does not repaint a theme. Method
+ * themes (how a study was done) are not ranked: theme colours are for what
+ * papers study.
  *
  * Pure, so it is tested.
  */
@@ -18,15 +23,26 @@ import { CATEGORICAL_PALETTE, NEUTRAL_MARK } from "@/lib/chart-palette";
 import { subjectRows, themePaperCounts } from "@/lib/dashboard-analytics";
 import type { PaperId, TrendRow } from "@/types/database";
 
-/** How many themes have a colour of their own. */
-export const COLOURED_THEMES = CATEGORICAL_PALETTE.length;
+/**
+ * The sixteen theme colours, for the light and the dark page: the eight chart
+ * colours, then the same hues a shade deeper. Each set of sixteen passes the
+ * dataviz validator on its own page (lightness band, chroma, normal-vision
+ * separation of neighbours, 3:1 against the page).
+ */
+export const THEME_PALETTE = {
+  light: [...CATEGORICAL_PALETTE, "#215ea7", "#a9451e", "#147b57", "#966400", "#a63f65", "#006600", "#6c62b3", "#af4040"],
+  dark: [...CATEGORICAL_PALETTE, "#2466b6", "#b84c20", "#15865f", "#a36d00", "#b5456e", "#389e38", "#7569c4", "#be4646"],
+} as const;
 
-/** Every theme past the eighth, and every method theme. */
+/** How many themes have a colour of their own. */
+export const COLOURED_THEMES = THEME_PALETTE.light.length;
+
+/** Every theme past the sixteenth, and every method theme. */
 export const OTHER_THEME_COLOR = NEUTRAL_MARK;
 
 export interface ThemeColors {
-  /** The coloured themes and their colours; a theme not here is grey. */
-  byTheme: Record<string, string>;
+  /** Each coloured theme's place among the sixteen colours; a theme not here is grey. */
+  byTheme: Record<string, number>;
   /** Papers in each theme across the whole repository. */
   papers: Record<string, number>;
 }
@@ -36,29 +52,32 @@ export const NO_THEME_COLORS: ThemeColors = { byTheme: {}, papers: {} };
 /** The repository's theme colours, from all of its rows (not a filtered view). */
 export function themeColorMap(trends: TrendRow[]): ThemeColors {
   const counts = themePaperCounts(subjectRows(trends));
-  const byTheme: Record<string, string> = {};
+  const byTheme: Record<string, number> = {};
   counts.slice(0, COLOURED_THEMES).forEach((entry, index) => {
-    byTheme[entry.topic] = CATEGORICAL_PALETTE[index];
+    byTheme[entry.topic] = index;
   });
   const papers: Record<string, number> = {};
   for (const entry of themePaperCounts(trends)) papers[entry.topic] = entry.papers;
   return { byTheme, papers };
 }
 
-/** A theme's colour: its own, or grey. */
-export function themeColor(colors: ThemeColors | null | undefined, theme: string | null | undefined): string {
+/** A theme's colour on this page: its own, or grey. */
+export function themeColor(colors: ThemeColors | null | undefined, theme: string | null | undefined, dark = false): string {
   const name = String(theme ?? "").trim();
-  return (name && colors?.byTheme[name]) || OTHER_THEME_COLOR;
+  const slot = name ? colors?.byTheme[name] : undefined;
+  return slot === undefined ? OTHER_THEME_COLOR : THEME_PALETTE[dark ? "dark" : "light"][slot] ?? OTHER_THEME_COLOR;
 }
 
 export function hasThemeColor(colors: ThemeColors | null | undefined, theme: string | null | undefined): boolean {
   const name = String(theme ?? "").trim();
-  return Boolean(name && colors?.byTheme[name]);
+  return Boolean(name) && colors?.byTheme[name] !== undefined;
 }
 
 /** The coloured themes in their order, for a legend. */
-export function colouredThemes(colors: ThemeColors | null | undefined): Array<{ theme: string; color: string }> {
-  return Object.entries(colors?.byTheme ?? {}).map(([theme, color]) => ({ theme, color }));
+export function colouredThemes(colors: ThemeColors | null | undefined, dark = false): Array<{ theme: string; color: string }> {
+  return Object.entries(colors?.byTheme ?? {})
+    .sort((left, right) => left[1] - right[1])
+    .map(([theme]) => ({ theme, color: themeColor(colors, theme, dark) }));
 }
 
 /**
@@ -106,7 +125,7 @@ export interface PaperTheme {
  * topicKey(label) - the paper window's Topics tab names each topic's theme in
  * its colour.
  */
-export function paperThemes(trends: TrendRow[], paperId: PaperId | null | undefined, colors: ThemeColors): Map<string, PaperTheme> {
+export function paperThemes(trends: TrendRow[], paperId: PaperId | null | undefined, colors: ThemeColors, dark = false): Map<string, PaperTheme> {
   const result = new Map<string, PaperTheme>();
   if (!paperId) return result;
   for (const row of trends) {
@@ -120,7 +139,7 @@ export function paperThemes(trends: TrendRow[], paperId: PaperId | null | undefi
     result.set(key, {
       theme,
       papers: colors.papers[theme] ?? 1,
-      color: method ? OTHER_THEME_COLOR : themeColor(colors, theme),
+      color: method ? OTHER_THEME_COLOR : themeColor(colors, theme, dark),
       coloured: !method && hasThemeColor(colors, theme),
       method,
     });

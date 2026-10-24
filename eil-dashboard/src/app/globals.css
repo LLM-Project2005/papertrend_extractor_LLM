@@ -781,6 +781,30 @@ html:focus-within {
 }
 
 /*
+ * Evidence marked in a scanned paper's text (2026-10-24): the same yellow as
+ * on the PDF, but without the multiply blend, which turns it black on the
+ * dark page.
+ */
+.text-evidence-mark {
+  background: rgb(250 204 21 / 0.5);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.45);
+}
+
+.text-evidence-mark-soft {
+  background: rgb(250 204 21 / 0.18);
+  border-radius: 2px;
+}
+
+.dark .text-evidence-mark {
+  background: rgb(250 204 21 / 0.32);
+}
+
+.dark .text-evidence-mark-soft {
+  background: rgb(250 204 21 / 0.12);
+}
+
+/*
  * A status line that changes while work is under way (chat's "Searching your
  * papers" becoming "Writing the answer"). The new words rise a few pixels out
  * of a slight blur, so the change registers without the line jumping.

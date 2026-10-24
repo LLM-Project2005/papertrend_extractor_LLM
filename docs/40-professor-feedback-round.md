@@ -228,3 +228,23 @@ The user chose the recommended option for each decision: eight colours and grey,
   - The scanned thesis (be97ac25) showed **Scanned PDF**, the notice and all 10 passages, whether the decision came from the record or from its pages.
   - A testtest paper's topics carried their themes' colours and names.
   - No page errors.
+
+## 10. Follow-up the same day
+
+After seeing the pilot, the user asked for two changes.
+
+**1. A scan's evidence is shown in its text.** The Evidence tab no longer shows a scan's pictures of pages with a list underneath. It shows the text the analysis read from the scan with OCR (`detail.raw_text`), as the Evidence tab did before 2026-10-22.
+- **Layout.** The text is split at the OCR step's `[Page N]` markers, so each passage names the PDF's own page.
+- **Marks.** Every passage is marked with the same matching as on the PDF (`locateMarks`); the one in focus is stronger.
+- **Stepping.** Previous and Next evidence step through the passages in reading order.
+- **Note.** A line says the PDF itself is on Preview.
+- **Which papers.** A paper whose record says it is scanned shows the text view at once. An older paper switches to it once the viewer finds its pages have no text.
+- **Labels.** On a scan, each keyword's button reads **Show in text**.
+- **Styling.** The marks use new `.text-evidence-mark` styles without the multiply blend, which turns yellow black on the dark page. The component is `src/components/workspace/EvidenceText.tsx`.
+- **Partly scanned papers** keep the PDF and the notice: most of their pages have text.
+
+**2. Sixteen theme colours, not eight.** The question was whether every theme should get its own colour, with no grey. The answer given: testtest has 68 themes, 36 of them in a single paper, and that many colours cannot be told apart, so readers would take one theme for another. Sixteen was offered as the middle way, and the user chose it.
+- **The colours.** The first eight take the chart colours. The next eight take a deeper shade of the same hues, set separately for the light and the dark page (`THEME_PALETTE` in `theme-colors.ts`).
+- **The check.** Each set of sixteen passes the dataviz validator on its own page: lightness band, chroma, neighbours at least 15 apart for full-colour vision, and 3:1 against the page. Neighbours' colour-blind separation is 7.4–7.8. That is allowed because every theme is also named wherever it is coloured.
+- **The effect.** In testtest, 38 of 41 papers now have a coloured theme, against 30 with eight colours, and 52% of keyword rows are coloured instead of 32%. The other themes, mostly single-paper ones, stay grey.
+- **How it is stored.** `ThemeColors` now keeps each theme's slot (0–15), and the colour is resolved per page: `themeColor(colors, theme, dark)`.

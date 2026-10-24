@@ -14,6 +14,8 @@ import { CATEGORICAL_PALETTE, NEUTRAL_MARK } from "../src/lib/chart-palette";
 import {
   COLOURED_THEMES,
   OTHER_THEME_COLOR,
+  THEME_PALETTE,
+  colouredThemes,
   keywordThemeKey,
   keywordThemes,
   paperThemes,
@@ -43,29 +45,36 @@ const row = (paper: string, topic: string, keyword = topic.toLowerCase(), extra:
   ...extra,
 });
 
-/** Ten themes: Theme 1 in ten papers, Theme 2 in nine, ... Theme 10 in one; and a method in every paper. */
-function tenThemes(): TrendRow[] {
+/** Eighteen themes: Theme 1 in eighteen papers, Theme 2 in seventeen, ... Theme 18 in one; and a method in every paper. */
+function eighteenThemes(): TrendRow[] {
   const rows: TrendRow[] = [];
-  for (let theme = 1; theme <= 10; theme += 1) {
-    for (let paper = 1; paper <= 11 - theme; paper += 1) rows.push(row(`p${paper}`, `Theme ${theme}`, `kw${theme}`));
+  for (let theme = 1; theme <= 18; theme += 1) {
+    for (let paper = 1; paper <= 19 - theme; paper += 1) rows.push(row(`p${paper}`, `Theme ${theme}`, `kw${theme}`));
   }
-  for (let paper = 1; paper <= 10; paper += 1) rows.push(row(`p${paper}`, "Mixed methods", "survey", { topic_kind: "method" }));
+  for (let paper = 1; paper <= 18; paper += 1) rows.push(row(`p${paper}`, "Mixed methods", "survey", { topic_kind: "method" }));
   return rows;
 }
 
 /* ------------------------------------------------------------ theme colours */
 
-test("the eight themes with the most papers take the eight colours in order; the rest are grey", () => {
-  const colors = themeColorMap(tenThemes());
-  assert.equal(COLOURED_THEMES, 8);
-  for (let theme = 1; theme <= 8; theme += 1) assert.equal(themeColor(colors, `Theme ${theme}`), CATEGORICAL_PALETTE[theme - 1], `Theme ${theme}`);
-  assert.equal(themeColor(colors, "Theme 9"), OTHER_THEME_COLOR);
-  assert.equal(themeColor(colors, "Theme 10"), OTHER_THEME_COLOR);
+test("the sixteen themes with the most papers take the sixteen colours in order; the rest are grey", () => {
+  // Sixteen, the user's choice over eight (2026-10-24): the eight chart colours, then the same hues a shade deeper.
+  const colors = themeColorMap(eighteenThemes());
+  assert.equal(COLOURED_THEMES, 16);
+  assert.deepEqual(THEME_PALETTE.light.slice(0, 8), [...CATEGORICAL_PALETTE]);
+  for (let theme = 1; theme <= 16; theme += 1) {
+    assert.equal(themeColor(colors, `Theme ${theme}`), THEME_PALETTE.light[theme - 1], `Theme ${theme}`);
+    assert.equal(themeColor(colors, `Theme ${theme}`, true), THEME_PALETTE.dark[theme - 1], `Theme ${theme}, dark page`);
+  }
+  assert.equal(themeColor(colors, "Theme 9"), "#215ea7", "theme 9: a deeper blue than theme 1's");
+  assert.equal(themeColor(colors, "Theme 17"), OTHER_THEME_COLOR);
+  assert.equal(themeColor(colors, "Theme 18", true), OTHER_THEME_COLOR);
   assert.equal(OTHER_THEME_COLOR, NEUTRAL_MARK);
   assert.equal(themeColor(colors, "Mixed methods"), OTHER_THEME_COLOR, "a method theme is not ranked, though it is in every paper");
   assert.equal(themeColor(colors, "No such theme"), OTHER_THEME_COLOR);
-  assert.equal(new Set(Object.values(colors.byTheme)).size, 8, "no colour is used twice");
-  assert.equal(colors.papers["Theme 1"], 10);
+  for (const mode of ["light", "dark"] as const) assert.equal(new Set(THEME_PALETTE[mode]).size, 16, `${mode}: no colour is used twice`);
+  assert.deepEqual(colouredThemes(colors).map((entry) => entry.theme).slice(0, 3), ["Theme 1", "Theme 2", "Theme 3"], "a legend in rank order");
+  assert.equal(colors.papers["Theme 1"], 18);
 });
 
 test("a tie in papers goes to the theme first by name, so a colour never depends on row order", () => {
@@ -92,7 +101,7 @@ test("a keyword wears the colour of the theme most of its rows are filed under",
 
 test("a paper's topic labels find their themes, and a method is grey", () => {
   const rows = [
-    ...tenThemes(),
+    ...eighteenThemes(),
     row("p1", "Theme 1", "k", { raw_topic: "English Present Tense Usage" }),
     row("p1", "Mixed methods", "survey", { topic_kind: "method", raw_topic: "Gap-Filling Questionnaires" }),
   ];
@@ -330,4 +339,101 @@ test("a heatmap can leave its zeros blank, and its cells fill the column under a
   assert.equal((html.match(/class="flex h-8 w-full /g) ?? []).length, 2);
   assert.match(html, />40<\/div>/);
   assert.match(html, /color:[^"]+"><\/div>/, "the zero cell is empty");
+});
+
+/* ------------------------------------------------- a scan's evidence, in its text */
+
+const OCR = [
+  "[Page 1]",
+  "",
+  "# A Corpus-Based Study of Spoken Discourse Markers",
+  "",
+  "This research was undertaken with two main **objectives**.",
+  "",
+  "---",
+  "",
+  "[Page 7]",
+  "",
+  "Discourse markers reveal substantially more pragmatic functions in speech than in writing.",
+  "Thai EFL learners exhibit deficiency in pragmatic competence.",
+].join("\n");
+
+test("a scan's OCR text is read in its pages, without the page breaks and Markdown marks", async () => {
+  const { textPages, lineSegments } = await import("../src/components/workspace/EvidenceText");
+  const pages = textPages(OCR);
+  assert.deepEqual(pages.map((page) => page.number), [1, 7], "the PDF's own page numbers");
+  assert.deepEqual(pages[0].lines, [
+    { text: "A Corpus-Based Study of Spoken Discourse Markers", heading: true },
+    { text: "This research was undertaken with two main objectives.", heading: false },
+  ]);
+  assert.equal(pages[1].lines.length, 2, "the --- between pages is not a line");
+  assert.deepEqual(textPages("No markers here.\nA second line."), [{ number: null, lines: [{ text: "No markers here.", heading: false }, { text: "A second line.", heading: false }] }]);
+  assert.deepEqual(lineSegments("abcdefgh", [{ start: 2, end: 5, active: false }, { start: 4, end: 6, active: true }]), [
+    { text: "ab", mark: "none" },
+    { text: "cd", mark: "soft" },
+    { text: "ef", mark: "active" },
+    { text: "gh", mark: "none" },
+  ]);
+});
+
+test("every passage is marked in the scan's text, one in focus, with the same pager as the PDF", async () => {
+  const { default: EvidenceText } = await import("../src/components/workspace/EvidenceText");
+  const html = renderToStaticMarkup(
+    createElement(EvidenceText, {
+      text: OCR,
+      marks: [
+        { id: "0", label: "pragmatic functions", candidates: ["Discourse markers reveal substantially more pragmatic functions in speech than in writing."] },
+        { id: "1", label: "objectives", candidates: ["This research was undertaken with two main objectives."] },
+        { id: "2", label: "interviews", candidates: ["Semi-structured interviews followed."] },
+      ],
+    })
+  );
+  assert.match(html, /Evidence 1 of 2/);
+  assert.match(html, /objectives<\/span><span class="text-mute"> · page 1<\/span>/, "in reading order, with the PDF's page");
+  assert.match(html, /2 passages on 2 pages/);
+  assert.equal((html.match(/data-evidence-mark="active"/g) ?? []).length, 1);
+  assert.equal((html.match(/data-evidence-mark="other"/g) ?? []).length, 1);
+  assert.match(html, /This PDF is a scanned image,<\/span> so its evidence is shown in the text Papertrend read from it with OCR\. The Preview tab shows the PDF itself\./);
+  assert.match(html, /1 passage not found in the text/);
+  assert.match(html, />Page 7</);
+  const css = read("src/app/globals.css");
+  assert.match(css, /\.dark \.text-evidence-mark \{\n\s+background: rgb\(250 204 21 \/ 0\.32\);/, "no multiply blend, so the mark shows on the dark page");
+});
+
+test("the paper window shows a scan's evidence in its text, and the keyword button says so", async () => {
+  const { PaperExplorerPanel } = await import("../src/components/workspace/PaperAnalysisExplorerModal");
+  const idle = async () => undefined;
+  const scanned = {
+    ...DETAIL,
+    raw_text: OCR,
+    keywords: [{ keyword: "objectives", topic: "Research aims", frequency: 2, evidence: "This research was undertaken with two main objectives." }],
+    concepts: [],
+  };
+  const draw = (tab: "evidence" | "topics", detail: unknown) =>
+    renderToStaticMarkup(
+      createElement(PaperExplorerPanel, {
+        run: { id: "r2", status: "succeeded", source_type: "upload", display_name: "Scan", created_at: "2026-10-01", updated_at: "2026-10-01" } as never,
+        detail: detail as never,
+        loading: false,
+        error: null,
+        initialTab: tab,
+        onClose: () => undefined,
+        onResolvePreviewUrl: async () => null,
+        onOpenInNewTab: idle,
+        onDownload: idle,
+        onDownloadReport: idle,
+        onToggleFavorite: idle,
+        onRename: idle,
+        onOpenDashboard: () => undefined,
+      })
+    );
+  const evidence = draw("evidence", scanned);
+  assert.match(evidence, /aria-label="Evidence in the paper&#x27;s text"/);
+  assert.match(evidence, /data-evidence-text=""/);
+  assert.doesNotMatch(evidence, /Loading the PDF…/, "no PDF to wait for");
+  assert.match(draw("topics", scanned), />Show in text</);
+  // A typed PDF keeps the PDF with its marks.
+  const typed = { ...scanned, extracted: { ...scanned.extracted, textSource: { kind: "text", translated: false } } };
+  assert.match(draw("evidence", typed), /aria-label="Evidence in the PDF"/);
+  assert.match(draw("topics", typed), />Show in PDF</);
 });

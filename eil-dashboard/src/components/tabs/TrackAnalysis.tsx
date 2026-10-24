@@ -481,7 +481,7 @@ export default function TrackAnalysis({
                             className={onDrilldown ? "cursor-pointer" : undefined}
                           >
                             {data.map((row) => (
-                              <Cell key={row.topic} fill={themeColor(themeColors, row.topic)} />
+                              <Cell key={row.topic} fill={themeColor(themeColors, row.topic, hydrated && theme === "dark")} />
                             ))}
                           </Bar>
                         </BarChart>
