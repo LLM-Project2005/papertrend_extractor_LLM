@@ -15,14 +15,11 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import PdfDropTarget from "@/components/workspace/PdfDropTarget";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
-import PaperAnalysisExplorerModal, {
-  PAPER_EXPLORER_TABS,
-  type PaperExplorerTab,
-} from "@/components/workspace/PaperAnalysisExplorerModal";
+import PaperAnalysisExplorerModal, { type PaperExplorerTab } from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
-import { readPaperQuote } from "@/lib/paper-address";
+import { readPaperQuote, readPaperTab } from "@/lib/paper-address";
 import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
@@ -675,7 +672,7 @@ export default function AdminImportClient() {
     autoOpenedRunIdRef.current = requestedKey;
     const quote = readPaperQuote(searchParams.get("quote"));
     setAnalysisQuote(quote ? { runId: matchingRun.id, quote } : null);
-    void handleOpenPrimaryFileAction(matchingRun, readChoice(searchParams.get("tab"), PAPER_EXPLORER_TABS, "overview"));
+    void handleOpenPrimaryFileAction(matchingRun, readPaperTab(searchParams.get("tab")));
   }, [requestedPaperId, requestedRunId, runs, runsLoaded, searchParams]);
 
   // ------------------------------------------------------------- the address
@@ -764,7 +761,7 @@ export default function AdminImportClient() {
         setAnalysisError(null);
       } else if (paper !== analysisRunRef.current?.id) {
         const run = runsRef.current.find((item) => item.id === paper);
-        if (run) void handleViewAnalysis(run, readChoice(params.get("tab"), PAPER_EXPLORER_TABS, "overview")).catch(() => undefined);
+        if (run) void handleViewAnalysis(run, readPaperTab(params.get("tab"))).catch(() => undefined);
       }
     }
     window.addEventListener("popstate", onPopState);

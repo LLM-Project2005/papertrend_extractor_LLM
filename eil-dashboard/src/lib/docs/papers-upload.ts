@@ -168,7 +168,7 @@ export const readingAPaperPage: DocsPageBase = {
       id: "header",
       title: "The header",
       body: [
-        "Under the title are the publication year (or **Year unavailable**) and the status. An amber chip appears only when the results came from an earlier analysis rather than the paper's latest one.",
+        "Under the title are the publication year (or **Year unavailable**) and the status. **Scanned PDF** or **Partly scanned** appears when the PDF's pages are pictures of text, which the analysis read with OCR: evidence cannot be highlighted on those pages. An amber chip appears only when the results came from an earlier analysis rather than the paper's latest one.",
       ],
       table: {
         columns: ["Button", "What it does"],
@@ -222,30 +222,25 @@ export const readingAPaperPage: DocsPageBase = {
         {
           title: "Coverage, keywords and sections",
           body: [
-            "Cards for the paper's topics, its most frequent keywords and its analytical facets, then its concept groups with evidence, and four section summaries: abstract claims, methods, results and conclusion. **View full extracted text** shows exactly what was read.",
+            "Cards for the paper's topics, its most frequent keywords and its analytical facets, each topic with its theme's colour, then four section summaries: abstract claims, methods, results and conclusion. **View full extracted text** shows exactly what was read.",
           ],
         },
-      ],
-    },
-    {
-      id: "keywords",
-      title: "Keywords",
-      body: [
-        "Every keyword found in the paper, with the topic it belongs to, how often it appears, and the sentence it was found in. A keyword is only kept when it actually appears in the paper.",
-      ],
-    },
-    {
-      id: "evidence",
-      title: "Evidence",
-      body: [
-        "The evidence reader puts a keyword, its stored evidence and the surrounding text side by side with the PDF. Pick a keyword on the left; the right shows how it was matched (**Exact evidence match**, **Keyword match** or **Stored rationale**), the text around the match, and the PDF opened at that passage where your browser's PDF viewer supports searching.",
       ],
     },
     {
       id: "topics",
       title: "Topics",
       body: [
-        "Each topic group with its related keywords and evidence, followed by every facet (the paper's objective, population, setting and similar labels) with its supporting text.",
+        "Every topic found in the paper, largest first, with its keywords under it: how often each appears and the sentence it was found in (click a sentence to read all of it). A keyword is only kept when it actually appears in the paper. **Show in PDF** opens the Evidence tab at that keyword's passage.",
+        "Each topic names its theme in the repository and wears that theme's colour, the same as on the dashboard. Grey is a theme outside the eight largest, one only this paper has, or a research method. Every facet (the paper's objective, population, setting and similar labels) follows under **Also found**, with its supporting text.",
+      ],
+    },
+    {
+      id: "evidence",
+      title: "Evidence",
+      body: [
+        "The PDF itself, with every passage the analysis stored highlighted on it; the one in focus is the stronger yellow. **Previous evidence** and **Next evidence** step from passage to passage in reading order, across pages, and the page buttons turn one page at a time. When two keywords share a sentence, it is one passage carrying both.",
+        "A passage can only be highlighted where the PDF has text. On a scanned PDF the tab says so and lists the passages the analysis found with OCR; on a partly scanned one it names the pages it cannot mark. A paper analysed in an English translation has English evidence, which cannot be matched to its Thai PDF, and the tab says that too.",
       ],
     },
     {

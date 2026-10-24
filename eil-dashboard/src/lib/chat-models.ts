@@ -3,12 +3,12 @@
  * of the daily allowance. Pure, so the composer, the usage meter and the chat
  * route read one list.
  *
- * GPT-6.1 Sol was added beside GPT-6 Luna on 2026-10-22. Luna stays the
- * default. Sol counts against the allowance at its price over Luna's
- * (model-prices.ts), about twenty times, so a Sol answer is checked against
- * what is left before it starts.
+ * GPT-6.1 Sol was added beside GPT-6 Luna on 2026-10-22 and withdrawn on
+ * 2026-10-24: at about twenty times Luna (model-prices.ts) it used too much of
+ * the allowance. A request that still names it is answered by Luna. The
+ * allowance check below stays for any later model dearer than Luna.
  */
-import { LUNA_MODEL, SOL_MODEL, usageMultiplier } from "@/lib/model-prices";
+import { LUNA_MODEL, usageMultiplier } from "@/lib/model-prices";
 
 export interface ChatModel {
   value: string;
@@ -16,10 +16,7 @@ export interface ChatModel {
   vendor: string;
 }
 
-export const CHAT_MODELS: readonly ChatModel[] = [
-  { value: LUNA_MODEL, label: "GPT-6 Luna", vendor: "OpenAI" },
-  { value: SOL_MODEL, label: "GPT-6.1 Sol", vendor: "OpenAI" },
-];
+export const CHAT_MODELS: readonly ChatModel[] = [{ value: LUNA_MODEL, label: "GPT-6 Luna", vendor: "OpenAI" }];
 
 export const DEFAULT_CHAT_MODEL = LUNA_MODEL;
 

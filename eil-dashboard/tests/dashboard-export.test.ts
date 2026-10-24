@@ -8,7 +8,6 @@ import { dashboardPayloadForBrowser } from "../src/lib/dashboard-payload";
 import { insightCsv } from "../src/lib/insights/csv";
 import type { Insight } from "../src/lib/insights/types";
 import { paperIdFromRunId } from "../src/lib/paper-id";
-import { semanticMapCsv } from "../src/lib/semantic-map-export";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "../src/lib/workspace-session";
 import type { DashboardData } from "../src/types/database";
 
@@ -115,12 +114,16 @@ test("a stacked chart becomes one row per year and one column per series", () =>
   assert.deepEqual(table, { header: ["Year", "Reading", "Writing"], rows: [["2019", 2, 1], ["2020", 0, 4]] });
 });
 
-test("the Adaptive tab and the semantic map offer their data as CSV", () => {
+test("the Adaptive tab offers its data as CSV, and the semantic map saves a picture", () => {
   // The four chart tabs are drawn in boot-security-behaviour-render.test.ts.
   // Kept as text: these two draw only after fetching their data in an effect,
-  // which a static render never runs.
+  // which a static render never runs. The map's two CSV files became one PNG
+  // (2026-10-24 review); semantic-map-png.test.ts draws it.
   assert.match(read("src/components/dashboard/InsightsTab.tsx"), /<ChartCsvButton csv=\{insightCsv\(insight, title\)\} \/>/);
-  assert.match(read("src/components/workspace/RepositorySemanticMap.tsx"), /<ChartCsvButton csv=\{mapCsv\.papers\}/);
+  const map = read("src/components/workspace/RepositorySemanticMap.tsx");
+  assert.match(map, /onClick=\{\(\) => void downloadPng\(\)\}/);
+  assert.match(map, /"Download PNG"/);
+  assert.doesNotMatch(map, /Papers CSV|Connections CSV|ChartCsvButton/);
 });
 
 test("each kind of Adaptive chart has a table", () => {
@@ -138,19 +141,6 @@ test("each kind of Adaptive chart has a table", () => {
   assert.equal(insightCsv(make({ kind: "pairs", rows: [] }), "t").header.length, 6);
   assert.equal(insightCsv(make({ kind: "compare", leftLabel: "Early", rightLabel: "Late", unit: "percent", sequence: "time", rows: [] }), "t").header[2], "Early (%)");
   assert.deepEqual(insightCsv(make({ kind: "list", rows: [{ title: "T", detail: "d", paperIds: ["1", "2"] }] }), "t").rows, [["T", "d", 2]]);
-});
-
-test("the semantic map exports its papers and its connections by title", () => {
-  const csv = semanticMapCsv({
-    points: [
-      { paperId: "1", runId: null, folderId: null, x: 0.12345, y: -1, clusterId: 7, title: "One", year: "2019", folderName: null, categories: [], topics: ["a", "b"], keywords: ["k"], track: null },
-      { paperId: "2", runId: null, folderId: null, x: 1, y: 2, clusterId: null, title: "Two", year: "2020", folderName: null, categories: [], topics: [], keywords: [], track: null },
-    ],
-    edges: [{ sourcePaperId: "1", targetPaperId: "2", distance: 0.42, similarity: 0.6, rank: 1, sharedSignals: { categories: [], topics: ["a"], keywords: [], methods: ["survey"] } }],
-    clusters: [{ id: 7, label: "Reading", paperCount: 1, terms: [], source: "deterministic" }],
-  });
-  assert.deepEqual(csv.papers.rows[0], ["One", "2019", "Reading", 0.123, -1, "a; b", "k"]);
-  assert.deepEqual(csv.connections.rows[0], ["One", "Two", 0.42, 1, "a", "", "survey"]);
 });
 
 /* ------------------------------------------------------ the drilldown's papers */

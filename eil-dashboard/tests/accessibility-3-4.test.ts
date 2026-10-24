@@ -80,7 +80,8 @@ function drawTab(component: ComponentType<Record<string, unknown>>, props: Recor
 test("every chart that opens papers on a click has a keyboard path to the same papers", async () => {
   // Each chart's bars or slices are mouse-only; beside each sits a list of its
   // values, each a button opening what its bar opens (DASH-3, A11Y-4).
-  const expected: Record<string, number> = { TrendAnalysis: 3, TrackAnalysis: 3, KeywordExplorer: 1 };
+  // Area Analysis's themes (2026-10-24): theme sizes, themes over time, gaining, losing.
+  const expected: Record<string, number> = { TrendAnalysis: 4, TrackAnalysis: 3, KeywordExplorer: 1 };
   for (const [name, [component, props]] of Object.entries(await tabs())) {
     const opened: Target[] = [];
     const { html, lists } = drawTab(component, { ...props, onDrilldown: (target: Target) => opened.push(target) });

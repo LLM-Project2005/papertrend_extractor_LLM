@@ -14,6 +14,7 @@
  * questions: it credited papers with the studies they cite and said papers did
  * not report what they did.
  */
+import { DEFAULT_CHAT_MODEL, resolveChatModel } from "@/lib/chat-models";
 
 /** Marks a run of this engine, in its write step and on its answer. */
 export const ENGINE = "max-reader-v1";
@@ -27,14 +28,17 @@ export function isV2Session(session: { steps?: Array<{ tool_name?: string | null
  * The model that writes a run's answer, when the reader chose one dearer than
  * GPT-6 Luna (2026-10-22): Luna still plans and reads the papers, and the
  * chosen model writes from Luna's notes and makes its corrections. Null is
- * Luna, as every run before then.
+ * Luna, as every run before then - and a run planned with a model no longer
+ * offered (GPT-6.1 Sol, withdrawn 2026-10-24) is written by Luna too.
  */
 export function sessionWriterModel(
   session: { steps?: Array<{ tool_name?: string | null; input_payload?: unknown }> } | null | undefined
 ): string | null {
   const write = session?.steps?.find((step) => step.tool_name === "dr2_write");
   const model = (write?.input_payload as { model?: unknown } | undefined)?.model;
-  return typeof model === "string" && model ? model : null;
+  if (typeof model !== "string" || !model) return null;
+  const offered = resolveChatModel(model);
+  return offered === model && offered !== DEFAULT_CHAT_MODEL ? model : null;
 }
 
 /** A session this engine planned and can run; v2's passage-search runs cannot be resumed by it. */

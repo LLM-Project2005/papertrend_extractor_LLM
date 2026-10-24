@@ -2,9 +2,13 @@
  * How a paper is named in an address. Pure, so the paper window, its links
  * and the tests share one reading of it.
  */
-export type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
+// Keywords and Topics were one data set shown twice; they are one Topics tab
+// (2026-10-24 review), and an address that names Keywords opens it.
+export type PaperExplorerTab = "overview" | "topics" | "evidence" | "preview";
 
-export const PAPER_EXPLORER_TABS: PaperExplorerTab[] = ["overview", "keywords", "evidence", "topics", "preview"];
+export const PAPER_EXPLORER_TABS: PaperExplorerTab[] = ["overview", "topics", "evidence", "preview"];
+
+const RETIRED_PAPER_TABS: Record<string, PaperExplorerTab> = { keywords: "topics" };
 
 export interface PaperTarget {
   runId?: string | null;
@@ -26,7 +30,8 @@ export const PAPER_QUOTE_PARAM = "paperQuote";
 export const PAPER_QUOTE_MAX = 600;
 
 export function readPaperTab(value: string | null | undefined): PaperExplorerTab {
-  return PAPER_EXPLORER_TABS.includes(value as PaperExplorerTab) ? (value as PaperExplorerTab) : "overview";
+  const named = RETIRED_PAPER_TABS[String(value ?? "")] ?? value;
+  return PAPER_EXPLORER_TABS.includes(named as PaperExplorerTab) ? (named as PaperExplorerTab) : "overview";
 }
 
 /** A passage named in an address, tidied and bounded: it is only shown and searched for. */

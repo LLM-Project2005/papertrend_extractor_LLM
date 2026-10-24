@@ -5,7 +5,15 @@ import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "rea
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import { locateEvidence, type EvidenceLocation, type PageRuns } from "@/lib/pdf-evidence-match";
-import { ChevronLeftIcon, ChevronRightIcon, MinusIcon, PlusIcon } from "@/components/ui/Icons";
+import {
+  effectiveTextKind,
+  pageCharacterCount,
+  pageListText,
+  pageTextKind,
+  type PaperTextSource,
+  type PdfTextKind,
+} from "@/lib/pdf-text-kind";
+import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, MinusIcon, PlusIcon } from "@/components/ui/Icons";
 
 /*
  * The paper itself, drawn with pdf.js, with the evidence marked on the page.
@@ -22,7 +30,9 @@ import { ChevronLeftIcon, ChevronRightIcon, MinusIcon, PlusIcon } from "@/compon
  * passage across pages (2026-10-22: the PDF alone, the evidence on it, in
  * place of a list beside it). A passage the PDF's text does not contain (a
  * scan without a text layer, or evidence that came from a translation) is
- * said so rather than marked.
+ * said so rather than marked, and the passages are listed: the analysis's
+ * record of how it read the PDF says which it is, and for older papers the
+ * pages themselves do (pdf-text-kind.ts, 2026-10-24).
  *
  * If pdf.js cannot load the file at all, the browser's own viewer takes over,
  * so a preview is never lost to this component.
@@ -116,6 +126,8 @@ export interface PdfMark {
 /** A passage found in the PDF; marks found at the same place are one, with every label. */
 export interface LocatedMark {
   key: string;
+  /** The marks found here: two keywords with the same sentence are one stop. */
+  ids: string[];
   labels: string[];
   details: string[];
   page: number;
@@ -146,12 +158,14 @@ export function locateMarks(pages: PageRuns[], marks: PdfMark[]): { located: Loc
     const key = `${found.page}|${found.runs.join(",")}`;
     const existing = byKey.get(key);
     if (existing) {
+      existing.ids.push(mark.id);
       if (!existing.labels.includes(mark.label)) existing.labels.push(mark.label);
       if (mark.detail && !existing.details.includes(mark.detail)) existing.details.push(mark.detail);
       continue;
     }
     byKey.set(key, {
       key,
+      ids: [mark.id],
       labels: [mark.label],
       details: mark.detail ? [mark.detail] : [],
       page: found.page,
@@ -162,6 +176,47 @@ export function locateMarks(pages: PageRuns[], marks: PdfMark[]): { located: Loc
   }
   const located = [...byKey.values()].sort((left, right) => left.page - right.page || (left.runs[0] ?? 0) - (right.runs[0] ?? 0));
   return { located, missing };
+}
+
+/**
+ * Why some or all of a paper's passages are not marked, when the PDF or the
+ * analysis's record says: a scan, a paper analysed in translation, or a PDF
+ * with scanned pages. Null when nothing is missing, or when the PDF has text
+ * and a passage simply was not found in it. Pure, so it is tested.
+ */
+export function unmarkedNotice(input: {
+  kind: PdfTextKind | null;
+  translated: boolean;
+  /** Pages (from 0) with no text, as the viewer read them. */
+  imagePages: number[];
+  located: number;
+  missing: number;
+}): { title: string; body: string } | null {
+  if (input.missing === 0) return null;
+  const count = `${input.missing} passage${input.missing === 1 ? "" : "s"}`;
+  const listed = input.located > 0 ? "The passages it could not mark are listed below." : `The ${count} it found ${input.missing === 1 ? "is" : "are"} listed below.`;
+  if (input.kind === "scanned") {
+    return {
+      title: "This PDF is a scanned image.",
+      body: `Its pages are pictures of text, so the evidence can't be highlighted on them. Papertrend read the pages with OCR. ${listed}`,
+    };
+  }
+  if (input.translated) {
+    return {
+      title: "This paper was analysed in an English translation.",
+      body: `Its evidence is in English, so it can't be matched to the PDF's own text. ${listed}`,
+    };
+  }
+  if (input.kind === "partly_scanned") {
+    const where = input.imagePages.length > 0 ? pageListText(input.imagePages) : "";
+    const one = input.imagePages.length === 1;
+    const pages = where ? `${where[0].toUpperCase()}${where.slice(1)} ${one ? "is a scanned image" : "are scanned images"}` : "Some of its pages are scanned images";
+    return {
+      title: "Part of this PDF is scanned.",
+      body: `${pages}, so passages on ${one ? "it" : "them"} can't be highlighted. Papertrend read those pages with OCR. ${listed}`,
+    };
+  }
+  return null;
 }
 
 interface PageHighlight {
@@ -366,6 +421,9 @@ export default function PdfViewer({
   highlight,
   highlightKey,
   marks,
+  focusMark,
+  source,
+  onTextKind,
   heightClass = "h-[70vh]",
   toolbarExtra,
 }: {
@@ -384,6 +442,12 @@ export default function PdfViewer({
    * in focus, and the toolbar steps from one to the next across pages.
    */
   marks?: PdfMark[] | null;
+  /** The mark to bring into focus (a keyword's "Show in PDF"); `key` changes to ask again. */
+  focusMark?: { id: string; key: string } | null;
+  /** What the analysis recorded about the PDF's text, for saying why nothing is marked. */
+  source?: PaperTextSource | null;
+  /** Told what the pages say once they are read: a scan, partly one, or text. */
+  onTextKind?: (kind: PdfTextKind | null) => void;
   heightClass?: string;
   toolbarExtra?: ReactNode;
 }) {
@@ -398,7 +462,10 @@ export default function PdfViewer({
   const [currentPage, setCurrentPage] = useState(1);
   const [found, setFound] = useState<{ located: LocatedMark[]; missing: PdfMark[] } | "searching" | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [pagesKind, setPagesKind] = useState<{ kind: PdfTextKind | null; imagePages: number[] } | null>(null);
   const pageTextRef = useRef<Map<number, string[]>>(new Map());
+  const onTextKindRef = useRef(onTextKind);
+  onTextKindRef.current = onTextKind;
   const evidenceMode = Array.isArray(marks);
 
   useEffect(() => {
@@ -407,6 +474,7 @@ export default function PdfViewer({
     setFailed(false);
     setDoc(null);
     setProgress(0);
+    setPagesKind(null);
     pageTextRef.current = new Map();
     loadDocument(cacheKey, url, (fraction) => {
       if (!cancelled) setProgress(fraction);
@@ -470,6 +538,9 @@ export default function PdfViewer({
         pages.push({ runs });
       }
       if (cancelled) return;
+      const kind = pageTextKind(pages.map((page) => pageCharacterCount(page.runs)));
+      setPagesKind(kind);
+      onTextKindRef.current?.(kind.kind);
       setFound(locateMarks(pages, wanted));
       setActiveIndex(0);
     })().catch(() => {
@@ -483,6 +554,15 @@ export default function PdfViewer({
   const located = found && found !== "searching" ? found.located : [];
   const missing = found && found !== "searching" ? found.missing : [];
   const active = located[Math.min(activeIndex, Math.max(0, located.length - 1))] ?? null;
+
+  // "Show in PDF" from a keyword: its passage comes into focus once found.
+  useEffect(() => {
+    if (!focusMark || !found || found === "searching") return;
+    const index = found.located.findIndex((mark) => mark.ids.includes(focusMark.id));
+    if (index >= 0) setActiveIndex(index);
+    // The key stands for a repeated request for the same mark.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMark?.id, focusMark?.key, found]);
 
   const fitScale = baseSize && containerWidth ? Math.max(0.3, (containerWidth - 32) / baseSize.width) : 1;
   const scale = fitScale * zoom;
@@ -526,6 +606,17 @@ export default function PdfViewer({
     );
   }
 
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  const evidencePages = new Set(located.map((mark) => mark.page)).size;
+  const textKind = effectiveTextKind(source?.kind, pagesKind?.kind);
+  const imagePages = pagesKind?.imagePages ?? [];
+
+  // Why passages are not marked, when the PDF or the analysis says (2026-10-24).
+  const unmarked =
+    found && found !== "searching"
+      ? unmarkedNotice({ kind: textKind, translated: Boolean(source?.translated), imagePages, located: located.length, missing: missing.length })
+      : null;
+
   // The preview's one passage says where it is, or why it is not marked.
   const previewStatus =
     evidenceMode || wanted.length === 0
@@ -535,11 +626,12 @@ export default function PdfViewer({
         : active
           ? `Marked on page ${active.page + 1}${active.quality === "partial" ? ", where the closest lines match" : ""}.`
           : doc
-            ? "This passage is not in the PDF's text, so it is not marked. The PDF may be a scan, or the passage came from its translation."
+            ? textKind === "scanned"
+              ? "This PDF is a scanned image, so the passage can't be highlighted on it."
+              : source?.translated
+                ? "This passage came from the paper's English translation, so it can't be matched to the PDF."
+                : "This passage is not in the PDF's text, so it is not marked. The PDF may be partly scanned, or the passage came from its translation."
             : null;
-
-  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-  const evidencePages = new Set(located.map((mark) => mark.page)).size;
 
   return (
     <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-hairline bg-subtle">
@@ -631,18 +723,35 @@ export default function PdfViewer({
                 {plural(located.length, "passage")} on {plural(evidencePages, "page")}
               </p>
             </>
-          ) : (
+          ) : unmarked ? null : (
             <p className="text-xs leading-5 text-body">
               {wanted.length === 0
                 ? "No evidence was stored for this paper."
-                : "None of this paper's evidence is in the PDF's text, so nothing is marked. The PDF may be a scan, or the evidence came from its translation."}
+                : "None of this paper's evidence matches the PDF's text, so nothing is marked. The passages are listed below."}
             </p>
           )}
+          {unmarked ? (
+            <div data-unmarked-reason={textKind ?? (source?.translated ? "translated" : "")} className="flex basis-full items-start gap-2 rounded-md bg-subtle px-2.5 py-2 text-xs leading-5 text-body">
+              <InfoIcon className="mt-0.5 h-3.5 w-3.5 flex-none text-mute" />
+              <p>
+                <span className="font-semibold text-ink">{unmarked.title}</span> {unmarked.body}
+              </p>
+            </div>
+          ) : null}
           {/* Still readable when they cannot be marked: a scan has no text to mark. */}
-          {missing.length > 0 ? (
+          {missing.length > 0 && (unmarked || located.length === 0) ? (
+            <ul aria-label="Passages not marked on the PDF" className="max-h-56 basis-full space-y-1.5 overflow-y-auto text-xs text-mute">
+              {missing.map((mark) => (
+                <li key={mark.id} className="leading-5">
+                  <span className="font-medium text-body">{mark.label}</span>
+                  {mark.candidates[0] ? <span>: “{mark.candidates[0]}”</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : missing.length > 0 ? (
             <details className="group basis-full text-xs text-mute">
               <summary className="cursor-pointer list-none hover:text-ink">
-                {located.length > 0 ? `${plural(missing.length, "passage")} not found in the PDF's text` : `The ${plural(missing.length, "passage")} as the analysis stored them`}
+                {`${plural(missing.length, "passage")} not found in the PDF's text`}
                 <span className="ml-1 group-open:hidden">· show</span>
               </summary>
               <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">

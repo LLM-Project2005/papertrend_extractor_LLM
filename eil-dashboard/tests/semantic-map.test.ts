@@ -200,7 +200,9 @@ test("the free graph draws each relationship between its two papers and says its
     ["x1", "y1", "x2", "y2"].map((name) => Number(tag.match(new RegExp(` ${name}="([^"]+)"`))?.[1]))
   );
   assert.deepEqual(lines, [[120, 340, 610, 455], [610, 455, 800, 200]]);
-  assert.match(markup, /distance does not show similarity/);
+  // The note on the graph covered its zoom buttons; the panel says it now (2026-10-24).
+  assert.doesNotMatch(markup, /distance does not show similarity/);
+  assert.match(readFileSync(join(process.cwd(), "src/components/workspace/RepositorySemanticMap.tsx"), "utf8"), /Free graph: positions come from the links and your dragging, so distance does not show similarity\./);
 });
 
 // RepositorySemanticMap loads its map with fetch in an effect and draws it
@@ -218,10 +220,14 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /className="nodrag nopan absolute/);
   assert.match(component, /className="nowheel/);
   assert.match(component, /visiblePoints\.length <= 1/);
-  assert.match(component, /Neighborhoods/);
+  // One panel (2026-10-24): the selection, the colours, what is shown, and how the map is built.
+  for (const section of ['aria-label="Selection"', 'aria-label="Colours"', 'aria-label="Show"', "About this map"]) {
+    assert.ok(component.includes(section), section);
+  }
+  assert.doesNotMatch(component, />Neighborhoods<|>Legend<|>Display</, "the cards it replaced");
   assert.match(component, /edge\.distance/);
   assert.match(component, /edgeTypes=\{EDGE_TYPES\}/);
-  assert.match(component, /Selection relationship/);
+  assert.match(component, /papers selected/);
   assert.match(component, /onInit=\{fitInitialView\}/);
   assert.match(component, /autoPanOnNodeFocus=\{false\}/);
   assert.match(forceGraph, /forceSimulation/);
@@ -232,10 +238,13 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(forceGraph, /setPointerCapture/);
   assert.match(forceGraph, /node\.fx = null/);
   assert.match(forceGraph, /node\.fy = null/);
+  // Over the map the wheel zooms and never scrolls the page: React's onWheel is passive and cannot stop the scroll.
+  assert.match(forceGraph, /svg\.addEventListener\("wheel", onWheel, \{ passive: false \}\);/);
+  assert.doesNotMatch(forceGraph, /onWheel=\{/);
   assert.match(component, /nodesDraggable=\{false\}/);
   assert.match(component, />Fixed projection</);
   assert.match(component, />Free graph</);
-  assert.match(component, /All retained relationships are visible/);
+  assert.match(component, /Select a paper to see it here, or select two or more to compare them\./);
   // Node labels are checked in semantic-map-labels.test.ts.
   assert.doesNotMatch(component, /onNodeMouseEnter/);
   assert.doesNotMatch(component, /onNodeMouseLeave/);

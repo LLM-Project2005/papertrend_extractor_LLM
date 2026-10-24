@@ -1,5 +1,7 @@
 # A second chat model: GPT-6.1 Sol (2026-10-22)
 
+> **Withdrawn on 2026-10-24.** On the professor's review, Sol was removed from the model list because it used too much of the allowance (docs/40, section 2). A request or a saved Max plan that names Sol is answered by GPT-6 Luna. Sol's prices stay in `model-prices.ts`, so the use already recorded is still counted at its price. The rest of this file describes the version that shipped on 2026-10-22.
+
 Readers can now choose GPT-6.1 Sol beside GPT-6 Luna in the chat's model and effort control. Luna stays the default. Sol counts against the daily allowance at its price over Luna's (the professor's rule), so the allowance is counted in "Luna tokens".
 
 ## 1. The model and its price

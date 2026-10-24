@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -35,6 +36,8 @@ import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
 import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import { seriesTable } from "@/lib/chart-csv";
 import { tooltipTheme } from "@/lib/chart-tooltip";
+import { wrappedTick } from "@/lib/chart-ticks";
+import { NO_THEME_COLORS, themeColor, type ThemeColors } from "@/lib/theme-colors";
 
 interface Props {
   trends: TrendRow[];
@@ -46,6 +49,8 @@ interface Props {
   categoryLabels?: Record<TrackKey, string>;
   /** False when the repository does not classify papers. */
   classificationEnabled?: boolean;
+  /** The repository's theme colours: the top themes per research area wear them. */
+  themeColors?: ThemeColors;
   planCharts?: VisualizationPlanChart[];
   onDrilldown?: (target: {
     track?: string;
@@ -68,6 +73,7 @@ export default function TrackAnalysis({
   selectedTracks,
   categoryLabels,
   classificationEnabled = true,
+  themeColors = NO_THEME_COLORS,
   planCharts,
   onDrilldown,
 }: Props) {
@@ -374,22 +380,25 @@ export default function TrackAnalysis({
             Research area co-occurrence
           </h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            How often research areas appear together on the same paper.
+            How often research areas appear together on the same paper. The diagonal counts each area&apos;s own papers.
           </p>
-          <ChartCsvButton
-            className="mt-1"
-            csv={{
-              name: "Research area co-occurrence",
-              header: ["Research area",...topicChartCategories.map((category) => category.label)],
-              rows: topicChartCategories.map((category, index) => [category.label, ...(coMatrix[index] ?? [])]),
-            }}
-          />
           <div className="mt-4">
             <Heatmap
               rows={topicChartCategories.map((category) => category.label)}
               cols={topicChartCategories.map((category) => category.label)}
               values={coMatrix}
               colorScale={ct.heatScaleAccent}
+              columnWidth="7rem"
+              hideZeros
+            />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <ChartCsvButton
+              csv={{
+                name: "Research area co-occurrence",
+                header: ["Research area", ...topicChartCategories.map((category) => category.label)],
+                rows: topicChartCategories.map((category, index) => [category.label, ...(coMatrix[index] ?? [])]),
+              }}
             />
           </div>
         </section>
@@ -399,15 +408,30 @@ export default function TrackAnalysis({
       Object.keys(topicsPerTrack).length > 0 ? (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Top topics per research area
+            Top themes per research area
           </h3>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            The themes most papers in each research area take up, in each theme&apos;s colour.
+          </p>
+          {/* A research area with no paper in the filters took a quarter of the
+              card to say so (2026-10-24 review); it is named in one line instead. */}
+          {Object.entries(topicsPerTrack).some(([, data]) => data.length === 0) ? (
+            <p className="mt-2 text-xs text-slate-600 dark:text-[#a3a3a3]">
+              No papers in the current filters for{" "}
+              {Object.entries(topicsPerTrack)
+                .filter(([, data]) => data.length === 0)
+                .map(([track]) => categoryByKey.get(track)?.label ?? track)
+                .join(", ")}
+              .
+            </p>
+          ) : null}
           <div
-            className="mt-5 grid gap-6"
+            className="mt-5 grid gap-8"
             style={{
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
             }}
           >
-            {Object.entries(topicsPerTrack).map(([track, data]) => {
+            {Object.entries(topicsPerTrack).filter(([, data]) => data.length > 0).map(([track, data]) => {
               const category = categoryByKey.get(track) ?? {
                 key: track,
                 label: track,
@@ -416,38 +440,33 @@ export default function TrackAnalysis({
               };
 
               return (
-                <div key={track}>
-                  <p className="mb-3 text-sm font-medium text-slate-900 dark:text-white">
-                    {/* The colour goes in a swatch: as text, the lighter
-                        category colours fell under 4.5:1 on white. */}
-                    <span
-                      aria-hidden="true"
-                      className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
-                      style={{ backgroundColor: category.color }}
-                    />
+                <div key={track} className="min-w-0">
+                  {/* No research-area colour here: the bars are themes, and
+                      one card means one thing by its colours. */}
+                  <p className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">
                     <span>{category.label}</span>
                     {category.description ? (
-                      <span className="ml-2 text-slate-500 dark:text-slate-400">
+                      <span className="ml-2 font-normal text-slate-500 dark:text-slate-400">
                         {category.description}
                       </span>
                     ) : null}
                   </p>
                   {data.length > 0 ? (
-                    <div className="h-[280px]">
+                    <div style={{ height: data.length * 36 + 16 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={data} layout="vertical" margin={{ left: 0, right: 8 }}>
                           <XAxis type="number" tick={tickStyle(ct, 10)} hide />
                           <YAxis
                             type="category"
                             dataKey="topic"
-                            width={150}
-                            tick={tickStyle(ct, 10)}
+                            width={170}
+                            tick={wrappedTick(ct, 28, 10)}
+                            interval={0}
                             stroke={ct.axisLine}
                           />
                           <Tooltip {...themedTooltip} />
                           <Bar isAnimationActive={chartAnimationActive()}
                             dataKey="papers"
-                            fill={category.color}
                             radius={[0, 6, 6, 0]}
                             barSize={16}
                             onClick={(entry) => {
@@ -460,14 +479,18 @@ export default function TrackAnalysis({
                               }
                             }}
                             className={onDrilldown ? "cursor-pointer" : undefined}
-                          />
+                          >
+                            {data.map((row) => (
+                              <Cell key={row.topic} fill={themeColor(themeColors, row.topic)} />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                       <ChartValues
                         title={category.label}
                         csv={{
-                          name: `Topics in ${category.label}`,
-                          header: ["Topic", "Papers"],
+                          name: `Themes in ${category.label}`,
+                          header: ["Theme", "Papers"],
                           rows: data.map((row) => [String(row.topic), Number(row.papers)]),
                         }}
                         values={data.map((row) => ({
