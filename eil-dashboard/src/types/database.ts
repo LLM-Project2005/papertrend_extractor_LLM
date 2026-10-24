@@ -305,6 +305,8 @@ export interface RunAnalysisExtracted {
   /** Stages that fell back to a weaker result, in plain words. */
   analysisNotes: string[];
   duplicateOf: { title: string; score: number } | null;
+  /** How the analysis read the PDF: its text layer, or OCR on a scan (pdf-text-kind.ts). */
+  textSource?: { kind: "text" | "scanned" | "partly_scanned" | null; translated: boolean };
 }
 
 export interface RunAnalysisDetail {

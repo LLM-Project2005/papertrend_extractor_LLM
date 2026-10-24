@@ -358,3 +358,35 @@ export function useDashboardData(
 
   return { data, loading, refreshing, allYears, refresh };
 }
+
+/**
+ * A repository's rows as the dashboard reads them, outside the dashboard: the
+ * paper window colours a paper's topics by their themes (theme-colors.ts).
+ * The same request and cache as the dashboard's whole-repository read, so the
+ * two never disagree and an open dashboard costs no second request. It never
+ * asks for a theme grouping; the dashboard does that.
+ */
+export function useRepositoryTrends(projectId: string | null | undefined, enabled = true) {
+  const { hydrated, session, user } = useAuth();
+  const [trends, setTrends] = useState<DashboardData["trends"] | null>(null);
+  useEffect(() => {
+    if (!hydrated || !enabled || !projectId || !user || !session?.access_token) {
+      setTrends(null);
+      return;
+    }
+    let cancelled = false;
+    const requestKey = JSON.stringify({ mode: "auto", projectId, folderIds: [] });
+    const params = new URLSearchParams({ mode: "auto", projectId });
+    fetchDashboardData(requestKey, params, session.access_token)
+      .then((data) => {
+        if (!cancelled) setTrends(data.trends);
+      })
+      .catch(() => {
+        if (!cancelled) setTrends(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, hydrated, projectId, session?.access_token, user]);
+  return trends;
+}

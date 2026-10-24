@@ -6,6 +6,7 @@
  * sets (tests/support/stub-auditfix-*.ts).
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React, { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -88,22 +89,24 @@ test(
       ["KeywordExplorer", draw(KeywordExplorer, { trends: SHIFTING }, "dark")],
     ] as const) {
       const backgrounds = tooltipBackgrounds(html);
-      assert.ok(backgrounds.length >= 2, tab);
+      // The Keyword Explorer has one chart since its theme charts moved to Area Analysis (2026-10-24).
+      assert.ok(backgrounds.length >= (tab === "KeywordExplorer" ? 1 : 2), tab);
       assert.deepEqual(backgrounds, backgrounds.map(() => "#1f1f1f"), tab);
     }
   }
 );
 
-test("the themes-by-year chart stacks at most eight themes, even when its plan asks for more", async () => {
+test("themes over time draws the five largest until the reader picks, and never more than eight", async () => {
+  // Bars, lines and grid share one picker (2026-10-24); past eight the colours cannot be told apart.
   const { TrendAnalysis } = await tabs();
   const twelve = Array.from({ length: 12 }, (_, index) => [row(`${index}a`, "2020", `Theme ${index}`), row(`${index}b`, "2022", `Theme ${index}`)]).flat();
-  const legendItems = (html: string) => (html.match(/class="recharts-legend-item /g) ?? []).length;
-
-  const planned = draw(TrendAnalysis, { trends: twelve, planCharts: [{ chart_key: "topic_area", title: "Themes by year", reason: "test", config: { top_n: 12 } }] });
-  assert.equal(legendItems(planned), 8);
-  const chosen = draw(TrendAnalysis, { trends: twelve });
-  assert.equal(legendItems(chosen), 8);
-  assert.match(chosen, /<input type="range" min="3" max="8"/, "the reader's control stops at eight");
+  const html = draw(TrendAnalysis, { trends: twelve, planCharts: [{ chart_key: "topic_area", title: "Themes by year", reason: "test", config: { top_n: 12 } }] });
+  const picker = html.slice(html.indexOf('aria-label="Themes to compare"'));
+  assert.equal((picker.match(/aria-pressed="true"/g) ?? []).length, 5, "the five largest");
+  assert.equal((picker.match(/aria-pressed="false"/g) ?? []).length, 7, "the rest to pick");
+  const source = readFileSync(new URL("../src/components/tabs/TrendAnalysis.tsx", import.meta.url), "utf8");
+  assert.match(source, /return chosen\.slice\(0, MAX_STACKED_SERIES\);/);
+  assert.match(source, /return base\.length >= MAX_STACKED_SERIES \? base : \[\.\.\.base, topic\];/);
 });
 
 // DASH-7: the tabs' empty messages only ever mean the filters.
@@ -180,7 +183,7 @@ test("a repository with no analysed paper says so, instead of every tab blaming 
   await new Promise((resolve) => setTimeout(resolve, 50));
   const withPaper = await dashboard(ONE_PAPER);
   assert.doesNotMatch(withPaper, /No analysed papers yet/);
-  assert.match(withPaper, /<h2[^>]*>\s*Trend analysis\s*<\/h2>/);
+  assert.match(withPaper, /<h2[^>]*>\s*Themes\s*<\/h2>/);
 });
 
 test("the dashboard counts the papers the shell is following for this repository only", async () => {

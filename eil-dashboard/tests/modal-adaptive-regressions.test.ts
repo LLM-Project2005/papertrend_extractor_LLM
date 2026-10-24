@@ -130,8 +130,8 @@ test("a link to a paper's tab opens on that tab", async () => {
   await open("1a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c51", "evidence");
   assert.equal(activeTab(tree), "Evidence");
   assert.deepEqual(shown, ["evidence"], "never Overview on the way");
-  await open("2a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c52", "keywords");
-  assert.equal(activeTab(tree), "Keywords", "another paper opens on the tab its link asked for");
+  await open("2a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c52", "topics");
+  assert.equal(activeTab(tree), "Topics", "another paper opens on the tab its link asked for");
   await open("3a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c53", undefined);
   assert.equal(activeTab(tree), "Overview", "and a link without one on Overview");
   await root.unmount();

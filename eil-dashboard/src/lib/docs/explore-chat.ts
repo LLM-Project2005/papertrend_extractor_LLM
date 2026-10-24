@@ -189,7 +189,7 @@ export const chatPage: DocsPageBase = {
       bullets: [
         "When the token limit is reached, Chat says `Daily chat token limit reached (1,000,000 tokens). Please try again tomorrow.` The answer that crosses the limit still completes.",
         "Background answers count toward the token limit like any other.",
-        "Remaining allowance is not shown anywhere yet.",
+        "Today's allowance is shown beside the message box as one bar, with when it starts again.",
       ],
     },
     {

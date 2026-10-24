@@ -22,6 +22,7 @@ import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { readCategoryLabelMap } from "@/lib/analysis-profile";
 import { buildCategoryOptions, normalizeCategoryKey } from "@/lib/category-options";
 import { filterDashboardData } from "@/lib/dashboard-filters";
+import { themeColorMap } from "@/lib/theme-colors";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { PaperId, TrackRow, TrendRow } from "@/types/database";
 import { explicitDrilldownIds } from "@/lib/dashboard-drilldown";
@@ -567,6 +568,10 @@ export default function DashboardClient({
       categoryOptions.map((category) => category.key)
     );
   }, [categoryOptions, data, searchQuery, selectedTracks, selectedYears]);
+
+  // From every paper in the repository, before the year, area and search
+  // filters: a filter never repaints a theme (theme-colors.ts).
+  const themeColors = useMemo(() => themeColorMap(data?.trends ?? []), [data]);
 
   const adaptiveDataVersion = `${data?.trends.length ?? 0}:${data?.categoryAssignments?.length ?? 0}:${data?.topicThemes?.status ?? ""}:${data?.topicThemes?.ungroupedTopics ?? 0}:${refreshing ? 1 : 0}`;
 
@@ -1207,12 +1212,14 @@ export default function DashboardClient({
               selectedTracks={effectiveSelectedTracks}
               categoryLabels={categoryLabels}
               classificationEnabled={classificationEnabled}
+              themeColors={themeColors}
               onDrilldown={openPaperDrilldown}
             />
           </TabPanel>
           <TabPanel active={currentTabKey === "keyword_explorer"} visited={visitedTabs.has("keyword_explorer")}>
             <KeywordExplorer
               trends={filteredData.trends}
+              themeColors={themeColors}
               topicFamilies={filteredData.topicFamilies}
               folderIds={selectedFolderIds}
               projectId={selectedProjectId ?? undefined}

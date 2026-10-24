@@ -685,7 +685,8 @@ test("the paper explorer's tabs share one base class, and only the chosen one is
   );
   const nav = /<nav\b[^>]*aria-label="Paper explorer tabs"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
   const tabs = [...nav.matchAll(/(<button\b[^>]*>)([^<]*)<\/button>/g)].map((match) => ({ label: match[2], classes: classesOf(match[1]), current: attribute(match[1], "aria-current") }));
-  assert.deepEqual(tabs.map((tab) => tab.label), ["Overview", "Keywords", "Evidence", "Topics", "Preview"]);
+  // Keywords and Topics are one Topics tab since 2026-10-24.
+  assert.deepEqual(tabs.map((tab) => tab.label), ["Overview", "Topics", "Evidence", "Preview"]);
   for (const tab of tabs) {
     const active = tab.label === "Evidence";
     assert.deepEqual(tab.classes, ["tab-btn", active ? "tab-btn-active" : "tab-btn-inactive"], tab.label);

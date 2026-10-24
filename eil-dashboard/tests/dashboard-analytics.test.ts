@@ -356,16 +356,11 @@ test("each fixed tab opens with a takeaway computed from its own numbers (U4)", 
 });
 
 test("no heatmap draws a row of zeros (C4)", async () => {
-  const { keywords } = await tabs();
-  const html = keywords();
-  const heatmap = html.match(/<table[\s\S]*?<\/table>/)?.[0] ?? "";
-  const names = [...heatmap.matchAll(/<td title="([^"]+)" class="sticky/g)].map((match) => match[1]);
-  assert.deepEqual(names.sort(), ["Reading", LONG, "Writing"], "not Archival Policy, whose papers have no year");
-  for (const name of names) {
-    const cells = [...heatmap.matchAll(new RegExp(`title="${name} × \\d+: (\\d+)"`, "g"))].map((match) => Number(match[1]));
-    assert.ok(cells.some((value) => value > 0), `${name} has a paper in some year`);
-  }
-  assert.match(text(html), /1 theme among the largest appears only in papers without a readable year, so it is not shown\./);
+  // Themes over time's grid (2026-10-24, in place of the Keyword Explorer's
+  // heatmap) draws only the picked themes with a dated paper.
+  const { gridThemes } = await import("../src/components/tabs/TrendAnalysis");
+  const byYear = [{ year: "2016", Reading: 2, "Archival Policy": 0 }, { year: "2017", Reading: 0, "Archival Policy": 0 }];
+  assert.deepEqual(gridThemes(["Reading", "Archival Policy"], byYear), ["Reading"], "not Archival Policy, whose papers have no year");
 
   // The Adaptive methods grid keeps only themes that meet one of its methods.
   const rows: TrendRow[] = [];
@@ -444,23 +439,30 @@ test("legend text is drawn in the readable label colour, not the series colour (
   const label = chartTheme(false).label;
   assert.ok(contrastRatio(label, "#ffffff") >= 4.5, `${label} on white`);
   const { trend, track, keywords } = await tabs();
-  for (const [name, html] of [["Trend analysis", trend()], ["Category analysis", track()], ["Keyword explorer", keywords()]]) {
-    const items = [...html.matchAll(/<span class="recharts-legend-item-text"[^>]*>([\s\S]*?)<\/span><\/li>/g)].map((match) => match[1]);
-    assert.ok(items.length > 0, `${name} has no legend to check`);
-    for (const item of items) assert.match(item, new RegExp(`^<span style="color:${label}">[^<]+</span>$`), `${name}: ${item.slice(0, 80)}`);
+  // Research areas keep Recharts' legend, its text in the label colour.
+  const items = [...track().matchAll(/<span class="recharts-legend-item-text"[^>]*>([\s\S]*?)<\/span><\/li>/g)].map((match) => match[1]);
+  assert.ok(items.length > 0, "Category analysis has no legend to check");
+  for (const item of items) assert.match(item, new RegExp(`^<span style="color:${label}">[^<]+</span>$`), `Category analysis: ${item.slice(0, 80)}`);
+  // The theme charts' legends are lists in full (2026-10-24): ink text, the colour only on the dot.
+  for (const [name, html] of [["Trend analysis", trend()], ["Keyword explorer", keywords()]]) {
+    const lists = [...html.matchAll(/<ul data-series-legend=""[^>]*>([\s\S]*?)<\/ul>/g)].map((match) => match[0]);
+    assert.ok(lists.length > 0, `${name} has no legend to check`);
+    for (const list of lists) {
+      assert.match(list, /text-slate-700/, name);
+      assert.doesNotMatch(list, /style="color:/, `${name}: no text in a series colour`);
+    }
   }
 });
 
 test("chart controls are at least 24px tall, and the treemap root draws nothing (U5)", async () => {
   // The height is Tailwind's h-6 (24px) on the rendered control; measuring it needs a browser.
-  const { trend, keywords, data } = await tabs();
-  for (const [name, html] of [["Trend analysis", trend()], ["Keyword explorer", keywords()]]) {
-    const sliders = html.match(/<input type="range"[^>]*>/g) ?? [];
-    assert.ok(sliders.length > 0, `${name} has no slider`);
-    for (const slider of sliders) assert.match(slider, /class="h-6 /, `${name}: ${slider}`);
-  }
-  const html = keywords();
-  const treemap = html.slice(html.indexOf("Theme sizes"));
+  const { trend, data } = await tabs();
+  // The treemap and its slider are on Area Analysis since 2026-10-24.
+  const sliders = trend().match(/<input type="range"[^>]*>/g) ?? [];
+  assert.ok(sliders.length > 0, "Trend analysis has no slider");
+  for (const slider of sliders) assert.match(slider, /class="h-6 /, `Trend analysis: ${slider}`);
+  const html = trend();
+  const treemap = html.slice(html.indexOf("Theme sizes"), html.indexOf("Themes over time"));
   const cells = [...treemap.matchAll(/<title>([^<]*)<\/title>/g)].map((match) => match[1]).filter(Boolean).sort();
   const themes = themePaperCounts(subjectRows(data.trends)).map((entry) => `${entry.topic}: ${entry.papers} papers`).sort();
   assert.deepEqual(cells, themes, "one cell per theme, and none for their sum");
@@ -472,16 +474,20 @@ test("horizontal bar charts give their bars room on a phone (U5)", async () => {
   assert.deepEqual(labelColumn(true, { width: 300, chars: 46 }), { width: 118, chars: 17 });
   assert.deepEqual(labelColumn(false, { width: 300, chars: 46 }), { width: 300, chars: 46 });
   const { trend, keywords } = await tabs();
-  const ticks = (html: string) => [...html.matchAll(/class="recharts-text recharts-cartesian-axis-tick-value"[^>]*><tspan[^>]*>([^<]*)<\/tspan>/g)].map((match) => text(match[1]));
+  // Names wrap onto two lines rather than being cut short (2026-10-24): each tick's lines.
+  const ticks = (html: string) =>
+    [...html.matchAll(/<text[^>]*class="recharts-cartesian-axis-tick-value"[^>]*>([\s\S]*?)<\/text>/g)].map((match) =>
+      [...match[1].matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map((line) => text(line[1]))
+    );
   for (const [name, draw] of [["Trend analysis", trend], ["Keyword explorer", keywords]] as const) {
     const label = name === "Keyword explorer" ? "teacher cognition beliefs" : LONG;
     globalThis.__profiledashNarrow = false;
-    assert.ok(ticks(draw()).includes(label), `${name}: the whole name on a desktop`);
+    assert.ok(ticks(draw()).some((lines) => lines.length === 1 && lines[0] === label), `${name}: the whole name on one line on a desktop`);
     globalThis.__profiledashNarrow = true;
     try {
       const narrow = ticks(draw());
-      assert.ok(narrow.includes(`${label.slice(0, 16)}…`), `${name}: shortened on a phone, ${JSON.stringify(narrow)}`);
-      assert.ok(narrow.every((tick) => tick.length <= 17), `${name}: ${JSON.stringify(narrow)}`);
+      assert.ok(narrow.some((lines) => lines.length === 2 && lines.join(" ") === label), `${name}: over two lines on a phone, ${JSON.stringify(narrow)}`);
+      assert.ok(narrow.every((lines) => lines.length <= 2 && lines.every((line) => line.length <= 17)), `${name}: ${JSON.stringify(narrow)}`);
     } finally {
       globalThis.__profiledashNarrow = undefined;
     }
