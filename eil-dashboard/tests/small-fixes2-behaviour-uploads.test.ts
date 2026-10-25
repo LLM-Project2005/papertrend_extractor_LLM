@@ -100,6 +100,33 @@ test("a Library paper opens from the known bucket its path names, and never from
   assert.deepEqual([...new Set(calls().map((call) => call.bucket))].sort(), ["uploads-production", OWN]);
 });
 
+test("Download PDF signs the file as an attachment under the paper's Library name; Open does not", async () => {
+  const { db, request, owner } = await workspace();
+  const { POST } = await import("../src/app/api/workspace/library/[runId]/route");
+  await db.query(
+    `INSERT INTO ingestion_runs (id, owner_user_id, folder_id, source_type, status, source_filename, display_name, source_path, input_payload) VALUES ($1, $2, $3, 'upload', 'succeeded', 'paper.pdf', $4, $5, '{}'::jsonb)`,
+    [RUN, OWNER, FOLDER, "บทความ Dynamic assessment", `gs://${OWN}/pending/A/${RUN}/paper.pdf`]
+  );
+  const ask = async (action: string) => {
+    globalThis.__smallfix2StorageCalls = [];
+    const response = await POST(request(`/api/workspace/library/${RUN}`, { headers: owner, body: { action } }), params({ runId: RUN }));
+    return { payload: (await response.json()) as { url?: string; attachment?: boolean }, options: calls().find((call) => call.op === "getSignedUrl")?.options ?? {} };
+  };
+
+  const saved = await ask("download");
+  assert.equal(saved.payload.attachment, true);
+  assert.equal(saved.payload.url, `https://storage.test/${OWN}/pending/A/${RUN}/paper.pdf?action=read`);
+  // A renamed paper keeps its extension; the Thai name is carried in filename*.
+  assert.equal(
+    saved.options.responseDisposition,
+    `attachment; filename="______ Dynamic assessment.pdf"; filename*=UTF-8''%E0%B8%9A%E0%B8%97%E0%B8%84%E0%B8%A7%E0%B8%B2%E0%B8%A1%20Dynamic%20assessment.pdf`
+  );
+
+  const opened = await ask("open");
+  assert.equal(opened.payload.attachment, undefined);
+  assert.equal(opened.options.responseDisposition, undefined, "Open in new tab still shows the PDF");
+});
+
 test("an upload is finalized only from this deployment's own bucket", async () => {
   const { db, request, owner } = await workspace();
   await waitingRun(db, RUN);
