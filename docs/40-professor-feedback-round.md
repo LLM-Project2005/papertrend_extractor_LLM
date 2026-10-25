@@ -248,3 +248,11 @@ After seeing the pilot, the user asked for two changes.
 - **The check.** Each set of sixteen passes the dataviz validator on its own page: lightness band, chroma, neighbours at least 15 apart for full-colour vision, and 3:1 against the page. Neighbours' colour-blind separation is 7.4–7.8. That is allowed because every theme is also named wherever it is coloured.
 - **The effect.** In testtest, 38 of 41 papers now have a coloured theme, against 30 with eight colours, and 52% of keyword rows are coloured instead of 32%. The other themes, mostly single-paper ones, stay grey.
 - **How it is stored.** `ThemeColors` now keeps each theme's slot (0–15), and the colour is resolved per page: `themeColor(colors, theme, dark)`.
+
+## 11. Download PDF saves the file (2026-10-25)
+
+The user found that **Download PDF** in the paper window did the same as **Open in new tab**: it opened the PDF instead of saving it.
+- **Why.** The PDF is served from storage on another site. A browser ignores a link's `download` attribute for a file from another site, so the link opened the PDF.
+- **The fix.** The Library route has a new `download` action. It signs the same link as `open`, but storage is told to send the file as an attachment (`response-content-disposition`), so the browser saves it and the page stays put, as **Download report** does.
+- **The file name.** The file is saved under the paper's Library name. If a rename dropped the extension, the original one is added back. A Thai name is carried in `filename*`. The pure helpers are `downloadFileName` and `attachmentDisposition` in `storage-path.ts`.
+- **Where it applies.** The paper window, wherever it is opened, and the Library's download buttons. **Open in new tab** still shows the PDF.

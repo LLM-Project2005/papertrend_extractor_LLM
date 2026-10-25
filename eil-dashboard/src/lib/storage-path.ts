@@ -24,3 +24,29 @@ export function parseStoredObject(
   if (!bucket) return ownBucket ? { bucket: ownBucket, objectName, known: true } : null;
   return { bucket, objectName, known: knownBuckets.includes(bucket) };
 }
+
+/**
+ * The name a downloaded paper is saved under: its name in the Library, with
+ * the original file's extension added back when a rename dropped it.
+ */
+export function downloadFileName(name: string | null | undefined, originalName: string | null | undefined): string {
+  const extension = /\.[a-z0-9]{1,8}$/i.exec(String(originalName ?? ""))?.[0].toLowerCase() ?? "";
+  const base =
+    String(name ?? "")
+      .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, "-")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 150) || "paper";
+  return extension && !base.toLowerCase().endsWith(extension) ? `${base}${extension}` : base;
+}
+
+/**
+ * A Content-Disposition that has the browser save the file rather than show
+ * it. The plain filename is an ASCII stand-in for browsers that read only
+ * that one; filename* carries the real name, Thai included (RFC 6266).
+ */
+export function attachmentDisposition(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  const encoded = encodeURIComponent(fileName).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}

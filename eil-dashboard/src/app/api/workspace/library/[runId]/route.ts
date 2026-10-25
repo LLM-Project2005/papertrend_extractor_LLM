@@ -4,6 +4,7 @@ import { cloudSqlLibraryRepository, LibraryActionError } from "@/lib/cloudsql/li
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { createGcsSignedReadUrl, resolveStoredObject } from "@/lib/gcs-signed-urls";
+import { downloadFileName } from "@/lib/storage-path";
 import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 import { paperIdFromRunId } from "@/lib/paper-id";
 import { validatePaperCorrection } from "@/lib/reanalysis";
@@ -168,11 +169,15 @@ export async function POST(
 
   try {
     const { runId } = await params;
-    const body = (await request.json()) as { action?: "copy" | "open" };
+    const body = (await request.json()) as { action?: "copy" | "open" | "download" };
     const action = body.action;
     if (!action) {
       return NextResponse.json({ error: "Action is required." }, { status: 400 });
     }
+    // "download" signs the same link as "open", but storage sends the file as
+    // an attachment. A link's download attribute is ignored for a file on
+    // another site, so Download PDF used to open the PDF like Open in new tab.
+    const saving = action === "download";
 
     if (getDatabaseProvider() === "cloud-sql") {
       if (action === "copy") {
@@ -212,8 +217,9 @@ export async function POST(
         objectName: stored.objectName,
         bucketName: stored.known ? stored.bucket : undefined,
         expiresMinutes: 60,
+        saveAs: saving ? downloadFileName(run.display_name || run.source_filename, run.source_filename || sourcePath) : undefined,
       });
-      return NextResponse.json({ url: signedUrl });
+      return NextResponse.json(saving ? { url: signedUrl, attachment: true } : { url: signedUrl });
     }
 
     const supabase = getSupabaseAdmin();
@@ -283,15 +289,20 @@ export async function POST(
       throw new Error("File path is unavailable for this item.");
     }
 
+    const names = original as { display_name?: string | null; source_filename?: string | null };
     const { data: signed, error: signedError } = await supabase.storage
       .from("paper-uploads")
-      .createSignedUrl(sourcePath, 60 * 60);
+      .createSignedUrl(
+        sourcePath,
+        60 * 60,
+        saving ? { download: downloadFileName(names.display_name || names.source_filename, names.source_filename || sourcePath) } : undefined
+      );
 
     if (signedError || !signed?.signedUrl) {
       throw new Error(signedError?.message ?? "Failed to open file.");
     }
 
-    return NextResponse.json({ url: signed.signedUrl });
+    return NextResponse.json(saving ? { url: signed.signedUrl, attachment: true } : { url: signed.signedUrl });
   } catch (error) {
     if (error instanceof LibraryActionError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

@@ -191,3 +191,18 @@ export function triggerTextDownload(filename: string, content: string, mimeType:
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Saves a stored file from its signed link. A link signed as an attachment is
+ * saved and the page stays where it is, as with Download report; any other
+ * link (a Drive file's page) opens in a new tab.
+ */
+export function triggerUrlDownload(url: string, attachment: boolean) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.rel = "noopener noreferrer";
+  if (!attachment) anchor.target = "_blank";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}

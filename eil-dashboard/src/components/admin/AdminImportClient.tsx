@@ -21,7 +21,7 @@ import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle"
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import { readPaperQuote, readPaperTab } from "@/lib/paper-address";
 import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
-import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
+import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload, triggerUrlDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
 import dynamic from "next/dynamic";
 import {
@@ -551,7 +551,7 @@ export default function AdminImportClient() {
     return { ...updated, paper_title: updated.paper_title ?? runs.find((run) => run.id === updated.id)?.paper_title };
   }
 
-  async function postRun(runId: string, action: "copy" | "open") {
+  async function postRun(runId: string, action: "copy" | "open" | "download") {
     const response = await fetch(`/api/workspace/library/${runId}`, {
       method: "POST",
       headers: jsonRequestHeaders,
@@ -560,6 +560,7 @@ export default function AdminImportClient() {
     const payload = (await response.json()) as {
       run?: IngestionRunRow;
       url?: string;
+      attachment?: boolean;
       error?: string;
     };
     if (!response.ok) {
@@ -782,16 +783,8 @@ export default function AdminImportClient() {
   }
 
   async function handleDownloadRun(run: IngestionRunRow) {
-    const url = await getRunOpenUrl(run);
-    if (!url) return;
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileNameOf(run);
-    anchor.rel = "noopener noreferrer";
-    anchor.target = "_blank";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    const payload = await postRun(run.id, "download");
+    if (payload.url) triggerUrlDownload(payload.url, payload.attachment === true);
   }
 
   async function handleDownloadAnalysisReport(
