@@ -18,7 +18,7 @@ export const dashboardPage: DocsPageBase = {
       ],
       figure: {
         shot: "dashboard-trends",
-        alt: "Area Analysis: a summary sentence, then themes by year as stacked bars from 2011 to 2025.",
+        alt: "Area Analysis: a summary sentence, the theme colours, then the themes' sizes and how they moved over the years.",
       },
     },
     {
@@ -47,6 +47,7 @@ export const dashboardPage: DocsPageBase = {
       body: [
         "Each paper names its own topics, so two papers can call the same subject by different names. The dashboard gathers topics that share a research focus into **themes**, and every chart counts papers per theme. The drilldown still shows each paper's own label under its theme.",
         "Themes are formed by an AI model that reads each topic's label and keywords. It groups by what is studied, not by shared words: two topics that both mention \"assessment\" or \"Thai\" are not grouped for that alone. Three separate groupings are made and only merges most of them agree on are kept. Method topics form method themes, kept apart from the themes of what is studied. Phrases that only name a group of people, such as \"Thai EFL learners\", are left out.",
+        "Each of the sixteen themes with the most papers in the repository has a colour of its own, and keeps it in every chart, on every filter and in each paper's window, where the paper's topics show their themes' colours. The first eight take the chart colours; the next eight take a deeper shade of the same colours, so a theme is always named beside its colour, in a legend, a label or the paper's theme line. Every other theme, mostly themes only one paper has, is grey. Research areas keep their own colours, the same as on the semantic map, and no chart mixes the two.",
       ],
       subsections: [
         {
@@ -60,11 +61,13 @@ export const dashboardPage: DocsPageBase = {
     },
     {
       id: "trend-analysis",
-      title: "Area Analysis: themes over time",
+      title: "Area Analysis: themes",
       body: [
-        "**Area Analysis** puts the field's movement and its research areas on one tab: first how the themes moved over the years, then how the research areas compare.",
-        "**Themes by year** stacks the papers in each theme shared by two or more papers, year by year. The slider shows between 3 and 15 themes. Every year in the range has a slot, so a year without papers shows as a gap rather than disappearing.",
-        "**Gaining and losing ground** splits the dated papers in half by year and compares the two periods. A theme is shown only when it has at least 3 papers, differs by at least one paper from what the period sizes alone predict, and would still lean the same way if any single paper were removed. When no theme qualifies, the tab says so, which is a finding in itself: the themes are holding steady.",
+        "**Area Analysis** holds everything about themes, then the research areas: how big each theme is, how the themes moved over the years, which gained or lost ground, and what each gathers.",
+        "**Theme sizes** draws every theme as a rectangle sized by its papers; the slider shows between 5 and 60.",
+        "**Themes over time** shows the papers per year in the themes you pick, up to eight, as **Bars**, **Lines** or a **Grid**. The five largest themes shared by two or more papers are shown until you pick. Every year in the range has a slot, so a year without papers shows as a gap rather than disappearing; the grid leaves empty cells blank.",
+        "**Gaining and losing ground** splits the dated papers in half by year and compares the two periods: the earlier period in grey, the later in each theme's colour. A theme is shown only when it has at least 3 papers, differs by at least one paper from what the period sizes alone predict, and would still lean the same way if any single paper were removed. When no theme qualifies, the tab says so, which is a finding in itself: the themes are holding steady.",
+        "**Themes and what they gather** lists each theme with the topic labels its papers were given and the keywords most of them use; type in its box to filter it.",
       ],
       callout: {
         tone: "info",
@@ -76,7 +79,7 @@ export const dashboardPage: DocsPageBase = {
       id: "category-analysis",
       title: "Area Analysis: research areas",
       body: [
-        "The second half of Area Analysis, when the repository uses research areas. **Papers per research area per year** stacks primary research areas over the years; **Research area co-occurrence** shows how often research areas appear together on one paper; **Top topics per research area** lists the largest themes within each research area. In a General Research repository this view explains how to turn research areas on.",
+        "The second half of Area Analysis, when the repository uses research areas. **Papers per research area per year** stacks primary research areas over the years; **Research area co-occurrence** shows how often research areas appear together on one paper; **Top themes per research area** lists the largest themes within each research area, in the themes' colours. In a General Research repository this view explains how to turn research areas on.",
       ],
       figure: {
         shot: "dashboard-categories",
@@ -90,11 +93,8 @@ export const dashboardPage: DocsPageBase = {
         "The concept search at the top follows one idea through the repository: type a concept in English or Thai and it shows where it first appears, how it has grown over the years, which themes move with it, supporting evidence and the related papers. It matches text as written (it does not translate), and it uses no AI allowance.",
       ],
       bullets: [
-        "**Keywords used by the most papers**: ranked by how many papers use a keyword, not how often one paper repeats it.",
-        "**Themes across years**: a heatmap of the 15 largest themes.",
-        "**Theme sizes**: every theme as a rectangle sized by its papers.",
-        "**Themes and what they gather**: each theme with the topic labels and keywords its papers use.",
-        "**Compare themes over time**: pick themes to compare their papers per year.",
+        "**Keywords used by the most papers**: ranked by how many papers use a keyword, not how often one paper repeats it. Each bar is in the colour of the theme its papers file it under.",
+        "The theme charts that were here are on **Area Analysis**.",
       ],
       figure: {
         shot: "dashboard-keywords",
@@ -125,10 +125,12 @@ export const dashboardPage: DocsPageBase = {
         {
           title: "What you can do",
           bullets: [
-            "Search to dim papers that do not match; color by neighborhood, research area, year or track.",
+            "Search to dim papers that do not match; color by neighborhood, research area, year or track. The panel's **Colours** list says what each colour is and how many papers it holds; click a neighborhood to focus it.",
+            "Over the map, scrolling zooms in and out; the page scrolls only outside it.",
+            "**Download PNG** saves the map as it is laid out now, with its title, its colour key and the date, on a white background for a report or a slide.",
             "The map opens as the **Free graph**: drag papers around, and positions settle from the links between them, so distance there does not show similarity. Switch to **Fixed projection** to read similarity from distance. Hide papers from view without rebuilding the map.",
             "Selecting a paper brings it to the front and fades the rest, so its neighbourhood is easy to read.",
-            "Select a paper to open its analysis, or select two or more and choose **Compare** or **Ask about papers** to continue in Chat with them attached.",
+            "Select a paper to open its analysis, or select two or more and choose **Explain in chat** or **Ask about papers** to continue in Chat with them attached.",
           ],
           body: [],
         },
@@ -162,7 +164,7 @@ export const dashboardPage: DocsPageBase = {
       table: {
         columns: ["View", "Needs at least"],
         rows: [
-          ["Themes by year", "A theme in two or more papers"],
+          ["Themes over time", "A theme in two or more papers"],
           ["Gaining and losing ground", "Two dated years, and themes with three or more papers"],
           ["Keyword ranking", "Keywords used by two or more papers"],
           ["Semantic map", "One analyzed paper; neighborhoods need five"],

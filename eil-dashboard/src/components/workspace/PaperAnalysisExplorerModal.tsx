@@ -3,6 +3,7 @@
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import PdfViewer, { prefetchPdf, type PdfMark } from "@/components/workspace/PdfViewer";
+import EvidenceText from "@/components/workspace/EvidenceText";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
@@ -12,10 +13,17 @@ import {
   CloseIcon,
   DownloadIcon,
   ExternalLinkIcon,
+  FilePdfIcon,
   PencilSquareIcon,
   StarIcon,
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail, RunAnalysisExtracted } from "@/types/database";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { useRepositoryTrends } from "@/hooks/useData";
+import { runProjectId } from "@/lib/recent-papers";
+import { OTHER_THEME_COLOR, paperThemes, themeColorMap, tint, topicKey, type PaperTheme } from "@/lib/theme-colors";
+import { effectiveTextKind, textKindChip, type PdfTextKind } from "@/lib/pdf-text-kind";
 
 import { PAPER_EXPLORER_TABS, type PaperExplorerTab } from "@/lib/paper-address";
 
@@ -45,6 +53,12 @@ type Props = {
   quote?: string | null;
   /** The list this paper was opened from, to step through with Previous and Next. */
   stepper?: PaperStepper | null;
+  /**
+   * Where this paper's topics sit among its repository's themes, keyed by
+   * topicKey(label): the Topics tab names each one's theme in its colour.
+   * The window works it out itself; the render tests pass it in.
+   */
+  themes?: Map<string, PaperTheme> | null;
 };
 
 /**
@@ -73,11 +87,12 @@ export function stepFromKey(event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlK
   return event.key === "ArrowLeft" ? -1 : 1;
 }
 
+// Keywords and Topics showed the same rows twice, grouped two ways; Topics
+// holds them both now (2026-10-24 review).
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "keywords", label: "Keywords" },
-  { id: "evidence", label: "Evidence" },
   { id: "topics", label: "Topics" },
+  { id: "evidence", label: "Evidence" },
   { id: "preview", label: "Preview" },
 ];
 
@@ -220,6 +235,222 @@ function buildKeywordEvidenceRows(detail: RunAnalysisDetail | null) {
       section: inferEvidenceSection(detail, evidence, match.context),
     };
   });
+}
+
+type KeywordEvidenceRow = ReturnType<typeof buildKeywordEvidenceRows>[number];
+
+export interface TopicGroup {
+  key: string;
+  label: string;
+  /** Mentions of the topic in the paper: its concept's total, or its keywords' sum. */
+  mentions: number;
+  /** The keywords filed under the topic, most mentioned first, each with its evidence. */
+  rows: KeywordEvidenceRow[];
+  /** Further keywords the topic gathered, with no evidence row of their own. */
+  otherKeywords: string[];
+  /** For a topic with no keyword rows: the sentence its concept was found in. */
+  evidence: string;
+  method: boolean;
+  theme: PaperTheme | null;
+}
+
+/**
+ * One group per topic: its keywords with their evidence, and its theme in the
+ * repository. The Keywords and Topics tabs drew these same rows twice, by
+ * keyword and by topic; this is the one view of them (2026-10-24 review).
+ * Pure, so it is tested.
+ */
+export function buildTopicGroups(
+  detail: RunAnalysisDetail | null,
+  rows: KeywordEvidenceRow[],
+  themes?: Map<string, PaperTheme> | null
+): TopicGroup[] {
+  const methods = new Set((detail?.extracted?.methodTopics ?? []).map(topicKey));
+  const groups = new Map<string, TopicGroup>();
+  const group = (label: string): TopicGroup => {
+    const key = topicKey(label);
+    let entry = groups.get(key);
+    if (!entry) {
+      const theme = themes?.get(key) ?? null;
+      entry = { key, label, mentions: 0, rows: [], otherKeywords: [], evidence: "", method: methods.has(key) || Boolean(theme?.method), theme };
+      groups.set(key, entry);
+    }
+    return entry;
+  };
+  for (const row of rows) {
+    const entry = group(String(row.topic ?? "").trim() || "Unclassified topic");
+    entry.rows.push(row);
+    entry.mentions += Math.max(0, Number(row.frequency) || 0);
+  }
+  for (const concept of detail?.concepts ?? []) {
+    const entry = group(concept.label);
+    entry.mentions = Math.max(entry.mentions, Number(concept.totalFrequency) || 0);
+    const listed = new Set(entry.rows.map((row) => topicKey(row.keyword)));
+    entry.otherKeywords = concept.relatedKeywords.filter((keyword) => !listed.has(topicKey(keyword))).slice(0, 8);
+    entry.evidence = cleanDisplayText(concept.firstEvidence || concept.evidenceSnippets[0] || "");
+  }
+  for (const entry of groups.values()) entry.rows.sort((left, right) => (Number(right.frequency) || 0) - (Number(left.frequency) || 0));
+  return [...groups.values()].sort((left, right) => right.mentions - left.mentions || left.label.localeCompare(right.label));
+}
+
+/** "Theme: Academic and Second Language Writing · 7 papers", "Only in this paper", or "Research method". */
+export function themeLine(group: Pick<TopicGroup, "method" | "theme">): string | null {
+  if (group.method) return "Research method";
+  if (!group.theme) return null;
+  if (group.theme.papers <= 1) return "Only in this paper";
+  return `Theme: ${group.theme.theme} · ${group.theme.papers} papers`;
+}
+
+function ThemeDot({ color }: { color: string }) {
+  return <span aria-hidden="true" className="inline-block h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: color }} />;
+}
+
+/** One keyword under its topic: how often, the sentence it was found in, and a way to it in the PDF. */
+function KeywordRow({
+  row,
+  onShowInPdf,
+  showLabel = "Show in PDF",
+}: {
+  row: KeywordEvidenceRow;
+  onShowInPdf?: (row: KeywordEvidenceRow) => void;
+  /** "Show in text" for a scan, whose evidence is shown in its OCR text. */
+  showLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const evidence = cleanDisplayText(row.evidence);
+  return (
+    <li className="grid gap-x-4 gap-y-1 border-t border-hairline px-4 py-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_auto] sm:items-start">
+      <div className="flex min-w-0 items-baseline justify-between gap-3 sm:block">
+        <p className="text-sm font-medium text-ink">{row.keyword}</p>
+        <p className="text-xs tabular-nums text-mute sm:mt-0.5">
+          {row.frequency} mention{Number(row.frequency) === 1 ? "" : "s"}
+        </p>
+      </div>
+      {evidence ? (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className={`min-w-0 text-left text-sm leading-6 text-body transition-colors hover:text-ink ${open ? "" : "line-clamp-2"}`}
+          title={open ? "Show less" : "Show the whole sentence"}
+        >
+          {evidence}
+        </button>
+      ) : (
+        <p className="text-sm leading-6 text-mute">No evidence sentence was stored.</p>
+      )}
+      {onShowInPdf && evidence ? (
+        <button
+          type="button"
+          onClick={() => onShowInPdf(row)}
+          className="inline-flex h-8 items-center gap-1.5 justify-self-start whitespace-nowrap rounded-md px-2 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink"
+        >
+          <FilePdfIcon className="h-3.5 w-3.5" />
+          {showLabel}
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
+/** The Topics tab: one card per topic, in its theme's colour, with its keywords and their evidence. */
+function TopicsTab({
+  groups,
+  facets,
+  themesKnown,
+  onShowInPdf,
+  showLabel,
+}: {
+  groups: TopicGroup[];
+  facets: RunAnalysisDetail["facets"];
+  themesKnown: boolean;
+  onShowInPdf?: (row: KeywordEvidenceRow) => void;
+  showLabel?: string;
+}) {
+  if (groups.length === 0) {
+    return (
+      <div className="rounded-xl border border-hairline bg-subtle px-5 py-8">
+        <p className="text-sm text-mute">No topics or keywords were stored for this paper.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {themesKnown ? (
+        <p className="text-xs leading-5 text-body">
+          Each topic carries the colour of its theme in this repository, the same as on the dashboard. Grey is a theme outside the largest sixteen, one only this paper has, or a research method.
+        </p>
+      ) : null}
+      {groups.map((group) => {
+        // No colour at all when the paper's themes are unknown (its repository is
+        // not the one open, or its data has not arrived): grey would say "another theme".
+        const color = group.method ? OTHER_THEME_COLOR : group.theme?.color ?? null;
+        const line = themeLine(group);
+        return (
+          <article
+            key={group.key}
+            data-topic={group.label}
+            className="overflow-hidden rounded-xl border border-hairline bg-surface"
+            style={color ? { borderLeftWidth: 4, borderLeftColor: color } : undefined}
+          >
+            <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-4 py-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-ink">{group.label}</h3>
+                {line ? (
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-body">
+                    <ThemeDot color={color ?? OTHER_THEME_COLOR} />
+                    {line}
+                  </p>
+                ) : null}
+              </div>
+              <span className="text-xs tabular-nums text-mute">
+                {group.mentions} mention{group.mentions === 1 ? "" : "s"}
+              </span>
+            </header>
+            {group.rows.length > 0 ? (
+              <ul>
+                {group.rows.map((row) => (
+                  <KeywordRow key={`${group.key}-${row.index}`} row={row} onShowInPdf={onShowInPdf} showLabel={showLabel} />
+                ))}
+              </ul>
+            ) : group.evidence ? (
+              <p className="border-t border-hairline px-4 py-3 text-sm leading-6 text-body">{group.evidence}</p>
+            ) : null}
+            {group.otherKeywords.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline px-4 py-3">
+                <span className="mr-1 text-xs text-mute">Also</span>
+                {group.otherKeywords.map((keyword) => (
+                  <span
+                    key={`${group.key}-${keyword}`}
+                    className="rounded-full border px-2.5 py-1 text-xs text-ink"
+                    style={color ? { backgroundColor: tint(color, 0.1), borderColor: tint(color, 0.35) } : undefined}
+                  >
+                    {keyword}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
+      {facets.length > 0 ? (
+        <section aria-label="Also found" className="overflow-hidden rounded-xl border border-hairline bg-surface">
+          <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-normal text-mute">Also found</p>
+          <ul className="mt-2">
+            {facets.map((facet, index) => (
+              <li key={`${facet.facetType}-${facet.label}-${index}`} className="grid gap-x-4 gap-y-1 border-t border-hairline px-4 py-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink">{facet.label}</p>
+                  <p className="text-xs capitalize text-mute">{facet.facetType.replace(/_/g, " ")}</p>
+                </div>
+                <p className="line-clamp-3 text-sm leading-6 text-body">{cleanDisplayText(facet.evidence) || "No evidence sentence was stored."}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
 }
 
 function titleOf(run: IngestionRunRow) {
@@ -366,9 +597,24 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
  */
 export default function PaperAnalysisExplorerModal(props: Props) {
   const headingId = useId();
+  // The paper's repository and its rows, read through the dashboard's own
+  // cache, give each topic its theme and the theme its colour - the same
+  // colour the dashboard draws it in.
+  const { allFolders } = useWorkspaceProfile();
+  const projectId = useMemo(
+    () => runProjectId(props.run, new Map(allFolders.map((folder) => [folder.id, folder.project_id]))),
+    [allFolders, props.run]
+  );
+  const trends = useRepositoryTrends(projectId, Boolean(props.detail?.available));
+  const { theme: mode, hydrated } = useTheme();
+  const dark = hydrated && mode === "dark";
+  const themes = useMemo(() => {
+    if (!trends || !props.detail?.paper_id) return null;
+    return paperThemes(trends, props.detail.paper_id, themeColorMap(trends), dark);
+  }, [dark, props.detail?.paper_id, trends]);
   return (
     <Modal onClose={props.onClose}>
-      <PaperExplorerPanel key={props.run.id} {...props} headingId={headingId} />
+      <PaperExplorerPanel key={props.run.id} {...props} themes={props.themes ?? themes} headingId={headingId} />
     </Modal>
   );
 }
@@ -392,6 +638,7 @@ export function PaperExplorerPanel({
   onTabChange,
   quote,
   stepper,
+  themes,
   headingId,
 }: Props & { headingId?: string }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -501,6 +748,20 @@ export function PaperExplorerPanel({
       })),
     [keywordEvidenceRows]
   );
+  const topicGroups = useMemo(() => buildTopicGroups(detail, keywordEvidenceRows, themes), [detail, keywordEvidenceRows, themes]);
+  // A keyword's "Show in PDF" opens the Evidence tab on its passage.
+  const [focusMark, setFocusMark] = useState<{ id: string; key: string } | null>(null);
+  const showInPdf = (row: KeywordEvidenceRow) => {
+    setFocusMark({ id: String(row.index), key: `${row.index}:${Date.now()}` });
+    setActiveTab("evidence");
+  };
+  // Whether the PDF is a scan: from the analysis's record, or from its pages once the viewer has read them.
+  const [viewerTextKind, setViewerTextKind] = useState<PdfTextKind | null>(null);
+  const textKind = effectiveTextKind(detail?.extracted?.textSource?.kind, viewerTextKind);
+  const textChip = textKindChip(textKind);
+  // A scan's evidence is shown in the text the analysis read from it, not on
+  // its pictures of pages (2026-10-24 review); the PDF stays on Preview.
+  const scanText = textKind === "scanned" && evidenceMarks.length > 0 ? String(detail?.raw_text ?? "").trim() : "";
 
   // A different paper opens on the tab it was asked for (a link's ?tab=, or
   // Overview). Resetting to Overview here, on mount too, threw away the tab of
@@ -644,6 +905,17 @@ export function PaperExplorerPanel({
                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {run.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(run)}
                 </span>
+                {/* A scan has no text to mark evidence on; saying so here
+                    explains the Evidence tab before it is opened (2026-10-24). */}
+                {textChip ? (
+                  <span
+                    data-text-kind=""
+                    title={textChip === "Scanned PDF" ? "Its pages are pictures of text, read with OCR, so evidence can't be highlighted on them." : "Some pages are pictures of text, read with OCR, so evidence on them can't be highlighted."}
+                    className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body ring-1 ring-inset ring-hairline"
+                  >
+                    {textChip}
+                  </span>
+                ) : null}
                 {/* Where the rows came from matters only when it is not the
                     paper's own finished analysis; the old chip named pipeline
                     internals, which told a reader nothing. */}
@@ -901,8 +1173,9 @@ export function PaperExplorerPanel({
                           detail.topics.slice(0, 8).map((topic) => (
                             <span
                               key={topic}
-                              className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
                             >
+                              {themes ? <ThemeDot color={themes.get(topicKey(topic))?.color ?? OTHER_THEME_COLOR} /> : null}
                               {topic}
                             </span>
                           ))
@@ -929,7 +1202,8 @@ export function PaperExplorerPanel({
                                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                                   {keyword.keyword}
                                 </p>
-                                <p className="mt-1 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+                                <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#8e8e8e]">
+                                  {themes ? <ThemeDot color={themes.get(topicKey(keyword.topic || ""))?.color ?? OTHER_THEME_COLOR} /> : null}
                                   {keyword.topic || "Unclassified topic"}
                                 </p>
                               </div>
@@ -978,38 +1252,8 @@ export function PaperExplorerPanel({
                     </article>
                   </section>
 
-                  {detail.concepts.length > 0 ? (
-                    <section className="grid gap-3 lg:grid-cols-2">
-                      {detail.concepts.slice(0, 6).map((concept) => (
-                        <article
-                          key={concept.label}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                                {concept.label}
-                              </p>
-                              {concept.matchedTerms.length > 0 ? (
-                                <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                                  {concept.matchedTerms.slice(0, 5).join(" | ")}
-                                </p>
-                              ) : null}
-                            </div>
-                            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                              {concept.totalFrequency}
-                            </span>
-                          </div>
-                          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
-                            {concept.firstEvidence ||
-                              concept.evidenceSnippets[0] ||
-                              "No concept evidence snippet was stored."}
-                          </p>
-                        </article>
-                      ))}
-                    </section>
-                  ) : null}
-
+                  {/* The topic cards that sat here were the Topics tab's first
+                      six, repeated; the tab has them all (2026-10-24 review). */}
                   <section className="grid gap-4 lg:grid-cols-2">
                     <SectionSummaryCard
                       label="Abstract claims"
@@ -1022,49 +1266,14 @@ export function PaperExplorerPanel({
                 </div>
               ) : null}
 
-              {activeTab === "keywords" ? (
-                <section className="space-y-3">
-                  {detail.keywords.length > 0 ? (
-                    detail.keywords.map((keyword, index) => (
-                      <article
-                        key={`${keyword.keyword}-${index}`}
-                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                              {keyword.keyword}
-                            </p>
-                            <p className="mt-1 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                              {keyword.topic || "Unclassified topic"}
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                            {keyword.frequency}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
-                          {cleanDisplayText(keyword.evidence) ||
-                            "No supporting keyword evidence was stored."}
-                        </p>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                        No grounded keyword rows were available for this paper.
-                      </p>
-                    </div>
-                  )}
-                </section>
-              ) : null}
-
               {activeTab === "evidence" ? (
                 // The PDF alone, every passage the analysis stored marked on
                 // it, and a pager that steps from one to the next across
                 // pages (2026-10-22). The list beside it is gone.
-                <section aria-label="Evidence in the PDF">
-                  {previewError ? (
+                <section aria-label={scanText ? "Evidence in the paper's text" : "Evidence in the PDF"}>
+                  {scanText ? (
+                    <EvidenceText text={scanText} marks={evidenceMarks} focusMark={focusMark} heightClass="h-[62vh] lg:h-[68vh]" />
+                  ) : previewError ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                       {previewError}
                     </div>
@@ -1074,6 +1283,9 @@ export function PaperExplorerPanel({
                       url={previewUrl}
                       title={`Evidence in ${detail?.title || titleOf(run)}`}
                       marks={evidenceMarks}
+                      focusMark={focusMark}
+                      source={detail.extracted?.textSource ?? null}
+                      onTextKind={setViewerTextKind}
                       heightClass="h-[62vh] lg:h-[68vh]"
                     />
                   )}
@@ -1081,72 +1293,7 @@ export function PaperExplorerPanel({
               ) : null}
 
               {activeTab === "topics" ? (
-                <div className="space-y-5">
-                  {detail.concepts.length > 0 ? (
-                    <section className="grid gap-3 lg:grid-cols-2">
-                      {detail.concepts.map((concept) => (
-                        <article
-                          key={concept.label}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                              {concept.label}
-                            </p>
-                            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                              {concept.totalFrequency}
-                            </span>
-                          </div>
-                          {concept.relatedKeywords.length > 0 ? (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {concept.relatedKeywords.slice(0, 8).map((keyword) => (
-                                <span
-                                  key={`${concept.label}-${keyword}`}
-                                  className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
-                                >
-                                  {keyword}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
-                            {concept.firstEvidence ||
-                              concept.evidenceSnippets[0] ||
-                              "No concept evidence snippet was stored."}
-                          </p>
-                        </article>
-                      ))}
-                    </section>
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                        No canonical topic groups were available for this paper.
-                      </p>
-                    </div>
-                  )}
-
-                  {detail.facets.length > 0 ? (
-                    <section className="grid gap-3 lg:grid-cols-2">
-                      {detail.facets.map((facet, index) => (
-                        <article
-                          key={`${facet.facetType}-${facet.label}-${index}`}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                        >
-                          <p className="text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                            {facet.facetType.replace(/_/g, " ")}
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                            {facet.label}
-                          </p>
-                          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
-                            {cleanDisplayText(facet.evidence) ||
-                              "No supporting facet evidence was stored."}
-                          </p>
-                        </article>
-                      ))}
-                    </section>
-                  ) : null}
-                </div>
+                <TopicsTab groups={topicGroups} facets={detail.facets} themesKnown={Boolean(themes && themes.size > 0)} onShowInPdf={previewError && !scanText ? undefined : showInPdf} showLabel={scanText ? "Show in text" : "Show in PDF"} />
               ) : null}
 
               {activeTab === "preview" ? (
@@ -1182,6 +1329,8 @@ export function PaperExplorerPanel({
                       heightClass="h-[68vh]"
                       highlight={citedQuote}
                       highlightKey={citedQuote ?? undefined}
+                      source={detail?.extracted?.textSource ?? null}
+                      onTextKind={setViewerTextKind}
                     />
                   ) : null}
                 </section>

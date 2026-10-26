@@ -193,7 +193,7 @@ export const helpCategory: DocsCategoryBase = {
             { term: "Home", detail: "The open repository's front page: counts, a box to ask about the papers, the top topics and keywords, recent papers and analysis progress." },
             { term: "Library", detail: "Every paper in every repository you own, with each paper's status, Trash, renaming, favorites, moving and analyzing again, one paper at a time or several ticked together." },
             { term: "Open repository", detail: "The repository the Dashboard and Chat use. It is remembered in this browser. Browsing another repository in the Library does not change it." },
-            { term: "Paper explorer", detail: "The window showing one paper's analysis, with the tabs Overview, Keywords, Evidence, Topics and Preview." },
+            { term: "Paper explorer", detail: "The window showing one paper's analysis, with the tabs Overview, Topics, Evidence and Preview." },
             { term: "Progress tray", detail: "The small pill in the corner and the panel it opens, following each paper through the ten steps of analysis." },
             { term: "Trash", detail: "Where papers go when moved out of a repository. They can be restored; they leave every chart while there." },
           ],

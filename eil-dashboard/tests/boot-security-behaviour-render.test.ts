@@ -133,9 +133,10 @@ test("every chart on the dashboard's tabs offers its data as CSV, and every list
   assert.deepEqual(
     Object.fromEntries(Object.entries(drawn).map(([name, html]) => [name, csvNames(html)])),
     {
-      TrendAnalysis: ["Themes by year", "Gaining ground 2018–2020 to 2021–2023", "Losing ground 2018–2020 to 2021–2023"],
-      TrackAnalysis: ["Papers per research area per year", "Research area co-occurrence", "Topics in EL", "Topics in ELI"],
-      KeywordExplorer: ["Keywords used by the most papers", "Themes across years", "Theme sizes", "Themes and what they gather", "Compare themes over time"],
+      // Every theme chart is on Area Analysis since 2026-10-24, and three charts of papers per theme per year are one.
+      TrendAnalysis: ["Theme sizes", "Themes over time", "Gaining ground 2018–2020 to 2021–2023", "Losing ground 2018–2020 to 2021–2023", "Themes and what they gather"],
+      TrackAnalysis: ["Papers per research area per year", "Research area co-occurrence", "Themes in EL", "Themes in ELI"],
+      KeywordExplorer: ["Keywords used by the most papers"],
     }
   );
   for (const [name, html] of Object.entries(drawn)) {

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import PaperLink from "@/components/workspace/PaperLink";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -8,46 +7,44 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
   ResponsiveContainer,
   Tooltip,
-  Treemap,
   XAxis,
   YAxis,
 } from "recharts";
-import Heatmap from "@/components/Heatmap";
 import { Takeaway } from "@/components/dashboard/DashboardNotes";
-import { TOPIC_PALETTE } from "@/lib/constants";
-import { categoricalColor } from "@/lib/chart-palette";
-import { readableTextOn } from "@/lib/contrast";
-import {
-  keywordPaperCounts,
-  listOf,
-  plural,
-  subjectRows,
-  themePaperCounts,
-  themePapersByYear,
-  yearAxis,
-} from "@/lib/dashboard-analytics";
-import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
-import { keywordKey, paperIdsByKeywordKey } from "@/lib/dashboard-drilldown";
+import { NEUTRAL_MARK } from "@/lib/chart-palette";
+import { keywordPaperCounts, listOf, plural, subjectRows } from "@/lib/dashboard-analytics";
+import type { CorpusTopicFamily, TrendRow } from "@/types/database";
 import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
 import ChartCsvButton from "@/components/tabs/ChartCsvButton";
-import { seriesTable } from "@/lib/chart-csv";
 import { tooltipTheme } from "@/lib/chart-tooltip";
-
-function truncate(value: string, max: number): string {
-  return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
-}
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
-import { isDatedYear } from "@/lib/dated-year";
+import { wrappedTick } from "@/lib/chart-ticks";
+import {
+  NO_THEME_COLORS,
+  hasThemeColor,
+  keywordThemeKey,
+  keywordThemes,
+  themeColor,
+  type ThemeColors,
+} from "@/lib/theme-colors";
+
+/*
+ * The Keyword Explorer: what is about keywords - a concept searched across the
+ * repository, and the keywords the most papers use, each bar in the colour of
+ * the theme its papers file it under. The theme charts it once held moved to
+ * Area Analysis (2026-10-24 review), where the themes are.
+ */
 
 interface Props {
   trends: TrendRow[];
@@ -57,59 +54,10 @@ interface Props {
   folderIds?: string[];
   projectId?: string | "all";
   planCharts?: VisualizationPlanChart[];
+  /** The repository's theme colours, which each keyword's bar wears. */
+  themeColors?: ThemeColors;
   onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
 }
-
-/**
- * Each theme its own hue from the eight-colour chart palette (2026-10-09
- * review: more colour). Every cell is a different theme, so the hue marks a
- * real difference; size still carries the number, and the label sits in
- * white or near-black, whichever reads better on the cell.
- */
-const TreemapCell = (props: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  name: string;
-  value: number;
-  /** 0 for the root, which Recharts also hands to this renderer. */
-  depth?: number;
-  /** The cell's position, which Recharts hands to this renderer. */
-  index?: number;
-  fill?: string;
-  textFill?: string;
-  edge?: string;
-  onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
-  /** The papers behind the cell, passed through by Recharts from the data row. */
-  paperIds?: string[];
-}) => {
-  const { x, y, width, height, name, value, depth, index = 0, edge = "#ffffff", onDrilldown, paperIds } = props;
-  const fill = props.fill ?? categoricalColor(index);
-  const textFill = props.textFill ?? readableTextOn(fill, ["#ffffff", "#0a0a0a"]);
-  // The root spans the whole chart under the cells, labelled with the sum of
-  // every theme - "63 papers" in a 39-paper repository, hidden but in the page.
-  if (depth === 0) return null;
-  if (width < 4 || height < 4) return null;
-  const maxChars = Math.floor((width - 12) / 6.5);
-  const label = name && name.length > maxChars ? `${name.slice(0, Math.max(1, maxChars - 1))}\u2026` : name;
-  return (
-    <g className={onDrilldown ? "cursor-pointer" : undefined} onClick={() => onDrilldown?.({ topic: name, paperIds })}>
-      <title>{`${name}: ${value} paper${value === 1 ? "" : "s"}`}</title>
-      <rect x={x} y={y} width={width} height={height} fill={fill} stroke={edge} strokeWidth={2} rx={6} />
-      {width > 60 && height > 34 && maxChars >= 6 ? (
-        <>
-          <text x={x + 8} y={y + 18} fill={textFill} fontSize={11} fontWeight={600}>
-            {label}
-          </text>
-          <text x={x + 8} y={y + 32} fill={textFill} fontSize={10} opacity={0.85}>
-            {value} paper{value === 1 ? "" : "s"}
-          </text>
-        </>
-      ) : null}
-    </g>
-  );
-};
 
 export default function KeywordExplorer({
   trends,
@@ -118,28 +66,18 @@ export default function KeywordExplorer({
   selectedTracks = [],
   folderIds = [],
   projectId = "all",
-  planCharts,
+  themeColors = NO_THEME_COLORS,
   onDrilldown,
 }: Props) {
-  const { theme, hydrated } = useTheme();
-  const ct = chartTheme(hydrated && theme === "dark");
-  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
+  const { theme: themeMode, hydrated } = useTheme();
+  const ct = chartTheme(hydrated && themeMode === "dark");
+  const themedTooltip = tooltipTheme(hydrated && themeMode === "dark");
   const keywordLabels = labelColumn(useIsNarrow(), { width: 210, chars: 32 });
   const { session } = useAuth();
   const [query, setQuery] = useState("");
-  const [treeN, setTreeN] = useState(30);
-  const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
   const [conceptResult, setConceptResult] = useState<KeywordSearchResponse | null>(null);
   const [conceptLoading, setConceptLoading] = useState(false);
   const [conceptError, setConceptError] = useState<string | null>(null);
-
-  const heatmapConfig = planCharts?.find(
-    (chart) => chart.chart_key === "keyword_heatmap"
-  )?.config;
-  const plannerHeatN = heatmapConfig?.heat_n ?? 15;
-  // Folded as the keyword counts are, so "Learner autonomy" lists the papers
-  // that say "learner autonomy" too.
-  const paperIdsByKeyword = useMemo(() => paperIdsByKeywordKey(trends), [trends]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -204,66 +142,24 @@ export default function KeywordExplorer({
     };
   }, [folderIds, projectId, query, selectedTracks, selectedYears, session?.access_token]);
 
-  // What was studied; method themes are shown on the Overview.
+  // What was studied; method themes are shown on the Adaptive tab.
   const subjects = useMemo(() => subjectRows(trends), [trends]);
-  const axis = useMemo(() => yearAxis(subjects.map((row) => row.year)), [subjects]);
   const keywords = useMemo(() => keywordPaperCounts(subjects), [subjects]);
-  const themes = useMemo(() => {
-    const rowsByTheme = new Map<string, TrendRow[]>();
-    for (const row of subjects) rowsByTheme.set(row.topic, [...(rowsByTheme.get(row.topic) ?? []), row]);
-    return themePaperCounts(subjects).map((entry) => {
-      const rows = rowsByTheme.get(entry.topic) ?? [];
-      return {
-        ...entry,
-        aliases: [...new Set(rows.map((row) => row.raw_topic ?? row.topic))].sort((a, b) => a.localeCompare(b)),
-        keywords: keywordPaperCounts(rows).slice(0, 8).map((keyword) => keyword.keyword),
-        years: [...new Set(rows.map((row) => row.year))].filter(isDatedYear).sort(),
-      };
-    });
-  }, [subjects]);
-  const visibleThemes = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return themes;
-    return themes.filter(
-      (entry) =>
-        entry.topic.toLowerCase().includes(normalized) ||
-        entry.aliases.join(" ").toLowerCase().includes(normalized) ||
-        entry.keywords.join(" ").toLowerCase().includes(normalized)
-    );
-  }, [query, themes]);
-
-  // Papers, not keyword occurrences, and only themes with a dated paper: a row
-  // of zeros for a theme whose papers are all undated said nothing.
-  const heatmapData = useMemo(() => {
-    const candidates = themes.slice(0, plannerHeatN);
-    const rows = candidates
-      .map((entry) => ({
-        theme: entry.topic,
-        values: axis.years.map(
-          (year) => new Set(subjects.filter((row) => row.topic === entry.topic && row.year === year).map((row) => row.paper_id)).size
-        ),
-      }))
-      .filter((row) => row.values.some((value) => value > 0));
-    return { rows, undatedOnly: candidates.length - rows.length };
-  }, [axis.years, plannerHeatN, subjects, themes]);
-
-  const treeData = useMemo(
-    () => themes.slice(0, treeN).map((entry) => ({ name: entry.topic, value: entry.papers, paperIds: entry.paperIds })),
-    [themes, treeN]
-  );
-
-  const comparisonThemes = useMemo(
-    () =>
-      selectedKeywords.length > 0
-        ? selectedKeywords
-        : themes.filter((entry) => entry.papers >= 2).slice(0, 5).map((entry) => entry.topic),
-    [selectedKeywords, themes]
-  );
-  const timelineData = useMemo(
-    () => themePapersByYear(subjects, comparisonThemes, axis.years),
-    [axis.years, comparisonThemes, subjects]
-  );
   const sharedKeywords = keywords.filter((keyword) => keyword.papers >= 2);
+  const keywordTheme = useMemo(() => keywordThemes(trends, themeColors), [themeColors, trends]);
+  const rankedKeywords = useMemo(
+    () =>
+      sharedKeywords.slice(0, 15).map((row) => {
+        const theme = keywordTheme.get(keywordThemeKey(row.keyword)) ?? "";
+        return { ...row, theme, color: themeColor(themeColors, theme, hydrated && themeMode === "dark") };
+      }),
+    [hydrated, keywordTheme, sharedKeywords, themeColors, themeMode]
+  );
+  const barThemes = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of rankedKeywords) if (row.theme && hasThemeColor(themeColors, row.theme)) seen.set(row.theme, row.color);
+    return [...seen.entries()].map(([label, color]) => ({ label, color }));
+  }, [rankedKeywords, themeColors]);
 
   if (trends.length === 0) {
     return (
@@ -489,7 +385,7 @@ export default function KeywordExplorer({
                           type="monotone"
                           dataKey="frequency"
                           name="Frequency"
-                          stroke={TOPIC_PALETTE[0]}
+                          stroke={ct.barFill}
                           strokeWidth={3}
                           dot={{ r: 3 }}
                         />
@@ -497,8 +393,9 @@ export default function KeywordExplorer({
                           type="monotone"
                           dataKey="papers"
                           name="Papers"
-                          stroke={TOPIC_PALETTE[3]}
+                          stroke={NEUTRAL_MARK}
                           strokeWidth={2}
+                          strokeDasharray="5 4"
                           dot={{ r: 3 }}
                         />
                       </LineChart>
@@ -528,7 +425,7 @@ export default function KeywordExplorer({
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip {...themedTooltip} />
-                        <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
+                        <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -666,297 +563,79 @@ export default function KeywordExplorer({
       <section className="app-surface px-5 py-5">
         <h3 className="text-base font-semibold text-slate-900 dark:text-white">Keywords used by the most papers</h3>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Ranked by how many papers use each keyword, not by how often one paper repeats it.
+          Ranked by how many papers use each keyword, not by how often one paper repeats it. Each bar is in the colour of the theme its papers file it under.
         </p>
-        {sharedKeywords.length > 0 ? (
-          <div className="mt-4" style={{ height: Math.min(15, sharedKeywords.length) * 30 + 50 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={sharedKeywords.slice(0, 15)} layout="vertical" margin={{ left: 8, right: 24 }}>
-                <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke={ct.grid} />
-                <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <YAxis
-                  type="category"
-                  dataKey="keyword"
-                  width={keywordLabels.width}
-                  tick={tickStyle(ct, 12)}
-                  tickFormatter={(value) => truncate(String(value), keywordLabels.chars)}
-                  stroke={ct.axisLine}
-                />
-                <Tooltip
-                  {...themedTooltip}
-                  formatter={(value, _name, item) => [
-                    `${value} papers (${(item as { payload?: { occurrences?: number } })?.payload?.occurrences ?? 0} mentions)`,
-                    "Used by",
-                  ]}
-                />
-                <Bar isAnimationActive={chartAnimationActive()}
-                  dataKey="papers"
-                  name="Papers"
-                  fill={categoricalColor(0)}
-                  radius={[0, 6, 6, 0]}
-                  onClick={(entry) => {
-                    const row = entry as { keyword?: string; paperIds?: string[] };
-                    if (row?.keyword) onDrilldown?.({ keyword: row.keyword, paperIds: row.paperIds });
-                  }}
-                  className={onDrilldown ? "cursor-pointer" : undefined}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+        {rankedKeywords.length > 0 ? (
+          <>
+            <div className="mt-4" style={{ height: rankedKeywords.length * 34 + 40 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rankedKeywords} layout="vertical" margin={{ left: 8, right: 24 }}>
+                  <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke={ct.grid} />
+                  <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                  <YAxis
+                    type="category"
+                    dataKey="keyword"
+                    width={keywordLabels.width}
+                    tick={wrappedTick(ct, keywordLabels.chars, 12)}
+                    interval={0}
+                    stroke={ct.axisLine}
+                  />
+                  <Tooltip
+                    {...themedTooltip}
+                    formatter={(value, _name, item) => {
+                      const payload = (item as { payload?: { occurrences?: number; theme?: string } })?.payload;
+                      return [
+                        `${value} papers (${payload?.occurrences ?? 0} mentions)${payload?.theme ? ` · ${payload.theme}` : ""}`,
+                        "Used by",
+                      ];
+                    }}
+                  />
+                  <Bar
+                    isAnimationActive={chartAnimationActive()}
+                    dataKey="papers"
+                    name="Papers"
+                    radius={[0, 6, 6, 0]}
+                    onClick={(entry) => {
+                      const row = entry as { keyword?: string; paperIds?: string[] };
+                      if (row?.keyword) onDrilldown?.({ keyword: row.keyword, paperIds: row.paperIds });
+                    }}
+                    className={onDrilldown ? "cursor-pointer" : undefined}
+                  >
+                    {rankedKeywords.map((row) => (
+                      <Cell key={row.keyword} fill={row.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <ul data-series-legend="" className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-700 dark:text-[#d4d4d4]" aria-label="Theme colours">
+              {[...barThemes, ...(rankedKeywords.some((row) => !hasThemeColor(themeColors, row.theme)) ? [{ label: "Other themes", color: NEUTRAL_MARK }] : [])].map((item) => (
+                <li key={item.label} className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  {item.label}
+                </li>
+              ))}
+            </ul>
             <ChartValues
               title="Keywords used by the most papers"
               csv={{
                 name: "Keywords used by the most papers",
-                header: ["Keyword", "Papers"],
-                rows: sharedKeywords.slice(0, 15).map((row) => [row.keyword, row.papers]),
+                header: ["Keyword", "Papers", "Theme"],
+                rows: rankedKeywords.map((row) => [row.keyword, row.papers, row.theme]),
               }}
-              values={sharedKeywords.slice(0, 15).map((row) => ({
+              values={rankedKeywords.map((row) => ({
                 key: row.keyword,
                 label: row.keyword,
                 detail: paperCount(row.papers),
                 onSelect: onDrilldown ? () => onDrilldown({ keyword: row.keyword, paperIds: row.paperIds }) : undefined,
               }))}
             />
-          </div>
+          </>
         ) : (
           <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">
             Every keyword here is used by a single paper, so there is nothing to rank yet.
           </p>
         )}
-      </section>
-
-      <section className="app-surface px-5 py-5">
-        <h3 className="text-base font-semibold text-slate-900 dark:text-white">Themes across years</h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Papers per theme per year for the {Math.min(plannerHeatN, themes.length)} largest themes. Every year in the range has a column.
-        </p>
-        {heatmapData.rows.length > 0 ? (
-          <ChartCsvButton
-            className="mt-1"
-            csv={{
-              name: "Themes across years",
-              header: ["Theme", ...axis.years],
-              rows: heatmapData.rows.map((row) => [row.theme, ...row.values]),
-            }}
-          />
-        ) : null}
-        {heatmapData.rows.length > 0 ? (
-          <div className="mt-4">
-            <Heatmap
-              rows={heatmapData.rows.map((row) => row.theme)}
-              cols={axis.years}
-              values={heatmapData.rows.map((row) => row.values)}
-              colorScale={ct.heatScaleAccent}
-            />
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">No theme has a dated paper in the current filters.</p>
-        )}
-        {heatmapData.undatedOnly > 0 ? (
-          <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
-            {plural(heatmapData.undatedOnly, "theme")} among the largest{" "}
-            {heatmapData.undatedOnly === 1 ? "appears" : "appear"} only in papers without a readable year, so{" "}
-            {heatmapData.undatedOnly === 1 ? "it is" : "they are"} not shown.
-          </p>
-        ) : null}
-      </section>
-
-      <section className="app-surface px-5 py-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Theme sizes</h3>
-          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-            Themes shown: {Math.min(treeN, themes.length)}
-            <input
-              type="range"
-              min={5}
-              max={Math.max(5, Math.min(60, themes.length))}
-              value={Math.min(treeN, Math.max(5, themes.length))}
-              onChange={(event) => setTreeN(+event.target.value)}
-              className="h-6 w-32"
-            />
-          </label>
-        </div>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Each rectangle is a theme, sized by its number of papers.</p>
-        <ChartCsvButton
-          className="mt-1"
-          csv={{ name: "Theme sizes", header: ["Theme", "Papers"], rows: treeData.map((row) => [row.name, row.value]) }}
-        />
-        {treeData.length > 0 && (
-          <div className="mt-4 h-[380px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <Treemap
-                data={treeData}
-                dataKey="value"
-                nameKey="name"
-                isAnimationActive={false}
-                content={
-                  <TreemapCell
-                    x={0}
-                    y={0}
-                    width={0}
-                    height={0}
-                    name=""
-                    value={0}
-                    edge={ct.segmentEdge}
-                    onDrilldown={onDrilldown}
-                  />
-                }
-              />
-            </ResponsiveContainer>
-          </div>
-        )}
-      </section>
-
-      <section className="app-surface px-5 py-5">
-        <h3 className="text-base font-semibold text-slate-900 dark:text-white">Themes and what they gather</h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Each theme, the topic labels its papers were given, and the keywords most of its papers use.
-          {query.trim() ? ` Filtered by "${query.trim()}".` : ""}
-        </p>
-        <ChartCsvButton
-          className="mt-1"
-          csv={{
-            name: "Themes and what they gather",
-            header: ["Theme", "Papers", "First year", "Last year", "Paper labels", "Keywords"],
-            rows: visibleThemes.map((row) => [
-              row.topic,
-              row.papers,
-              row.years[0] ?? "",
-              row.years[row.years.length - 1] ?? "",
-              row.aliases.join("; "),
-              row.keywords.join("; "),
-            ]),
-          }}
-        />
-        <div className="mt-4 max-h-[460px] overflow-auto rounded-xl border border-slate-200 dark:border-[#1f1f1f]">
-          <table className="min-w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50 dark:bg-[#030303]">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold">Theme</th>
-                <th className="px-3 py-2 text-right font-semibold">Papers</th>
-                <th className="px-3 py-2 text-left font-semibold">Years</th>
-                <th className="px-3 py-2 text-left font-semibold">Paper labels and keywords</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleThemes.map((row) => (
-                <tr
-                  key={row.topic}
-                  className="border-t border-slate-200 align-top hover:bg-slate-50 dark:border-[#1f1f1f] dark:hover:bg-[#0a0a0a]"
-                >
-                  <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
-                    <button
-                      type="button"
-                      onClick={() => onDrilldown?.({ topic: row.topic, paperIds: row.paperIds })}
-                      className="-my-1 py-1 text-left font-semibold text-slate-900 underline-offset-4 transition-colors hover:text-slate-600 hover:underline disabled:cursor-default disabled:no-underline dark:text-white dark:hover:text-slate-300"
-                      disabled={!onDrilldown}
-                      title="Open the papers in this theme"
-                    >
-                      {row.topic}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-right">{row.papers}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
-                    {row.years.length === 0
-                      ? "No dated papers"
-                      : row.years.length === 1
-                        ? row.years[0]
-                        : `${row.years[0]}–${row.years[row.years.length - 1]}`}
-                  </td>
-                  <td className="max-w-md px-3 py-2 text-slate-600 dark:text-slate-400">
-                    <div className="space-y-2">
-                      {row.aliases.length > 1 || row.aliases[0] !== row.topic ? (
-                        <p className="text-xs leading-5">{row.aliases.join("; ")}</p>
-                      ) : null}
-                      {row.keywords.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {row.keywords.map((keyword) => (
-                            <button
-                              key={`${row.topic}-${keyword}`}
-                              type="button"
-                              onClick={() =>
-                                onDrilldown?.({
-                                  keyword,
-                                  paperIds: [...(paperIdsByKeyword.get(keywordKey(keyword)) ?? [])],
-                                })
-                              }
-                              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:cursor-default dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a] dark:hover:text-white"
-                              disabled={!onDrilldown}
-                              title="Open papers for this keyword"
-                            >
-                              {keyword}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="app-surface px-5 py-5">
-        <h3 className="text-base font-semibold text-slate-900 dark:text-white">Compare themes over time</h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Choose themes to compare their papers per year. The five largest shared themes are shown until you choose.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {themes.slice(0, 20).map((row) => (
-            <button
-              key={row.topic}
-              type="button"
-              aria-pressed={comparisonThemes.includes(row.topic)}
-              onClick={() =>
-                setSelectedKeywords((current) =>
-                  current.includes(row.topic)
-                    ? current.filter((topic) => topic !== row.topic)
-                    : [...current, row.topic]
-                )
-              }
-              className={`min-h-9 rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                comparisonThemes.includes(row.topic)
-                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a]"
-              }`}
-            >
-              {row.topic}
-            </button>
-          ))}
-        </div>
-        {comparisonThemes.length > 0 && axis.years.length > 0 ? (
-          <ChartCsvButton
-            className="mt-3"
-            csv={{
-              name: "Compare themes over time",
-              ...seriesTable(timelineData, "year", comparisonThemes.map((topic) => ({ key: topic, label: topic }))),
-            }}
-          />
-        ) : null}
-        {comparisonThemes.length > 0 && axis.years.length > 0 ? (
-          <div className="mt-5 h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timelineData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
-                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <Tooltip {...themedTooltip} />
-                <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
-                {comparisonThemes.map((topic, index) => (
-                  <Line isAnimationActive={chartAnimationActive()}
-                    key={topic}
-                    type="linear"
-                    dataKey={topic}
-                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
       </section>
     </div>
   );

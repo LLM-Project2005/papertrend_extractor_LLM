@@ -34,7 +34,7 @@ import {
 import Modal from "@/components/ui/Modal";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
 import { SpinnerIcon } from "@/components/ui/Icons";
-import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
+import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload, triggerUrlDownload } from "@/lib/paper-report";
 import { getRunDisplayTitle } from "@/lib/ingestion-status";
 import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
@@ -275,16 +275,20 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
 
   const viewer = useMemo<PaperViewer>(() => ({ openPaper }), [openPaper]);
 
-  async function postRun(action: "open") {
+  async function signRun(action: "open" | "download") {
     if (!run) return null;
     const response = await fetch(`/api/workspace/library/${encodeURIComponent(run.id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ action }),
     });
-    const payload = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+    const payload = (await response.json().catch(() => ({}))) as { url?: string; attachment?: boolean; error?: string };
     if (!response.ok) throw new Error(payload.error ?? "The file could not be opened.");
-    return payload.url ?? null;
+    return payload.url ? { url: payload.url, attachment: payload.attachment === true } : null;
+  }
+
+  async function postRun(action: "open") {
+    return (await signRun(action))?.url ?? null;
   }
 
   async function patchRun(body: Record<string, unknown>) {
@@ -383,16 +387,8 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
             }
           }}
           onDownload={async () => {
-            const url = await postRun("open");
-            if (!url) return;
-            const anchor = document.createElement("a");
-            anchor.href = url;
-            anchor.download = fileName;
-            anchor.rel = "noopener noreferrer";
-            anchor.target = "_blank";
-            document.body.appendChild(anchor);
-            anchor.click();
-            anchor.remove();
+            const signed = await signRun("download");
+            if (signed) triggerUrlDownload(signed.url, signed.attachment);
           }}
           onDownloadReport={async () => {
             if (!detail?.available) throw new Error("The analysis for this paper is not ready yet.");

@@ -15,16 +15,13 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import PdfDropTarget from "@/components/workspace/PdfDropTarget";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
-import PaperAnalysisExplorerModal, {
-  PAPER_EXPLORER_TABS,
-  type PaperExplorerTab,
-} from "@/components/workspace/PaperAnalysisExplorerModal";
+import PaperAnalysisExplorerModal, { type PaperExplorerTab } from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
-import { readPaperQuote } from "@/lib/paper-address";
+import { readPaperQuote, readPaperTab } from "@/lib/paper-address";
 import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
-import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
+import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload, triggerUrlDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
 import dynamic from "next/dynamic";
 import {
@@ -554,7 +551,7 @@ export default function AdminImportClient() {
     return { ...updated, paper_title: updated.paper_title ?? runs.find((run) => run.id === updated.id)?.paper_title };
   }
 
-  async function postRun(runId: string, action: "copy" | "open") {
+  async function postRun(runId: string, action: "copy" | "open" | "download") {
     const response = await fetch(`/api/workspace/library/${runId}`, {
       method: "POST",
       headers: jsonRequestHeaders,
@@ -563,6 +560,7 @@ export default function AdminImportClient() {
     const payload = (await response.json()) as {
       run?: IngestionRunRow;
       url?: string;
+      attachment?: boolean;
       error?: string;
     };
     if (!response.ok) {
@@ -675,7 +673,7 @@ export default function AdminImportClient() {
     autoOpenedRunIdRef.current = requestedKey;
     const quote = readPaperQuote(searchParams.get("quote"));
     setAnalysisQuote(quote ? { runId: matchingRun.id, quote } : null);
-    void handleOpenPrimaryFileAction(matchingRun, readChoice(searchParams.get("tab"), PAPER_EXPLORER_TABS, "overview"));
+    void handleOpenPrimaryFileAction(matchingRun, readPaperTab(searchParams.get("tab")));
   }, [requestedPaperId, requestedRunId, runs, runsLoaded, searchParams]);
 
   // ------------------------------------------------------------- the address
@@ -764,7 +762,7 @@ export default function AdminImportClient() {
         setAnalysisError(null);
       } else if (paper !== analysisRunRef.current?.id) {
         const run = runsRef.current.find((item) => item.id === paper);
-        if (run) void handleViewAnalysis(run, readChoice(params.get("tab"), PAPER_EXPLORER_TABS, "overview")).catch(() => undefined);
+        if (run) void handleViewAnalysis(run, readPaperTab(params.get("tab"))).catch(() => undefined);
       }
     }
     window.addEventListener("popstate", onPopState);
@@ -785,16 +783,8 @@ export default function AdminImportClient() {
   }
 
   async function handleDownloadRun(run: IngestionRunRow) {
-    const url = await getRunOpenUrl(run);
-    if (!url) return;
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileNameOf(run);
-    anchor.rel = "noopener noreferrer";
-    anchor.target = "_blank";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    const payload = await postRun(run.id, "download");
+    if (payload.url) triggerUrlDownload(payload.url, payload.attachment === true);
   }
 
   async function handleDownloadAnalysisReport(

@@ -137,7 +137,8 @@ test("the full title is never lost, only the label is shortened", () => {
 
 test("a neighborhood label is clamped rather than running down the panel", () => {
   const map = source("components/workspace/RepositorySemanticMap.tsx");
-  assert.match(map, /line-clamp-2[^>]*title=\{cluster\.label\}/);
+  // The colour key holds the neighborhoods since 2026-10-24.
+  assert.match(map, /line-clamp-2[^>]*title=\{item\.label\}/);
   // `block` sets display and defeats line-clamp, which needs -webkit-box.
   // With both present the label still ran to three lines on the live panel.
   const labelTag = map.slice(map.indexOf("line-clamp-2") - 40, map.indexOf("line-clamp-2") + 20);

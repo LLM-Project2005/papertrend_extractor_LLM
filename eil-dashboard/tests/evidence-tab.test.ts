@@ -99,7 +99,7 @@ test("the viewer marks every passage, steps through them, and turns pages", () =
   assert.match(viewer, /aria-label="Next page"/);
   assert.match(viewer, /Evidence \{Math\.min\(activeIndex, located\.length - 1\) \+ 1\} of \{located\.length\}/);
   assert.match(viewer, /active: mark === active/, "every passage on a page is drawn, the one in focus marked as such");
-  assert.match(viewer, /\{missing\.length > 0 \? \(/, "passages the text lacks are listed even when none is marked");
+  assert.match(viewer, /\{missing\.length > 0 && \(unmarked \|\| located\.length === 0\) \? \(/, "passages the text lacks are listed, open, when none is marked or the PDF says why");
   // The page in focus is drawn at once; the others as they come into view.
   assert.match(viewer, /useEffect\(\(\) => \{\n\s+if \(hasActive\) setNear\(true\);\n\s+\}, \[hasActive\]\);/);
   const css = read("src/app/globals.css");

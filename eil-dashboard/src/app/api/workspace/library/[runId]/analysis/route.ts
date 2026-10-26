@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
+import { textSourceFromQuality } from "@/lib/pdf-text-kind";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
@@ -64,6 +65,7 @@ function buildExtractedDetails(
     duplicateOf: duplicate?.title
       ? { title: String(duplicate.title), score: Number(duplicate.score ?? 0) }
       : null,
+    textSource: textSourceFromQuality(quality),
   };
 }
 

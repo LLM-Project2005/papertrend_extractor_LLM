@@ -80,15 +80,15 @@ test("a spend row's units are the weighted allowance, from the model of every ca
 
 /* ------------------------------------------------ the models a reader can choose */
 
-test("a request may name Luna or Sol; anything else is answered by Luna", () => {
-  assert.deepEqual(CHAT_MODELS.map((model) => model.value), [LUNA_MODEL, SOL_MODEL]);
+test("GPT-6 Luna is the only model; a request naming Sol or anything else is answered by Luna", () => {
+  // Sol was offered beside Luna from 2026-10-22 to 2026-10-24 and withdrawn: it used too much of the allowance.
+  assert.deepEqual(CHAT_MODELS.map((model) => model.value), [LUNA_MODEL]);
   assert.equal(DEFAULT_CHAT_MODEL, LUNA_MODEL);
-  assert.equal(resolveChatModel(SOL_MODEL), SOL_MODEL);
-  for (const named of [undefined, null, "", "openai/gpt-6.1-sol", "openai/gpt-6-astra", "anthropic/some-costly-model"]) {
+  for (const named of [SOL_MODEL, undefined, null, "", "openai/gpt-6.1-sol", "openai/gpt-6-astra", "anthropic/some-costly-model"]) {
     assert.equal(resolveChatModel(named), LUNA_MODEL, String(named));
   }
   assert.equal(chatModelDescription(LUNA_MODEL), "By OpenAI.");
-  assert.equal(chatModelDescription(SOL_MODEL), "By OpenAI. About 20x usage.");
+  assert.doesNotMatch(read("src/lib/chat-models.ts"), /label: "GPT-6\.1 Sol"/);
 });
 
 test("what a request usually uses: Luna's medians, twenty times for Sol, and Max with Sol writing only", () => {
@@ -102,19 +102,19 @@ test("what a request usually uses: Luna's medians, twenty times for Sol, and Max
   assert.equal(requestsLeft(SOL_MODEL, "medium", 600_000), 0);
 });
 
-test("a Sol request that what is left will not cover is refused before it starts, and says why", () => {
+test("a request on a model dearer than Luna that what is left will not cover is refused before it starts, and says why", () => {
+  // No such model is offered now; the check stays for a later one. Sol's prices stand in for it.
   const day = { limit: 1_000_000, exempt: false };
   assert.equal(allowanceRefusal({ ...day, model: LUNA_MODEL, kind: "high", used: 999_000 }), null, "Luna keeps the old rule");
   assert.equal(allowanceRefusal({ ...day, model: SOL_MODEL, kind: "medium", used: 0 }), null);
   assert.equal(allowanceRefusal({ ...day, model: SOL_MODEL, kind: "medium", used: 0, exempt: true }), null, "admins are not limited");
   const short = allowanceRefusal({ ...day, model: SOL_MODEL, kind: "medium", used: 600_000 });
-  assert.match(short ?? "", /^An answer at Medium with GPT-6\.1 Sol usually uses about 70% of a day's AI allowance \(GPT-6\.1 Sol counts about 20 times GPT-6 Luna\), and 40% is left today\./);
+  assert.match(short ?? "", /usually uses about 70% of a day's AI allowance \(this model counts about 20 times GPT-6 Luna\), and 40% is left today\./);
   assert.match(short ?? "", /Ask with GPT-6 Luna, choose a lower effort, or try again after the allowance resets at midnight UTC \(7:00 in Thailand\)\./);
   const never = allowanceRefusal({ ...day, model: SOL_MODEL, kind: "high", used: 0 });
-  assert.match(never ?? "", /^An answer at High with GPT-6\.1 Sol usually uses about 190% of a day's AI allowance .*so it can't fit in one day\. Choose a lower effort, or ask with GPT-6 Luna\.$/);
-  assert.match(allowanceRefusal({ ...day, model: SOL_MODEL, kind: "max", used: 700_000 }) ?? "", /^A Max answer written by GPT-6\.1 Sol usually uses about 53%/);
+  assert.match(never ?? "", /usually uses about 190% of a day's AI allowance .*so it can't fit in one day\. Choose a lower effort, or ask with GPT-6 Luna\.$/);
   const chart = allowanceRefusal({ ...day, model: SOL_MODEL, kind: "chart", used: 900_000 }) ?? "";
-  assert.match(chart, /^A chart with GPT-6\.1 Sol/);
+  assert.match(chart, /^A chart with this model/);
   assert.doesNotMatch(chart, /lower effort/, "a chart counts the same at any effort");
 });
 
@@ -146,35 +146,32 @@ test("the chat checks the allowance before the question is saved, and Max hands 
   assert.equal(run.match(/^\s+model,$/gm)?.length, 2, "the writer and its corrections take the session's model");
 });
 
-test("a run's writer is the model saved with its plan; none is Luna", () => {
+test("a run's writer is the model saved with its plan while it is offered; none, or a withdrawn one, is Luna", () => {
   const write = (model: unknown) => ({ steps: [{ tool_name: "dr2_read", input_payload: {} }, { tool_name: "dr2_write", input_payload: { engine: "x", model } }] });
-  assert.equal(sessionWriterModel(write(SOL_MODEL)), SOL_MODEL);
+  assert.equal(sessionWriterModel(write(SOL_MODEL)), null, "a plan saved with Sol before it was withdrawn is written by Luna");
+  assert.equal(sessionWriterModel(write(LUNA_MODEL)), null);
   assert.equal(sessionWriterModel(write(null)), null);
   assert.equal(sessionWriterModel(null), null);
 });
 
-test("the composer offers both models with what Sol counts, and Max and Ask again carry the choice", () => {
+test("the composer offers GPT-6 Luna, and Max and Ask again carry the choice", () => {
   const client = read("src/components/chat/ChatClient.tsx");
   assert.match(client, /const MODEL_OPTIONS = CHAT_MODELS\.map\(\(model\) => \(\{/);
   assert.match(client, /description: chatModelDescription\(model\.value\)/);
-  assert.match(client, /action: "plan",\n\s+\/\/ A model dearer than GPT-6 Luna writes the answer; Luna still reads the papers\.\n\s+model: selectedModel,/);
   assert.match(client, /setEffort\("max"\);\n\s+setSelectedModel\(choice\.model\);/);
-  assert.match(client, /At Max, GPT-6 Luna reads the papers and \$\{chatModelLabel\(selectedModel\)\} writes the answer\./);
-  assert.match(read("src/components/chat/ThinkingEffort.tsx"), /\{note \? <p className="mt-2 px-1 text-xs leading-5 text-body">\{note\}<\/p> : null\}/);
 });
 
-test("Ask again lists both models once there are two", async () => {
+test("Ask again shows no model list while there is one model", async () => {
   const { default: AskAgainMenu } = await import("../src/components/chat/AskAgainMenu");
   const models = CHAT_MODELS.map((model) => ({ value: model.value, label: model.label }));
   const html = renderToStaticMarkup(createElement(AskAgainMenu, { models, model: LUNA_MODEL, onAsk: () => undefined, defaultOpen: true }));
-  assert.match(html, />Model</);
-  assert.match(html, />GPT-6 Luna</);
-  assert.match(html, />GPT-6\.1 Sol</);
+  assert.doesNotMatch(html, />Model</);
+  assert.doesNotMatch(html, /GPT-6\.1 Sol/);
 });
 
 /* ------------------------------------------------ the meter */
 
-test("the meter says what is left, and about how many answers that is on each model", async () => {
+test("the meter is one bar: what is left today and when it starts again, with no estimates", async () => {
   const { UsagePanel, percentLeft } = await import("../src/components/chat/UsageMeter");
   const usage = {
     exempt: false,
@@ -186,20 +183,20 @@ test("the meter says what is left, and about how many answers that is on each mo
   };
   assert.equal(percentLeft(usage.tokens), 73);
   const html = renderToStaticMarkup(createElement(UsagePanel, { usage, resets: "7:00" }));
+  assert.match(html, /Today’s AI allowance/);
   assert.match(html, />73% left</);
-  assert.match(html, /Counted in GPT-6 Luna tokens: 270,000 of 1,000,000 used\. GPT-6\.1 Sol counts about 20 times as much\./);
-  assert.match(html, /20 answers at Medium with GPT-6 Luna/);
-  assert.match(html, /1 answer at Medium with GPT-6\.1 Sol/);
-  assert.match(html, /88 of 100 left/);
-  assert.match(html, /9 of 10 left/);
-  assert.doesNotMatch(html, /Whole site this month/, "only admins see the site's month");
+  assert.match(html, /Starts again at 7:00\./);
+  assert.equal(html.match(/rounded-full bg-slate-100/g)?.length, 1, "one bar");
+  for (const gone of ["Enough for about", "answers at Medium", "Counted in GPT-6 Luna tokens", "Questions", "Max effort answers", "Web searches", "Analysing papers"]) {
+    assert.ok(!html.includes(gone), gone);
+  }
+  const low = renderToStaticMarkup(createElement(UsagePanel, { usage: { ...usage, tokens: { used: 950_000, limit: 1_000_000 } }, resets: "7:00" }));
+  assert.match(low, /text-amber-700/, "amber with a tenth left");
   const admin = renderToStaticMarkup(
     createElement(UsagePanel, { usage: { ...usage, exempt: true, account: { monthUsd: 82.5, budgetUsd: 100, share: 0.825 } }, resets: "7:00" })
   );
-  assert.match(admin, /Whole site this month/);
-  assert.match(admin, /\$82\.50 of \$100/);
-  assert.match(admin, /text-amber-700/, "amber from 80%");
-  assert.match(admin, /12 used/);
+  assert.match(admin, /This account has no daily limit\./);
+  assert.doesNotMatch(admin, /Whole site this month/, "the site's month stays on the admin page");
 });
 
 /* ------------------------------------------------ the month */

@@ -2,7 +2,7 @@ import "server-only";
 
 import { Storage } from "@google-cloud/storage";
 import { getGcsUploadBucket, getKnownUploadBuckets } from "@/lib/server-env";
-import { parseStoredObject } from "@/lib/storage-path";
+import { attachmentDisposition, parseStoredObject } from "@/lib/storage-path";
 
 const storage = new Storage();
 
@@ -50,16 +50,20 @@ export async function createGcsSignedReadUrl({
   objectName,
   expiresMinutes = 60,
   bucketName,
+  saveAs,
 }: {
   objectName: string;
   expiresMinutes?: number;
   bucketName?: string;
+  /** Storage sends the file as an attachment under this name, so the browser saves it instead of showing it. */
+  saveAs?: string;
 }): Promise<string> {
   const bucket = resolveBucket(bucketName);
   const [signedUrl] = await storage.bucket(bucket).file(objectName).getSignedUrl({
     version: "v4",
     action: "read",
     expires: Date.now() + expiresMinutes * 60_000,
+    ...(saveAs ? { responseDisposition: attachmentDisposition(saveAs) } : {}),
   });
   return signedUrl;
 }

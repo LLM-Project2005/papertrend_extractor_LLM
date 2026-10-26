@@ -318,9 +318,8 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
   budget: STRICT_RESEARCH_BUDGET,
 };
 
-// GPT-6 Luna, and since 2026-10-22 GPT-6.1 Sol (chat-models.ts). The evidence
-// is chosen on the reader's model (docs/25); Sol counts about twenty times Luna
-// against the daily allowance, which its description says.
+// GPT-6 Luna (chat-models.ts; GPT-6.1 Sol was offered 2026-10-22 to 10-24).
+// The evidence is chosen on the reader's model (docs/25).
 const MODEL_OPTIONS = CHAT_MODELS.map((model) => ({
   value: model.value,
   label: model.label,
@@ -2583,8 +2582,8 @@ export default function ChatClient() {
     setParameterMenuOpen(false);
     setEditingMessageId(null);
     setEditingDraft("");
-    // Kept, so a request that is refused (a GPT-6.1 Sol answer the allowance
-    // will not cover) or fails gives the conversation back as it was.
+    // Kept, so a request that is refused (a daily limit reached) or fails
+    // gives the conversation back as it was.
     const previousMessages = messages;
     setMessages(nextMessages);
 

@@ -16,3 +16,8 @@ export function useDashboardData() {
   const state = globalThis.__bootsecDashboardData ?? { data: null, loading: true };
   return { allYears: [] as string[], ...state, refreshing: false, refresh: async () => state.data };
 }
+
+/** The paper window's read of a repository's rows (useData.ts): none here, so topics carry no theme colour. */
+export function useRepositoryTrends() {
+  return null;
+}

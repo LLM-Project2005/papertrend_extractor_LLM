@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
 import { nodeLabel } from "@/lib/semantic-map-presentation";
 import {
   forceCenter,
@@ -44,6 +44,8 @@ interface Props {
   showLabels: boolean;
   onPaperSelect: (paperId: string) => void;
   onEdgeSelect: (edge: SemanticMapEdge) => void;
+  /** Filled with a reader of where each paper is now, for the PNG download. */
+  positionsRef?: MutableRefObject<(() => Record<string, { x: number; y: number }>) | null>;
 }
 
 const DEFAULT_VIEW: ViewBox = { x: 55, y: 65, width: 890, height: 670 };
@@ -75,6 +77,7 @@ export default function ForceDirectedSemanticGraph({
   showLabels,
   onPaperSelect,
   onEdgeSelect,
+  positionsRef,
 }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const simulationRef = useRef<Simulation<ForceNode, ForceLink> | null>(null);
@@ -86,6 +89,15 @@ export default function ForceDirectedSemanticGraph({
   const panRef = useRef<{ pointerId: number; clientX: number; clientY: number; start: ViewBox } | null>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [viewBox, setViewBox] = useState<ViewBox>(DEFAULT_VIEW);
+  const latestPositions = useRef(positions);
+  latestPositions.current = positions;
+  useEffect(() => {
+    if (!positionsRef) return;
+    positionsRef.current = () => latestPositions.current;
+    return () => {
+      positionsRef.current = null;
+    };
+  }, [positionsRef]);
   const pointById = useMemo(() => new Map(points.map((point) => [point.paperId, point])), [points]);
   const edgeById = useMemo(() => new Map(edges.map((edge) => [edgeId(edge), edge])), [edges]);
   const distanceRange = useMemo(() => {
@@ -272,7 +284,7 @@ export default function ForceDirectedSemanticGraph({
     if (panRef.current?.pointerId === event.pointerId) panRef.current = null;
   }
 
-  function zoomAt(factor: number, focusX = 500, focusY = 400) {
+  const zoomAt = useCallback((factor: number, focusX = 500, focusY = 400) => {
     setViewBox((current) => {
       const width = clamp(current.width * factor, 360, 1400);
       const height = width * (670 / 890);
@@ -285,13 +297,23 @@ export default function ForceDirectedSemanticGraph({
         height,
       };
     });
-  }
+  }, []);
 
-  function handleWheel(event: WheelEvent<SVGSVGElement>) {
-    event.preventDefault();
-    const focus = graphPoint(event.clientX, event.clientY);
-    zoomAt(event.deltaY > 0 ? 1.12 : 0.89, focus.x, focus.y);
-  }
+  // Over the map the wheel zooms and never scrolls the page (2026-10-24
+  // review). React attaches its wheel listener as passive, so the old
+  // onWheel's preventDefault was ignored and the page scrolled as it zoomed;
+  // this listener is not passive, and it holds the page at the zoom limits too.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const focus = graphPoint(event.clientX, event.clientY);
+      zoomAt(event.deltaY > 0 ? 1.12 : 0.89, focus.x, focus.y);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [graphPoint, zoomAt]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -301,7 +323,6 @@ export default function ForceDirectedSemanticGraph({
         className="h-full w-full touch-none select-none"
         role="img"
         aria-label="Interactive force-directed semantic relationship graph"
-        onWheel={handleWheel}
       >
         <rect
           x={viewBox.x}
@@ -385,10 +406,6 @@ export default function ForceDirectedSemanticGraph({
         <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAt(1.2)} className="flex h-9 w-9 items-center justify-center border-r border-slate-200 text-lg font-medium text-slate-700 hover:bg-slate-50 dark:border-[#292929] dark:text-white dark:hover:bg-[#151515]">-</button>
         <button type="button" title="Reset view" onClick={() => setViewBox(DEFAULT_VIEW)} className="h-9 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-white dark:hover:bg-[#151515]">Fit</button>
       </div>
-      <p className="pointer-events-none absolute bottom-3 left-3 max-w-xs rounded-lg border border-hairline bg-surface/90 px-3 py-2 text-xs leading-5 text-body shadow-raise backdrop-blur">
-        <span className="font-medium text-ink">Free graph.</span> Positions come from the links and your dragging, so distance does not show similarity. Switch to Fixed projection to compare content.
-      </p>
-      <p className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-white/85 px-2 py-1 text-[10px] text-slate-500 backdrop-blur dark:bg-black/85 dark:text-[#999]">Drag nodes / drag canvas / scroll to zoom</p>
     </div>
   );
 }
