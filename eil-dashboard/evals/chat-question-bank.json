@@ -114,7 +114,7 @@
      "aggregate_corpus",
      "analyze_each_document"
     ],
-    "notes": "VOT grade 7, oracy 14-15 yrs, debate grade 10-12, genre analysis M6, learner autonomy grade 5, EIL PBL China grade 6, corpus verbal complements young learners"
+    "notes": "VOT grade 7, oracy 14-15 yrs, debate grade 10-12, genre analysis M6, learner autonomy grade 5, EIL PBL China grade 6, corpus verbal complements young learners; no university study (four undergraduate studies were listed once, 2026-10-28)"
    }
   },
   {
@@ -348,9 +348,10 @@
    "prompt": "Which instruments were used to measure English speaking ability?",
    "expect": {
     "ops": [
-     "search_evidence"
+     "search_evidence",
+     "screen_papers"
     ],
-    "notes": "IPA speaking tests/rubrics, oral communication tests (PBL), oracy tests"
+    "notes": "IPA speaking tests/rubrics, oral communication tests (PBL), oracy tests; must include the project-based oral communication study (missed by a short read, 2026-10-28)"
    }
   },
   {
@@ -428,7 +429,8 @@
    "prompt": "งานวิจัยเรื่องขนาดคำศัพท์ของนักศึกษาปีหนึ่งชาวไทยมีผู้เข้าร่วมกี่คน",
    "expect": {
     "ops": [
-     "search_evidence"
+     "search_evidence",
+     "screen_papers"
     ],
     "facts": [
      "484"
@@ -534,11 +536,12 @@
    "prompt": "What is the total number of participants across all the studies?",
    "expect": {
     "ops": [
-     "aggregate_corpus",
-     "analyze_each_document",
-     "search_evidence"
+     "visualize"
     ],
-    "notes": "honest: sums what is reported or explains it cannot be exact"
+    "notes": "each paper's count read and checked against its sentence, then added up in code (2026-10-28); was a synthesis of stored summaries that said three studies give no count",
+    "facts": [
+     "Added up"
+    ]
    }
   },
   {
@@ -570,9 +573,9 @@
    "prompt": "How many of the studies are quantitative, qualitative, or mixed methods?",
    "expect": {
     "ops": [
-     "aggregate_corpus"
+     "visualize"
     ],
-    "notes": "counts with basis"
+    "notes": "counts of the approaches each paper states, read and checked (2026-10-28); aggregate_corpus said they could not be determined"
    }
   },
   {
@@ -634,6 +637,46 @@
      "32"
     ],
     "notes": "two groups of 32; corpus vs traditional"
+   }
+  },
+  {
+   "id": "C49",
+   "category": "average of a value",
+   "prompt": "What is the average sample size of the studies?",
+   "expect": {
+    "ops": [
+     "visualize"
+    ],
+    "facts": [
+     "mean"
+    ],
+    "notes": "each paper's count read and checked; the mean computed in code"
+   }
+  },
+  {
+   "id": "C50",
+   "category": "group of studies",
+   "prompt": "Compare the findings of the genre-based writing studies.",
+   "expect": {
+    "ops": [
+     "search_evidence"
+    ],
+    "notes": "aboutPapers set; every genre-based writing study read (GWIMBLE 2020, genre analysis 2024, G-DA genre-based 2025), the same set on every run"
+   }
+  },
+  {
+   "id": "C51",
+   "category": "listing (duplicates)",
+   "prompt": "List every paper in this repository with its year.",
+   "expect": {
+    "ops": [
+     "list_documents"
+    ],
+    "facts": [
+     "36 studies",
+     "uploaded twice"
+    ],
+    "notes": "one row per study; second uploads marked, not listed again"
    }
   }
  ],

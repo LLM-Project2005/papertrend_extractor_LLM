@@ -77,6 +77,45 @@ function termsOf(text: string): string[] {
   return tokenizeRepositoryText(text).filter((token) => token.length > 1 && !STOPWORDS.has(token));
 }
 
+/**
+ * The words papers use for the details questions ask about. Passages are
+ * chosen by the question's own words, and papers rarely use them: "20
+ * secondary school students in grade 11" has no "participants", so a table of
+ * the writing studies' participants said "not found in the text read" for a
+ * paper that states it, and the total of all participants missed three studies
+ * that give theirs (the question bank, 2026-10-28). A question about one of
+ * these details also looks for its usual words.
+ */
+const DETAIL_WORDS: Array<[RegExp, string]> = [
+  [
+    /\b(?:participants?|samples?|sample sizes?|subjects?|respondents?|informants?|population|how many (?:students|learners|teachers|people|pupils))\b|ผู้เข้าร่วม|กลุ่มตัวอย่าง|ผู้ให้ข้อมูล/i,
+    "participants students learners pupils teachers respondents subjects sample population aged grade undergraduates sampling",
+  ],
+  [
+    /\b(?:duration|how long|weeks?|months?|semesters?|sessions?|length of (?:the |each )?(?:intervention|treatment|course|program|programme|study))\b|ระยะเวลา|กี่สัปดาห์/i,
+    "weeks week months semester sessions hours lasted period duration",
+  ],
+  [
+    /\b(?:instruments?|tools?|measures?|measured|questionnaires?|tests?|rubrics?|data collection)\b|เครื่องมือ/i,
+    "instrument instruments questionnaire test interview rubric scale survey observation checklist pretest posttest",
+  ],
+  [
+    /\b(?:designs?|pretest|posttest|pre-test|post-test|experimental|quasi|control group|methodology|methods? (?:used|approach)|quantitative|qualitative|mixed)\b|รูปแบบการวิจัย|ระเบียบวิธี/i,
+    "design pretest posttest experimental quasi control group one-group quantitative qualitative mixed methods",
+  ],
+  [/\beffect sizes?\b|ขนาดอิทธิพล/i, "effect size cohen eta squared partial"],
+  [
+    /\b(?:countr(?:y|ies)|where (?:was|were|did)|settings?|conducted|location)\b|ประเทศ/i,
+    "country thailand university school province setting context conducted",
+  ],
+];
+
+/** The questions, and the usual words for any detail they ask about. */
+export function withDetailWords(queries: string[]): string[] {
+  const asked = queries.join(" ");
+  return [...queries, ...DETAIL_WORDS.filter(([pattern]) => pattern.test(asked)).map(([, words]) => words)];
+}
+
 /** A reference list printed without a heading the section splitter knows, cut from the end of the text. */
 function withoutReferenceList(text: string): string {
   const heading = /^[ \t]*(?:#+[ \t]*)?(?:\*\*)?(?:references|bibliography|works cited|เอกสารอ้างอิง|บรรณานุกรม)(?:\*\*)?[ \t]*:?[ \t]*$/gim;
@@ -198,8 +237,8 @@ export function readPapers(papers: ReadablePaper[], queries: string[], budget: n
   const documentFrequency = new Map<string, number>();
   for (const piece of all) for (const term of piece.terms.keys()) documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
   const averageLength = all.length ? all.reduce((sum, piece) => sum + piece.length, 0) / all.length : 1;
-  const queryTerms = [...new Set(queries.map((query) => query.trim()).filter(Boolean))]
-    .slice(0, 10)
+  const queryTerms = [...new Set(withDetailWords(queries.map((query) => query.trim()).filter(Boolean).slice(0, 10)))]
+    .slice(0, 16)
     .map((query) => ({ terms: [...new Set(termsOf(query))], phrase: normalizeRepositoryText(query).trim() }))
     .filter((query) => query.terms.length > 0);
   for (const piece of all) {

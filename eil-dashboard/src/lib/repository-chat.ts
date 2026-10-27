@@ -44,7 +44,7 @@ import { SECTION_LABELS, SECTION_ORDER, splitPaperSections, type PaperSectionKey
 import { normalizeTitle } from "@/lib/references/citation";
 import { normalizeEffort, type ChatEffort } from "@/lib/chat-effort";
 import { READING_BUDGET, readPapers, type PaperReading } from "@/lib/paper-reading";
-import { screenPapers, type ScreenMatch } from "@/lib/paper-screening";
+import { MEMBERSHIP_CHARS, screenPapers, type ScreenMatch } from "@/lib/paper-screening";
 import {
   ANSWER_FORMAT_RULES,
   formatConstraintInstruction,
@@ -159,6 +159,8 @@ export interface RepositoryContext {
 export interface RepositoryPromptPlan {
   intent: RepositoryIntent;
   refinedQuestion: string;
+  /** The group of studies a focused question is about ("dynamic assessment studies"), when it names one. */
+  aboutPapers?: string;
   terms: string[];
   retrievalQueries: string[];
   evidenceNeeds: string[];
@@ -187,6 +189,7 @@ export interface RepositoryExecutionPlan {
   operations: RepositoryOperation[];
   scopeMode: "complete" | "focused";
   refinedQuestion: string;
+  aboutPapers?: string;
   terms: string[];
   retrievalQueries: string[];
   evidenceNeeds: string[];
@@ -525,6 +528,7 @@ const ExecutionPlanSchema = z.object({
   ])).min(1)).optional(),
   scopeMode: z.enum(["complete", "focused"]),
   refinedQuestion: clippedText(1_000).pipe(z.string().min(1)),
+  aboutPapers: z.preprocess((value) => (typeof value === "string" ? value : ""), clippedText(160)).default(""),
   terms: clippedList(12, 100).default([]),
   retrievalQueries: clippedList(8, 240).default([]),
   evidenceNeeds: clippedList(8, 240).default([]),
@@ -1638,11 +1642,16 @@ function wholePaper(row: PaperSectionCounts): number {
 export function oneCopyEach<T extends { title: string; year: string }>(papers: T[]): T[] {
   const seen = new Set<string>();
   return papers.filter((paper) => {
-    const key = `${normalizeTitle(paper.title)}\u0000${paper.year}`;
+    const key = studyKey(paper);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+/** What makes two uploads one study: the same title and year. */
+function studyKey(paper: { title: string; year: string }): string {
+  return `${normalizeTitle(paper.title)}\u0000${paper.year}`;
 }
 
 /** The context cut to some of its papers, with its counts recomputed for them. */
@@ -1788,34 +1797,65 @@ export function wordCountResult(
   if (plan.terms.length === 0) return totalWordCountResult(context, plan);
   const thai = answerLanguageIsThai(plan.answerLanguage);
   const terms = plan.terms.slice(0, 6);
-  const rows = context.papers.map((paper) => {
+  // Each study once, and the total first: "how many times does 'motivation'
+  // appear?" gave a 41-row table, mostly zeros, with both copies of five
+  // studies counted and the total in its last row (the question bank, 2026-10-28).
+  const studies = oneCopyEach(context.papers);
+  const copies = context.papers.length - studies.length;
+  const rows = studies.map((paper) => {
     const values = Object.fromEntries(terms.map((term) => [term, countTermInRepositoryPaper(paper, term)]));
     return { paper, values };
   });
   const totals = Object.fromEntries(
     terms.map((term) => [term, rows.reduce((sum, row) => sum + Number(row.values[term] ?? 0), 0)])
   );
-  const header = `| Paper | ${terms.join(" | ")} |`;
+  const sumOf = (values: Record<string, number>) => terms.reduce((sum, term) => sum + Number(values[term] ?? 0), 0);
+  const used = rows.filter(({ values }) => sumOf(values) > 0).sort((a, b) => sumOf(b.values) - sumOf(a.values) || a.paper.title.localeCompare(b.paper.title));
+  const unit = copies > 0 ? (thai ? "งานวิจัย" : "studies") : (thai ? "เอกสาร" : "papers");
+  const leads = terms.map((term) => {
+    const holding = rows.filter(({ values }) => Number(values[term]) > 0);
+    if (holding.length === 0) {
+      return thai ? `**“${term}”** ไม่ปรากฏใน${unit}ทั้ง ${rows.length} เรื่อง` : `**“${term}”** does not appear in any of the ${rows.length} ${unit}.`;
+    }
+    const top = [...holding].sort((a, b) => Number(b.values[term]) - Number(a.values[term]))[0];
+    return thai
+      ? `**“${term}”** ปรากฏ **${totals[term].toLocaleString()} ครั้ง** ใน ${holding.length} จาก ${rows.length} ${unit} มากที่สุดใน “${shortLabel(top.paper.title)}” (${Number(top.values[term]).toLocaleString()})`
+      : `**“${term}”** appears **${totals[term].toLocaleString()} times** in ${holding.length} of the ${rows.length} ${unit}; most often in “${shortLabel(top.paper.title)}” (${Number(top.values[term]).toLocaleString()}).`;
+  });
+  const header = `| ${thai ? "เอกสาร" : "Paper"} | ${terms.join(" | ")} |`;
   const divider = `| --- | ${terms.map(() => "---:").join(" | ")} |`;
-  const tableRows = rows.map(
+  const tableRows = used.map(
     ({ paper, values }) =>
       `| ${paper.title.replace(/\|/g, "-")} | ${terms.map((term) => values[term]).join(" | ")} |`
   );
-  const totalRow = `| **Total (${context.papers.length} papers)** | ${terms.map((term) => `**${totals[term]}**`).join(" | ")} |`;
-  const answer = [
-    `## Exact word count`,
-    `Counted normalized, case-insensitive whole-word occurrences across **${context.scopeLabel}**.`,
-    "",
-    header,
-    divider,
-    ...tableRows,
-    totalRow,
-    "",
+  const totalRow = `| **${thai ? `รวม (${rows.length} ${unit})` : `Total (${rows.length} ${unit})`}** | ${terms.map((term) => `**${totals[term]}**`).join(" | ")} |`;
+  const unused = rows.length - used.length;
+  const notes = [
+    used.length > 0 && unused > 0
+      ? thai
+        ? `อีก ${unused} ${unit}ไม่มีคำนี้`
+        : unused === 1
+          ? `The other ${copies > 0 ? "study" : "paper"} does not use ${terms.length === 1 ? "it" : "these words"}.`
+          : `The other ${unused} ${unit} do not use ${terms.length === 1 ? "it" : "these words"}.`
+      : "",
+    copies > 0
+      ? thai
+        ? `ไฟล์ซ้ำ ${copies} ไฟล์นับเป็นงานเดียว`
+        : `${copies === 1 ? "One paper was" : `${copies} papers were`} uploaded twice and ${copies === 1 ? "is" : "are"} counted once.`
+      : "",
     contentSourceNote(context.papers, thai),
-    "Counting is case-insensitive. Thai uses dictionary-based word segmentation. Hyphens act as word boundaries, apostrophe-containing words are preserved, and multi-word terms require an exact consecutive phrase.",
+    thai
+      ? "นับแบบไม่สนตัวพิมพ์เล็กใหญ่ ข้อความภาษาไทยตัดคำด้วยพจนานุกรม คำที่มีหลายคำต้องเรียงติดกันตรงตัว"
+      : "Counting is case-insensitive. Thai uses dictionary-based word segmentation. Hyphens act as word boundaries, apostrophe-containing words are preserved, and multi-word terms require an exact consecutive phrase.",
+  ].filter(Boolean);
+  // Blocks apart, so the table is a table and each term's line its own.
+  const answer = [
+    leads.length > 1 ? leads.map((lead) => `- ${lead}`).join("\n") : leads[0],
+    used.length > 0 ? [header, divider, ...tableRows, totalRow].join("\n") : "",
+    notes.join(" "),
   ]
     .filter(Boolean)
-    .join("\n");
+    .join("\n\n");
   const charts: RepositoryChartPayload[] = plan.needsChart
     ? [
         {
@@ -1825,7 +1865,7 @@ export function wordCountResult(
           metric: "word_count",
           xKey: "label",
           yKeys: terms,
-          data: rows.map(({ paper, values }) => ({ label: shortLabel(paper.title), ...values, paperId: paper.paperId })),
+          data: (used.length > 0 ? used : rows).map(({ paper, values }) => ({ label: shortLabel(paper.title), ...values, paperId: paper.paperId })),
           planner: {
             source: plan.source,
             reason: plan.reason || "Exact term counts grouped by paper.",
@@ -1843,7 +1883,7 @@ export function wordCountResult(
   }
   return {
     answer,
-    citations: rows.map(({ paper }) => citationForPaper(paper, `Included in exact count for ${terms.join(", ")}.`)),
+    citations: used.map(({ paper }) => citationForPaper(paper, `Included in exact count for ${terms.join(", ")}.`)),
     charts,
     limitations,
   };
@@ -1944,11 +1984,21 @@ export interface SelectedEvidence {
   missingEvidenceNeeds: string[];
 }
 
+/**
+ * The repository in a few lines. Asked "how many studies are in this
+ * repository?" in Thai, the chat said 41 papers of 56 files and never 36
+ * studies, which the English answer led with: five uploads are second copies
+ * (the question bank, 2026-10-28). Studies come first whenever there are
+ * copies. After an answer that already gave the asked-for fact (`brief`),
+ * only the counts follow, not the folders and the corpus's words: "Which
+ * paper is the longest?" ended in five lines of file statistics.
+ */
 export function buildRepositoryStatisticsSummary(
-  papers: Array<{ year: string; folderId: string; totalWords: number }>,
+  papers: Array<{ year: string; folderId: string; totalWords: number; title?: string }>,
   scopeLabel: string,
   prompt: string,
-  runStats?: RepositoryRunStats
+  runStats?: RepositoryRunStats,
+  brief = false
 ): string {
   const folderCount = new Set(papers.map((paper) => paper.folderId).filter(Boolean)).size;
   const unknownYearCount = papers.filter(
@@ -1956,6 +2006,9 @@ export function buildRepositoryStatisticsSummary(
   ).length;
   const totalWords = papers.reduce((sum, paper) => sum + Math.max(0, paper.totalWords || 0), 0);
   const analyzedCount = papers.length;
+  const titled = papers.every((paper) => typeof paper.title === "string" && paper.title.trim());
+  const studies = titled ? oneCopyEach(papers.map((paper) => ({ title: paper.title as string, year: paper.year }))).length : analyzedCount;
+  const copies = analyzedCount - studies;
   const totalFiles = Math.max(runStats?.total ?? analyzedCount, analyzedCount);
   const pendingCount = (runStats?.queued ?? 0) + (runStats?.processing ?? 0);
   const failedCount = runStats?.failed ?? 0;
@@ -1963,28 +2016,34 @@ export function buildRepositoryStatisticsSummary(
   const thai = /[\u0e00-\u0e7f]/.test(prompt);
   if (thai) {
     return [
-      totalFiles === analyzedCount
-        ? `**${scopeLabel}** \u0e21\u0e35\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e17\u0e35\u0e48\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08\u0e41\u0e25\u0e49\u0e27 **${analyzedCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07**`
-        : `**${scopeLabel}** \u0e21\u0e35\u0e44\u0e1f\u0e25\u0e4c\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 **${totalFiles.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c** \u0e42\u0e14\u0e22\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08\u0e41\u0e25\u0e49\u0e27 **${analyzedCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07**`,
+      (copies > 0
+        ? `**${scopeLabel}** \u0e21\u0e35\u0e07\u0e32\u0e19\u0e27\u0e34\u0e08\u0e31\u0e22 **${studies.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07** \u0e08\u0e32\u0e01\u0e44\u0e1f\u0e25\u0e4c\u0e17\u0e35\u0e48\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08 ${analyzedCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c (\u0e44\u0e1f\u0e25\u0e4c\u0e0b\u0e49\u0e33 ${copies.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c\u0e19\u0e31\u0e1a\u0e40\u0e1b\u0e47\u0e19\u0e07\u0e32\u0e19\u0e40\u0e14\u0e35\u0e22\u0e27)`
+        : `**${scopeLabel}** \u0e21\u0e35\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e17\u0e35\u0e48\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08\u0e41\u0e25\u0e49\u0e27 **${analyzedCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07**`) +
+        (totalFiles > analyzedCount ? ` \u0e08\u0e32\u0e01\u0e44\u0e1f\u0e25\u0e4c\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 ${totalFiles.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : ""),
       failedCount > 0 ? `\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08 ${failedCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : "",
       pendingCount > 0 ? `\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e2d\u0e2b\u0e23\u0e37\u0e2d\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25 ${pendingCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : "",
       canceledCount > 0 ? `\u0e22\u0e01\u0e40\u0e25\u0e34\u0e01\u0e41\u0e25\u0e49\u0e27 ${canceledCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : "",
-      folderCount > 1 ? `\u0e04\u0e23\u0e2d\u0e1a\u0e04\u0e25\u0e38\u0e21 ${folderCount.toLocaleString()} \u0e42\u0e1f\u0e25\u0e40\u0e14\u0e2d\u0e23\u0e4c` : "",
-      unknownYearCount > 0 ? `\u0e21\u0e35 ${unknownYearCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e17\u0e35\u0e48\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e17\u0e23\u0e32\u0e1a\u0e1b\u0e35\u0e15\u0e35\u0e1e\u0e34\u0e21\u0e1e\u0e4c` : "",
-      totalWords > 0 ? `\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e44\u0e14\u0e49\u0e23\u0e27\u0e21\u0e1b\u0e23\u0e30\u0e21\u0e32\u0e13 ${totalWords.toLocaleString()} \u0e04\u0e33` : "",
-    ].filter(Boolean).join("\n\n");
+      !brief && folderCount > 1 ? `\u0e04\u0e23\u0e2d\u0e1a\u0e04\u0e25\u0e38\u0e21 ${folderCount.toLocaleString()} \u0e42\u0e1f\u0e25\u0e40\u0e14\u0e2d\u0e23\u0e4c` : "",
+      !brief && unknownYearCount > 0 ? `\u0e21\u0e35 ${unknownYearCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e17\u0e35\u0e48\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e17\u0e23\u0e32\u0e1a\u0e1b\u0e35\u0e15\u0e35\u0e1e\u0e34\u0e21\u0e1e\u0e4c` : "",
+      !brief && totalWords > 0 ? `\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e44\u0e14\u0e49\u0e23\u0e27\u0e21\u0e1b\u0e23\u0e30\u0e21\u0e32\u0e13 ${totalWords.toLocaleString()} \u0e04\u0e33` : "",
+    ].filter(Boolean).join(brief ? " \u00b7 " : "\n\n");
   }
+  const analyzed = `**${analyzedCount.toLocaleString()} successfully analyzed paper${analyzedCount === 1 ? "" : "s"}**`;
+  const head =
+    copies > 0
+      ? `**${scopeLabel}** holds **${studies.toLocaleString()} studies**: ${analyzed}, ${copies === 1 ? "one of them a second copy" : `${copies.toLocaleString()} of them second copies`} of a study, counted once${totalFiles > analyzedCount ? `, of **${totalFiles.toLocaleString()} files** uploaded` : ""}.`
+      : totalFiles === analyzedCount
+        ? `**${scopeLabel}** contains ${analyzed}.`
+        : `**${scopeLabel}** contains **${totalFiles.toLocaleString()} total file${totalFiles === 1 ? "" : "s"}**: ${analyzed}.`;
   return [
-    totalFiles === analyzedCount
-      ? `**${scopeLabel}** contains **${analyzedCount.toLocaleString()} successfully analyzed paper${analyzedCount === 1 ? "" : "s"}**.`
-      : `**${scopeLabel}** contains **${totalFiles.toLocaleString()} total file${totalFiles === 1 ? "" : "s"}**: **${analyzedCount.toLocaleString()} successfully analyzed paper${analyzedCount === 1 ? "" : "s"}**.`,
+    head,
     failedCount > 0 ? `${failedCount.toLocaleString()} file${failedCount === 1 ? "" : "s"} failed analysis.` : "",
     pendingCount > 0 ? `${pendingCount.toLocaleString()} file${pendingCount === 1 ? " is" : "s are"} queued or processing.` : "",
     canceledCount > 0 ? `${canceledCount.toLocaleString()} file${canceledCount === 1 ? " was" : "s were"} canceled.` : "",
-    folderCount > 1 ? `The selected scope spans ${folderCount.toLocaleString()} folders.` : "",
-    unknownYearCount > 0 ? `${unknownYearCount.toLocaleString()} paper${unknownYearCount === 1 ? " has" : "s have"} an unknown publication year.` : "",
-    totalWords > 0 ? `The extracted corpus contains approximately ${totalWords.toLocaleString()} words.` : "",
-  ].filter(Boolean).join("\n\n");
+    !brief && folderCount > 1 ? `The selected scope spans ${folderCount.toLocaleString()} folders.` : "",
+    !brief && unknownYearCount > 0 ? `${unknownYearCount.toLocaleString()} paper${unknownYearCount === 1 ? " has" : "s have"} an unknown publication year.` : "",
+    !brief && totalWords > 0 ? `The extracted corpus contains approximately ${totalWords.toLocaleString()} words.` : "",
+  ].filter(Boolean).join(brief ? " " : "\n\n");
 }
 
 /** Which exactly-computable facts a repository question is asking for. */
@@ -2134,12 +2193,12 @@ export function buildRepositoryFactsAnswer(
   if (facts.yearExtremes) sections.push(yearExtremesSection(papers, thai));
   if (facts.lengthExtremes) sections.push(lengthExtremesSection(papers, thai));
   if (facts.status) sections.push(statusSection(runStats, thai));
-  const overview = buildRepositoryStatisticsSummary(papers, scopeLabel, prompt, runStats);
+  const targeted = sections.filter(Boolean);
+  const overview = buildRepositoryStatisticsSummary(papers, scopeLabel, prompt, runStats, targeted.length > 0);
   const provenance = computedFromNote(
     { papers, runStats, scopeLabel } as RepositoryContext,
     thai
   );
-  const targeted = sections.filter(Boolean);
   if (targeted.length === 0) return [overview, provenance].join("\n\n");
   return [...targeted, overview, provenance].join("\n\n");
 }
@@ -2214,6 +2273,8 @@ interface RepositoryQaOutput
   extends Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "passageSources"> {
   /** Caveats raised by the answer audit, surfaced to the reader. */
   auditLimitations?: string[];
+  /** How the group of studies a question named was found and read, in place of the focused-search caveat. */
+  groupNote?: string;
   quality: {
     retrievalCandidateCount: number;
     selectedEvidenceCount: number;
@@ -2375,7 +2436,9 @@ export async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
   model?: string,
-  effort: ChatEffort = "medium"
+  effort: ChatEffort = "medium",
+  /** Every study in the group the question is about, found by checking each paper (studiesInGroup). */
+  members?: ReadonlySet<string>
 ): Promise<SelectedEvidence> {
   const queries = [plan.refinedQuestion, ...plan.retrievalQueries, ...plan.evidenceNeeds];
   const budgets = retrievalBudgets(plan.retrievalMode, context.papers.length, effort);
@@ -2429,15 +2492,32 @@ export async function selectEvidence(
   let retrievalRounds = 1;
   let sufficiencyChecked = false;
   let missingEvidenceNeeds: string[] = [];
+  // A group that fits is read whole, in the search's order: no reranker to
+  // leave one out, and no second search to add one it is not about. A larger
+  // group is the reranker's to choose from, and only from its members.
+  let decided = false;
+  if (members && members.size > 0) {
+    const rank = new Map(candidates.map((candidate, index) => [candidate.paperId, index]));
+    const ordered = [...members].sort((a, b) => (rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity));
+    if (ordered.length <= budgets.sourceLimit) {
+      selectedIds = ordered;
+      rerankerSource = "llm";
+      rerankerConfidence = 0.8;
+      decided = true;
+    } else {
+      candidates = candidates.filter((candidate) => members.has(candidate.paperId));
+      selectedIds = candidates.slice(0, budgets.sourceLimit).map((candidate) => candidate.paperId);
+    }
+  }
   // A focused question that may widen its search has the reranker judge, in
   // the same call, whether the papers it chose are enough. A second call did
   // this after it, reading the same excerpts: 4 to 6 seconds and about $0.0005
   // an answer (2026-10-11). That call now runs only when this one fails.
   const judgeSufficiency =
-    plan.retrievalMode === "focused" && EFFORT_SETTINGS[effort].widenSearch && budgets.sourceLimit < context.papers.length;
+    !members && plan.retrievalMode === "focused" && EFFORT_SETTINGS[effort].widenSearch && budgets.sourceLimit < context.papers.length;
   let rerankSufficiency: z.infer<typeof EvidenceSufficiencySchema> | null = null;
 
-  if (candidates.length > 1) {
+  if (!decided && candidates.length > 1) {
     try {
       const completion = await createChatCompletionResult(
         [
@@ -2507,7 +2587,7 @@ export async function selectEvidence(
     const selectedCandidates = selectedIds
       .map((paperId) => candidateById.get(paperId))
       .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
-    const canExpand = EFFORT_SETTINGS[effort].widenSearch && expansionIsPossible(selectedIds, context.papers.length);
+    const canExpand = !members && EFFORT_SETTINGS[effort].widenSearch && expansionIsPossible(selectedIds, context.papers.length);
     console.info(
       "chat_sufficiency_decision",
       JSON.stringify({ skipped: !canExpand, selected: selectedIds.length, scoped: context.papers.length })
@@ -2943,9 +3023,66 @@ async function repositoryQaResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan
 ): Promise<RepositoryQaOutput> {
+  const group = await studiesInGroup(input, context, plan);
+  const output = await groundedAnswerResult(input, context, plan, group?.members);
+  return group?.note ? { ...output, groupNote: group.note } : output;
+}
+
+/**
+ * The studies a question is about, when it names a group of them. "What did
+ * the dynamic assessment studies find?" was answered from the papers a search
+ * ranked highest and a reranker kept: the same question cited three studies on
+ * one run and four on another, and a group could lose a member to a better-
+ * worded neighbour (docs/36). Every study is checked for the group in a short
+ * read (screening, about $0.005), and the answer reads all of them.
+ */
+async function studiesInGroup(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan
+): Promise<{ members: Set<string>; note: string } | null> {
+  const about = plan.aboutPapers?.trim();
+  if (!about || plan.retrievalMode !== "focused" || process.env.REPOSITORY_CHAT_DISABLE_LLM === "true") return null;
+  // One paper named by its topic ("the learner autonomy study") is found by the
+  // search; checking every paper for it cost a call and said "the one study in
+  // the group" (the question bank, 2026-10-28).
+  if (/\b(?:paper|study|article|thesis|dissertation)\b/i.test(about) && !/\b(?:papers|studies|articles|theses|dissertations)\b/i.test(about)) return null;
+  const studies = oneCopyEach(context.papers);
+  if (studies.length < 3) return null;
+  reportChatProgress("retrieving", `checking ${studies.length} papers`);
+  const screened = await screenPapers({
+    papers: studies,
+    question: input.prompt,
+    condition: about,
+    answerLanguage: "English",
+    model: input.model,
+    details: false,
+    share: MEMBERSHIP_CHARS,
+  });
+  // Nothing found, or nothing could be checked: the search chooses, as before.
+  if (screened.matches.length === 0) return null;
+  const members = new Set(screened.matches.map((match) => match.paperId));
+  const limit = EFFORT_SETTINGS[normalizeEffort(input.effort)].focusedSources;
+  // A group too large to read whole is the search's to choose from, as before:
+  // narrowed to its members, "which frameworks do the SLA studies draw on?"
+  // cited 2 of 16 and "what did the papers from 2023 on study?" 1 of 13.
+  if (members.size > limit) return null;
+  if (members.size === 1) return { members, note: "" };
+  const group = about.replace(/^the\s+/i, "");
+  const unread = screened.failed.length;
+  const note = `${members.size === 2 ? "Both" : `All ${members.size}`} studies in the group “${group}” were read; they were found by checking all ${studies.length} studies in scope${unread ? `, ${unread} of which could not be checked just now` : ""}.`;
+  return { members, note };
+}
+
+async function groundedAnswerResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan,
+  members?: ReadonlySet<string>
+): Promise<RepositoryQaOutput> {
   reportChatProgress("retrieving");
   const effort = normalizeEffort(input.effort);
-  const evidence = await selectEvidence(context, plan, input.model, effort);
+  const evidence = await selectEvidence(context, plan, input.model, effort, members);
   reportChatProgress(
     "reading_evidence",
     evidence.papers.length === 1 ? "1 paper" : `${evidence.papers.length} papers`
@@ -3280,6 +3417,7 @@ export function legacyPlanForExecution(
   return {
     intent,
     refinedQuestion: plan.refinedQuestion,
+    ...(plan.aboutPapers ? { aboutPapers: plan.aboutPapers } : {}),
     terms: lengthQuestion ? [] : plan.terms,
     retrievalQueries: plan.retrievalQueries,
     evidenceNeeds: plan.evidenceNeeds,
@@ -3309,17 +3447,19 @@ export async function planRepositoryExecution(
         "Use inspect_scope for repository metadata/count/status/year questions, including asking what is in the selected repository or folder; " +
         "list_documents for complete title or metadata listings; analyze_each_document when the reader wants something back about each document separately - one explanation, classification or summary per paper; " +
         "analyze_each_document covers every paper in scope, so a question about some of the papers ('the intervention studies on writing: what did each do?') is search_evidence alone, which compares the papers that answer it. " +
-        "screen_papers when the reader wants every paper that meets a condition - which papers or studies used, studied, report or are about something, how many do, or whether any does ('which studies used a pretest-posttest design?', 'how many papers are about assessment?', 'does any paper report an effect size?'): every paper in scope is checked, so the list and its count are complete. Put the condition in refinedQuestion. Its answer lists each matching paper with a short detail the question asks for (participants, design, a number), as a list or a table, so a list or table of matching papers is screen_papers alone. It checks one condition: a breakdown of the papers into several kinds ('how many are quantitative, qualitative or mixed methods?') is aggregate_corpus. What such papers found at length, or how they compare, is search_evidence; counts of uploads, years or statuses are inspect_scope. " +
-        "aggregate_corpus for repository-wide topics, methods, trends, gaps or synthesis, including a request to summarise the repository as a whole. " +
+        "screen_papers when the reader wants every paper that meets a condition - which papers or studies used, studied, report or are about something, how many do, or whether any does ('which studies used a pretest-posttest design?', 'how many papers are about assessment?', 'does any paper report an effect size?'): every paper in scope is checked, so the list and its count are complete. Put the condition in refinedQuestion. Its answer lists each matching paper with a short detail the question asks for (participants, design, a number), as a list or a table, so a list or table of matching papers is screen_papers alone. It checks one condition. What such papers found at length, or how they compare, is search_evidence; counts of uploads, years or statuses are inspect_scope. " +
+        "A count of the papers by kind or by a value each reports ('how many are quantitative, qualitative or mixed methods?', 'how many studies were done in each country?'), and a total, average or range of a number each paper reports ('what is the total number of participants across the studies?', 'what is the average sample size?'), are visualize alone: every paper is read for that one value, each value is checked against the paper's own sentence, and the counts and the total are computed, not estimated. " +
+        "aggregate_corpus for repository-wide topics, trends, gaps or synthesis in prose, including a request to summarise the repository as a whole. " +
         "A request to summarise the collection is one summary of the corpus, not one summary per paper: it is aggregate_corpus. Per-paper summaries are only what is wanted when the reader asks about each, every or per paper. " +
         "search_evidence for a focused evidence question; " +
-        "analyze_text for exact word/phrase/entity frequencies; visualize for requested charts or tables. " +
+        "when a search_evidence request is about a group of studies named by topic, method or population ('what did the dynamic assessment studies find?', 'compare the studies of Chinese learners', 'do the blended learning studies agree?'), set aboutPapers to that group in a few words ('dynamic assessment studies'): every paper is checked for it, so the answer reads all of them. Leave aboutPapers empty for one paper, even one named by its topic ('the learner autonomy study', 'the paper on plosive consonants'); for the whole repository or papers picked by year (what the papers from some years studied is aggregate_corpus); and for a question about an idea rather than a group of studies. " +
+        "analyze_text for exact word/phrase/entity frequencies; visualize for requested charts or tables, and for counts by kind and totals of a value each paper reports. " +
         "Use aggregate_corpus only when the requested answer must characterize patterns across a corpus. A focused question asking what evidence supports, explains, links, or contradicts one issue uses search_evidence even when many papers may contribute. " +
         "When the user asks only to show or plot an already supported repository metric as a chart or table, use visualize by itself; add aggregate_corpus only when a separate narrative synthesis is also requested. " +
         "Do not split one coherent task unnecessarily, but do not discard a requested count, listing, analysis, or visualization merely because another capability is also needed. " +
         "scopeMode must be complete whenever the user asks about all/every/the repository as a corpus. Never reinterpret a repository-wide request as one paper. " +
         "Preserve exact count terms. Infer answerLanguage from the conversation, not isolated words: honor the latest explicit language request; otherwise use Thai when the user is conversing or asking in Thai even when technical terms are English, and use English when the request is English even if Thai names appear in evidence. Keep that language until the user switches it. " +
-        "Do not answer the question. Schema: {operation,operations,scopeMode,refinedQuestion,terms,retrievalQueries,evidenceNeeds,requestedFields,answerLanguage,outputFormat,chartType,reason,confidence}.",
+        "Do not answer the question. Schema: {operation,operations,scopeMode,refinedQuestion,aboutPapers,terms,retrievalQueries,evidenceNeeds,requestedFields,answerLanguage,outputFormat,chartType,reason,confidence}.",
       ]),
     },
     {
@@ -3614,7 +3754,7 @@ async function readChartResult(
   reportChatProgress("reading_evidence");
   const outcome: ReadChart =
     read.kind === "values"
-      ? valueChart(await readValues({ papers, plan: read, question: input.prompt, effort, model: input.model }), read)
+      ? valueChart(await readValues({ papers, plan: read, question: input.prompt, effort, model: input.model }), read, input.prompt)
       : await readFigures({ papers, plan: read, question: input.prompt, effort, model: input.model });
   reportChatProgress("charting");
 
@@ -3714,7 +3854,7 @@ async function chartSubset(
 ): Promise<{ context?: RepositoryContext; note?: string; empty?: ChartStepResult } | null> {
   const studies = oneCopyEach(whole.papers);
   reportChatProgress("reading_evidence", `${studies.length} papers`);
-  const screened = await screenPapers({ papers: studies, question: input.prompt, condition: about, answerLanguage: "English", model: input.model, details: false });
+  const screened = await screenPapers({ papers: studies, question: input.prompt, condition: about, answerLanguage: "English", model: input.model, details: false, share: MEMBERSHIP_CHARS });
   // Nothing could be checked: chart every paper, as before, rather than none.
   if (screened.failed.length === studies.length) return null;
   const keep = new Set(screened.matches.map((match) => match.paperId));
@@ -3868,9 +4008,11 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
           complete: execution.scopeMode === "complete" && qa.quality.selectedEvidenceCount === context.papers.length,
           scopeLabel: context.scopeLabel,
         },
-        limitations: execution.scopeMode === "focused"
-          ? ["Focused retrieval reports relevant evidence coverage, not exhaustive corpus coverage."]
-          : [],
+        limitations: qa.groupNote
+          ? [qa.groupNote]
+          : execution.scopeMode === "focused"
+            ? ["Focused retrieval reports relevant evidence coverage, not exhaustive corpus coverage."]
+            : [],
       };
     }
 
@@ -3940,20 +4082,35 @@ export function computedFromNote(context: RepositoryContext, thai: boolean): str
     .join(" ");
 }
 
+/**
+ * Every study in scope, once. The listing gave 41 rows for 36 studies, each
+ * second upload as its own numbered paper, beside an answer that said 36
+ * (the question bank, 2026-10-28); a study uploaded twice is one row that
+ * says so.
+ */
 function listDocumentsResult(context: RepositoryContext): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations"> {
-  const papers = [...context.papers].sort((left, right) => left.title.localeCompare(right.title));
+  const papers = oneCopyEach([...context.papers].sort((left, right) => left.title.localeCompare(right.title)));
+  const uploads = new Map<string, number>();
+  for (const paper of context.papers) uploads.set(studyKey(paper), (uploads.get(studyKey(paper)) ?? 0) + 1);
+  const copies = context.papers.length - papers.length;
   return {
     answer: [
       `## Papers in ${context.scopeLabel}`,
-      `Complete listing of **${papers.length} analyzed paper${papers.length === 1 ? "" : "s"}**:`,
+      copies > 0
+        ? `Complete listing of **${papers.length} studies** (${context.papers.length} analyzed uploads: ${copies === 1 ? "one is a second copy" : `${copies} are second copies`} of a study, listed once):`
+        : `Complete listing of **${papers.length} analyzed paper${papers.length === 1 ? "" : "s"}**:`,
       "",
-      ...papers.map((paper, index) => `${index + 1}. **${paper.title}** (${paper.year})`),
+      ...papers.map((paper, index) => {
+        const count = uploads.get(studyKey(paper)) ?? 1;
+        return `${index + 1}. **${paper.title}** (${paper.year})${count > 1 ? ` · uploaded ${count === 2 ? "twice" : `${count} times`}` : ""}`;
+      }),
       "",
       computedFromNote(context, false),
     ].join("\n"),
     citations: papers.map((paper) => citationForPaper(paper, "Included in the complete repository listing.")),
     charts: [],
-    coverage: completeCoverage(context, papers.length),
+    // Every upload is covered: a second copy is listed with its study.
+    coverage: completeCoverage(context, context.papers.length),
     limitations: [],
   };
 }
@@ -4877,7 +5034,10 @@ async function runRepositoryChatWithContext(
     context.papers.length > 0
   ) {
     const facts = detectRepositoryFacts(input.prompt);
-    if (facts.years || facts.yearExtremes || facts.lengthExtremes || facts.status) {
+    // A listing shows each paper's year: "list every paper with its year" got
+    // the papers-per-year table and no titles (the question bank, 2026-10-28).
+    const listing = execution.operation === "list_documents";
+    if ((facts.years && !listing) || facts.yearExtremes || facts.lengthExtremes || facts.status) {
       return {
         handled: true,
         answer: buildRepositoryFactsAnswer(
@@ -5028,9 +5188,11 @@ async function runRepositoryChatWithContext(
         scopeLabel: context.scopeLabel,
       },
       limitations: [
-        ...(execution?.scopeMode === "focused"
-          ? ["Focused retrieval reports relevant evidence coverage, not exhaustive corpus coverage."]
-          : []),
+        ...(result.groupNote
+          ? [result.groupNote]
+          : execution?.scopeMode === "focused"
+            ? ["Focused retrieval reports relevant evidence coverage, not exhaustive corpus coverage."]
+            : []),
         ...(result.auditLimitations ?? []),
       ],
       scopeSnapshot: context.scopeSnapshot,

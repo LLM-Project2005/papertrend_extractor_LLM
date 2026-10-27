@@ -57,6 +57,71 @@ class ExtractorTests(unittest.TestCase):
         document.close.assert_called_once()
 
 
+class TableImageTests(unittest.TestCase):
+    """A typed PDF whose table is a picture keeps its caption in the text layer
+    and loses the table: in the test repository about one table caption in
+    five was followed by prose (2026-10-28)."""
+
+    @staticmethod
+    def _page(text: str, boxes: list[tuple[float, float, float, float]]) -> MagicMock:
+        page = MagicMock()
+        page.rect.width = 600
+        page.rect.height = 800
+        page.get_text.return_value = text
+        page.get_image_info.return_value = [{"bbox": box} for box in boxes]
+        return page
+
+    def test_a_table_caption_beside_a_large_picture_is_a_table_image_page(self) -> None:
+        from nodes.extractor import _table_image_pages
+
+        pages = [
+            self._page("Table 3\nDescriptive statistics for the CDRA scores (n = 30)\nIn addition to ...", [(50, 100, 550, 400)]),
+            self._page("Table 1\nThai plosive consonants\n/b/ /p/ /ph/", []),
+            self._page("**Table 2.** Questions in the pre-test\nA journal logo sits in the header.", [(20, 20, 80, 60)]),
+            self._page("Results\nThe figure below shows the scores.", [(50, 100, 550, 500)]),
+            self._page("Table 4\nA scanned page already read whole.", [(0, 0, 600, 800)]),
+        ]
+        document = MagicMock()
+        document.load_page.side_effect = lambda index: pages[index]
+        texts = [page.get_text.return_value for page in pages]
+        # A table printed in text, a logo, a figure without a table caption, and a page already read are left out.
+        self.assertEqual(_table_image_pages(document, texts, {4}), [0])
+
+    @patch("nodes.extractor._is_pdf_file", return_value=True)
+    @patch("nodes.extractor._ocr_pages")
+    @patch("nodes.extractor._table_image_pages", return_value=[1])
+    @patch("nodes.extractor._scanned_pages", return_value=[])
+    @patch("nodes.extractor._page_texts")
+    @patch("nodes.extractor._extract_with_fitz")
+    @patch("fitz.open")
+    def test_tables_read_from_the_image_follow_the_page_text_and_the_paper_stays_typed(
+        self,
+        mock_open: MagicMock,
+        mock_extract_with_fitz: MagicMock,
+        mock_page_texts: MagicMock,
+        _mock_scanned: MagicMock,
+        _mock_tables: MagicMock,
+        mock_ocr: MagicMock,
+        _mock_is_pdf: MagicMock,
+    ) -> None:
+        mock_open.return_value = MagicMock()
+        mock_open.return_value.__len__.return_value = 2
+        prose = "This study investigates dynamic assessment of reading with thirty undergraduates. " * 6
+        mock_extract_with_fitz.return_value = prose
+        mock_page_texts.return_value = [prose, "Table 3\nDescriptive statistics for the CDRA scores (n = 30)\nIn addition, ..."]
+        mock_ocr.return_value = {1: "Table 3. Descriptive statistics\n| Test | M | SD |\n| --- | --- | --- |\n| DA1 | 12.40 | 3.10 |"}
+
+        result = extract_pdf_node({"pdf_path": "sample.pdf"})
+
+        self.assertEqual(result["extraction_method"], "fitz_text", "a typed paper with a table image is still read as typed")
+        self.assertIn("In addition, ...\n\n[Tables on page 2, read from the page image]\nTable 3. Descriptive statistics", result["raw_text"])
+        self.assertIn("| DA1 | 12.40 | 3.10 |", result["raw_text"])
+        self.assertTrue(result["raw_text"].startswith(prose.strip()), "the page's own text is kept as the PDF has it")
+        self.assertEqual(mock_ocr.call_args.args[2], [1])
+        self.assertIn("Transcribe every table", mock_ocr.call_args.args[3])
+        self.assertTrue(any("tables printed as images were read with OCR (pages 2)" in line for line in result["warnings"]))
+
+
 class ExtractorLimitTests(unittest.TestCase):
     """The PDF comes from a user and the worker is shared, so a crafted file
     must not be able to exhaust its memory or time."""

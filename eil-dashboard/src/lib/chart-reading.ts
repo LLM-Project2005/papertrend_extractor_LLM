@@ -751,8 +751,22 @@ function sourceOf(value: ReportedValue, plan: ReadPlan): ChartSource {
   return { paperId: value.paper.paperId, title: value.paper.title, year: value.paper.year, value: shown, quote: value.quote, ...(value.note ? { note: value.note } : {}) };
 }
 
+/**
+ * Whether a question asks for the sum or the mean of the values. "What is the
+ * total number of participants across all the studies?" was answered by a
+ * synthesis of stored summaries, which said three studies give no count and
+ * gave a total of 2,236 it could not check (the question bank, 2026-10-28);
+ * it is now read like a chart, and the total is added up in code.
+ */
+export function askedStatistics(question: string): { total: boolean; mean: boolean } {
+  return {
+    total: /\b(?:total|sum|altogether|in all|combined|overall number|add(?:ed)? up)\b|รวม(?:ทั้งหมด|กัน)?|ทั้งหมดกี่/i.test(question),
+    mean: /\b(?:average|mean)\b|เฉลี่ย/i.test(question),
+  };
+}
+
 /** The chart and reply for one value per paper. */
-export function valueChart(reading: ValueReading, plan: ReadPlan): ReadChart {
+export function valueChart(reading: ValueReading, plan: ReadPlan, question = ""): ReadChart {
   const read = reading.found.length + reading.notStated.length + reading.unverified.length;
   const limitations = readingLimitations(reading, plan.field);
   const title = plan.title || capitalised(plan.field);
@@ -788,7 +802,7 @@ export function valueChart(reading: ValueReading, plan: ReadPlan): ReadChart {
     const lead =
       first.papers.size === 1
         ? `${stating} Each answer comes from one paper only: ${ranked.slice(0, 5).map((entry) => entry.label).join(", ")}${ranked.length > 5 ? ` and ${ranked.length - 5} more` : ""}.`
-        : `${stating} **${first.label}** is the most common (${plural(first.papers.size, "paper")})${rest.length ? `, then ${rest.join(" and ")}` : ""}.`;
+        : `${stating} **${capitalised(first.label)}** is the most common (${plural(first.papers.size, "paper")})${rest.length ? `, then ${rest.join(" and ")}` : ""}.`;
     if (ranked.length > shown.length) limitations.push(`The chart shows the ${shown.length} most common of ${ranked.length} answers; the rest appear in one paper each.`);
     return {
       lead,
@@ -856,10 +870,21 @@ export function valueChart(reading: ValueReading, plan: ReadPlan): ReadChart {
   const labels = distinctLabels(order.map((value) => value.paper));
   const highest = order[0];
   const lowest = order[order.length - 1];
+  const asked = askedStatistics(question);
+  const sum = numbers.reduce((total, value) => total + value, 0);
+  const statistics = [
+    asked.total && order.length > 1 ? ` Added up, they come to **${formatNumber(sum)}**${unit}.` : "",
+    asked.mean && order.length > 1 ? ` The mean is **${formatNumber(sum / numbers.length)}**${unit}.` : "",
+  ].join("");
+  if (asked.total && order.length > 1) {
+    limitations.push(
+      `The total adds each paper's own figure for ${reading.found.length === read ? "every paper" : `the ${reading.found.length} papers that state it`}; anyone counted in more than one study is counted once for each.`
+    );
+  }
   const lead =
     order.length === 1
       ? `Only **one of ${read} papers** states ${plan.field}: **${formatNumber(highest.number as number)}**${unit} in “${shortTitle(highest.paper.title)}”.`
-      : `${stating} It ranges from **${formatNumber(lowest.number as number)}**${unit} in “${shortTitle(lowest.paper.title)}” to **${formatNumber(highest.number as number)}**${unit} in “${shortTitle(highest.paper.title)}”, with a median of **${formatNumber(median(numbers))}**${unit}.`;
+      : `${stating} It ranges from **${formatNumber(lowest.number as number)}**${unit} in “${shortTitle(lowest.paper.title)}” to **${formatNumber(highest.number as number)}**${unit} in “${shortTitle(highest.paper.title)}”, with a median of **${formatNumber(median(numbers))}**${unit}.${statistics}`;
   return {
     lead,
     chart: {

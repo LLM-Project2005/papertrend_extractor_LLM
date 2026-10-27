@@ -8,7 +8,9 @@
  */
 import { useState } from "react";
 import InsightChart from "@/components/dashboard/InsightChart";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import PaperLink from "@/components/workspace/PaperLink";
+import { insightCsv } from "@/lib/insights/csv";
 import type { Insight } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
@@ -67,6 +69,7 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 dark:border-[#1a1a1a]">
         <p className="max-w-2xl text-xs leading-5 text-slate-600 dark:text-[#8f8f8f]">{insight.basis}</p>
+        <ChartCsvButton csv={insightCsv(insight, chart.title)} />
         <button
           type="button"
           onClick={() => onOpen(insight.paperIds, chart.title)}

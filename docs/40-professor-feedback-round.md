@@ -256,3 +256,16 @@ The user found that **Download PDF** in the paper window did the same as **Open 
 - **The fix.** The Library route has a new `download` action. It signs the same link as `open`, but storage is told to send the file as an attachment (`response-content-disposition`), so the browser saves it and the page stays put, as **Download report** does.
 - **The file name.** The file is saved under the paper's Library name. If a rename dropped the extension, the original one is added back. A Thai name is carried in `filename*`. The pure helpers are `downloadFileName` and `attachmentDisposition` in `storage-path.ts`.
 - **Where it applies.** The paper window, wherever it is opened, and the Library's download buttons. **Open in new tab** still shows the PDF.
+
+## 12. Release (2026-10-26)
+
+Sections 1 to 11 went to production together through PR #289 (test to main): web **papertrend-web-production-00101-taq**, with 00099-bum as the rollback. Checked on papertrend.web.app with the test account:
+- **Area Analysis.** The Themes section is there, with 17 key entries (16 themes plus "Other themes").
+- **Semantic map.** Scrolling over the map no longer moves the page in either layout. Download PNG saved a 3200×2000 image, and the panel has its four sections.
+- **Paper window.**
+  - The tabs are Overview, Topics, Evidence and Preview. An old Keywords link opens Topics.
+  - The scanned paper shows **Scanned PDF**, its text with 8 passages on 5 pages, and **Show in text**.
+- **Downloads.** Download PDF and the Library's download button saved the file without opening a tab. Open in new tab still opened one.
+- **Chat.** GPT-6 Luna is the only model offered, and the allowance panel has no extra text.
+
+There were no page errors and no failed requests. No model credit was used.
