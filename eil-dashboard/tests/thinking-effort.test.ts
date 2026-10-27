@@ -37,7 +37,8 @@ test("medium is the answer as it was; low does less and high more", () => {
 test("the effort reaches the answer, its cache key and a queued job", () => {
   const chat = source("../src/lib/repository-chat.ts");
   assert.match(chat, /`effort:\$\{normalizeEffort\(input\.effort\)\}`/, "an answer at one effort is not served for another");
-  assert.match(chat, /const canExpand = EFFORT_SETTINGS\[effort\]\.widenSearch && expansionIsPossible/);
+  // A named group read whole is not widened beyond it (docs/41).
+  assert.match(chat, /const canExpand = !members && EFFORT_SETTINGS\[effort\]\.widenSearch && expansionIsPossible/);
   assert.match(chat, /if \(skipBlocker === null && !EFFORT_SETTINGS\[effort\]\.alwaysAudit\)/);
   assert.match(source("../src/app/api/chat/route.ts"), /effort: z\.enum\(CHAT_EFFORTS\)\.optional\(\)/);
   assert.match(source("../src/lib/repository-chat-jobs.ts"), /effort: input\.effort \?\? "medium"/);
