@@ -720,6 +720,61 @@ test("a question about which papers meet a condition checks every paper and coun
   assert.equal(result.coverage?.processedPapers, 3);
 });
 
+test("a question about a named group of studies checks every paper for the group and reads all of them, with no reranker to leave one out", async () => {
+  // "What did the dynamic assessment studies find?" cited three studies on one run and four on another (docs/36).
+  const { ask, task, script, peerFeedback, ids } = await repository();
+  const question = "What did the assessment and feedback studies find?";
+  const assessment = ids[2];
+  script((call) => {
+    if (call.taskName === "CHAT_SCREEN") {
+      const batch = user(call);
+      const label = (title: string) => batch.split("\n").find((line) => line.includes(title))?.match(/^\[(P\d+)\]/)?.[1];
+      return { matches: [
+        { paper: label("Peer feedback in second-language writing"), detail: "", quote: "" },
+        { paper: label("Teacher assessment literacy"), detail: "", quote: "" },
+      ] };
+    }
+    if (call.taskName === "CHAT_SYNTHESIS") return { answer: `Feedback helped revision [Paper ${peerFeedback}], and teachers' assessment literacy varied [Paper ${assessment}].`, citedPaperIds: [peerFeedback, assessment], confidence: 0.9 };
+    return null;
+  });
+  const result = await ask(question, { executionPlan: { ...plan("search_evidence", "focused", question), aboutPapers: "assessment and feedback studies" } });
+  assert.equal(task("CHAT_SCREEN").length, 1, "every study is checked for the group, in one short call");
+  assert.match(user(task("CHAT_SCREEN")[0]), /Condition: assessment and feedback studies/);
+  assert.equal(task("CHAT_RERANK").length, 0, "a group that fits is read whole, not reranked");
+  const read = text(task("CHAT_SYNTHESIS")[0]);
+  assert.ok(read.includes(`[Paper ${peerFeedback}] Peer feedback in second-language writing (2021) - the whole paper`));
+  assert.ok(read.includes(`[Paper ${assessment}] Teacher assessment literacy (2023) - the whole paper`));
+  assert.ok(!read.includes(`[Paper ${ids[1]}] Mobile apps for vocabulary learning (2022) - the`), "a paper outside the group is not read");
+  assert.ok(result.limitations?.some((line) => /Both studies in the group “assessment and feedback studies” were read; they were found by checking all 3 studies in scope\./.test(line)));
+  assert.ok(!result.limitations?.some((line) => /Focused retrieval/.test(line)), "the group's note replaces the focused-search caveat");
+});
+
+test("a listing asked for with each paper's year is a listing, not the papers-per-year table", async () => {
+  // The question bank (2026-10-28): "List every paper in this repository with its year" got the year table and no titles.
+  const { ask } = await repository();
+  const question = "List every paper in this repository with its year.";
+  const result = await ask(question, { executionPlan: { ...plan("list_documents", "complete", question), outputFormat: "list" } });
+  assert.match(result.answer, /Complete listing of \*\*3 analyzed papers\*\*/);
+  assert.match(result.answer, /\*\*Peer feedback in second-language writing\*\* \(2021\)/);
+  assert.doesNotMatch(result.answer, /Papers by publication year/);
+  const oldest = await ask("Which is the oldest paper?", { executionPlan: { ...plan("list_documents", "complete", "oldest paper"), outputFormat: "list" } });
+  assert.match(oldest.answer, /Oldest \(2021\)/, "a stored fact asked of a listing is still computed");
+});
+
+test("one paper named by its topic is not a group: no paper-by-paper check runs", async () => {
+  // The question bank (2026-10-28): "the learner autonomy study" was checked for in all 36 papers, and said "the one study in the group".
+  const { ask, task, script, peerFeedback } = await repository();
+  const question = "Quote what the peer feedback study says about its participants.";
+  script((call) => {
+    if (call.taskName === "CHAT_RERANK") return { paperIds: [peerFeedback], reason: "the named study", confidence: "high" };
+    if (call.taskName === "CHAT_SYNTHESIS") return { answer: `It describes its students [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 };
+    return null;
+  });
+  const result = await ask(question, { executionPlan: { ...plan("search_evidence", "focused", question), aboutPapers: "peer feedback study" } });
+  assert.equal(task("CHAT_SCREEN").length, 0);
+  assert.ok(result.limitations?.some((line) => /Focused retrieval/.test(line)));
+});
+
 test("a question about which paper is longest is counted, whatever the planner chose, and a table in an answer is not charted", async () => {
   const { ask, task, script, peerFeedback } = await repository();
   script((call) => {
