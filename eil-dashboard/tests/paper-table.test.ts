@@ -10,17 +10,13 @@ import test from "node:test";
 import { checkable } from "../src/lib/chart-reading";
 import {
   applyColumnChoice,
-  categoryChart,
   cellKey,
   cellNumber,
   cellsForColumns,
   changedColumns,
-  chartChoices,
   columnChoiceKey,
-  foundChart,
   missingCells,
   newColumnId,
-  numberChart,
   paperTableCsv,
   paperTableSheets,
   type TableCells,
@@ -311,8 +307,9 @@ test("the Table page is in the workspace's navigation and its search", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The dashboard layout (2026-10-28): ready-made columns to show or hide, the
-// chart above the table, and downloads as CSV, Excel and PNG.
+// The dashboard layout (2026-10-28): ready-made columns to show or hide, and
+// downloads as CSV, Excel and PNG. The chart above the table was taken out the
+// same day at the user's request.
 
 test("the ready-made columns are many, grouped, each with its own key, an instruction and a kind", () => {
   assert.ok(COLUMN_PRESETS.length >= 60, `${COLUMN_PRESETS.length} ready-made columns`);
@@ -373,33 +370,10 @@ test("a column made before columns recorded their preset is ticked in its group,
   assert.equal(kept.length, 1, "ticked, it stays the one column");
 });
 
-test("the chart counts what was found, charts a number study by study, and counts a label's answers", () => {
-  const cells: TableCells = {
-    "1:sample-size": found("180 students", "three faculties"),
-    "2:sample-size": found("1,200 texts"),
-    "3:sample-size": { value: "", quote: "", note: "", status: "not_stated" },
-    "1:country": found("Thailand"),
-    "2:country": found("thailand"),
-    "3:country": found("Thailand; Vietnam"),
-  };
+test("a number cell is read as the number it starts with, for the Excel sheet", () => {
   assert.equal(cellNumber("1,200 texts"), 1200);
   assert.equal(cellNumber("30 samples"), 30);
   assert.equal(cellNumber("none"), null);
-
-  const coverage = foundChart(ROWS, [SIZE, COUNTRY, { ...PARTICIPANTS, hidden: true }], cells);
-  assert.deepEqual(coverage.bars.map((bar) => [bar.label, bar.value]), [["Sample size", 2], ["Country", 3]], "hidden columns are not charted");
-  assert.equal(coverage.bars[0].detail, "2 found · 1 not stated");
-
-  const numbers = numberChart(ROWS, SIZE, cells);
-  assert.deepEqual(numbers.bars.map((bar) => bar.value), [1200, 180], "largest first");
-  assert.deepEqual(numbers.stats.find((stat) => stat.label === "Total"), { label: "Total", value: "1,380" });
-  assert.deepEqual(numbers.stats.find((stat) => stat.label === "Median"), { label: "Median", value: "690" });
-  assert.equal(numbers.bars[1].detail, "180 students (three faculties)");
-
-  const labels = categoryChart(ROWS, COUNTRY, cells);
-  assert.deepEqual(labels.bars.map((bar) => [bar.label, bar.value]), [["Thailand", 3], ["Vietnam", 1]], "capitals ignored; two names count for both");
-
-  assert.deepEqual(chartChoices([PARTICIPANTS, SIZE, COUNTRY, { ...COUNTRY, id: "hidden-country", hidden: true }]).map((choice) => choice.value), ["found", "sample-size", "country"]);
 });
 
 /** The files in a stored zip, with each entry's CRC checked. */
@@ -455,7 +429,7 @@ test("the picture fits every cell's text to its column, cutting a long one with 
   assert.deepEqual(wrapLines("a b c d e f g h i j k l", 28, measure, 2), ["a b", "c d…"]);
   assert.deepEqual(wrapLines("การศึกษาภาษาอังกฤษ", 42, measure, 4), ["การศึก", "ษาภาษา", "อังกฤษ"], "a word with no spaces is broken by characters");
   const layout = tableImageLayout(
-    { title: "Study details", subtitle: "", rows: ROWS, columns: [SIZE, COUNTRY], cells: { "1:sample-size": found("180 students") }, chart: null, footnote: "" },
+    { title: "Study details", subtitle: "", rows: ROWS, columns: [SIZE, COUNTRY], cells: { "1:sample-size": found("180 students") }, footnote: "" },
     measure
   );
   assert.equal(layout.columns.length, 2);
@@ -481,11 +455,11 @@ test("many columns are read a few to a call, each call finding its own passages"
   assert.equal(Object.keys(cells).length, 20);
 });
 
-test("the page offers the picker, the chart and the three downloads", () => {
+test("the page offers the picker and the three downloads, and no chart", () => {
   const page = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
   assert.match(page, /<TableDownloadMenu /);
-  assert.match(page, /<TableChart /);
   assert.match(page, /<ColumnPicker/);
+  assert.doesNotMatch(page, /TableChart|recharts/, "only the table, at the user's request");
   const menu = readFileSync(new URL("../src/components/table/TableDownloadMenu.tsx", import.meta.url), "utf8");
   for (const label of ["CSV", "Excel (.xlsx)", "Image (.png)"]) assert.ok(menu.includes(`label: "${label}"`), label);
 });

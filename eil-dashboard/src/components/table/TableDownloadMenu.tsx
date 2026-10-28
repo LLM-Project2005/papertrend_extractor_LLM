@@ -1,10 +1,8 @@
 "use client";
 
 /*
- * The paper table's Download button (docs/42): one button, and a menu of the
- * formats: CSV for any tool, Excel with a sheet of sources, and a picture of
- * the chart and table for a slide or a report. Each file holds the columns
- * shown.
+ * The paper table's Download button (docs/42): one button and a short menu of
+ * formats. Each file holds the columns shown.
  */
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useEffect, useRef, useState } from "react";
@@ -13,10 +11,10 @@ import { buttonClass, menuItemClass, menuPanelClass } from "@/components/ui/cont
 
 export type DownloadFormat = "csv" | "xlsx" | "png";
 
-const FORMATS: Array<{ format: DownloadFormat; label: string; detail: string }> = [
-  { format: "csv", label: "CSV", detail: "Values and their sentences, for any spreadsheet or tool" },
-  { format: "xlsx", label: "Excel (.xlsx)", detail: "The table, numbers as numbers, and a sheet of sources" },
-  { format: "png", label: "Image (.png)", detail: "The chart and the table, for a slide or a report" },
+const FORMATS: Array<{ format: DownloadFormat; label: string }> = [
+  { format: "csv", label: "CSV" },
+  { format: "xlsx", label: "Excel (.xlsx)" },
+  { format: "png", label: "Image (.png)" },
 ];
 
 export default function TableDownloadMenu({ disabled, onDownload }: { disabled: boolean; onDownload: (format: DownloadFormat) => Promise<void> | void }) {
@@ -60,7 +58,7 @@ export default function TableDownloadMenu({ disabled, onDownload }: { disabled: 
         <div
           role="menu"
           aria-label="Download as"
-          className={`${menuPanelClass} absolute right-0 top-full z-30 mt-1.5 w-[min(320px,86vw)]`}
+          className={`${menuPanelClass} absolute right-0 top-full z-30 mt-1.5 w-40`}
           onKeyDown={(event) => {
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             event.preventDefault();
@@ -77,7 +75,7 @@ export default function TableDownloadMenu({ disabled, onDownload }: { disabled: 
               }}
               type="button"
               role="menuitem"
-              className={menuItemClass(false, "flex-col items-start gap-0.5")}
+              className={menuItemClass(false, "py-1.5")}
               onClick={async () => {
                 setOpen(false);
                 setWorking(entry.format);
@@ -88,8 +86,7 @@ export default function TableDownloadMenu({ disabled, onDownload }: { disabled: 
                 }
               }}
             >
-              <span className="font-medium text-ink">{entry.label}</span>
-              <span className="text-[13px] leading-5 text-mute">{entry.detail}</span>
+              {entry.label}
             </button>
           ))}
         </div>

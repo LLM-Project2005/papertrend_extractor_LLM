@@ -10,16 +10,15 @@
  * each batch of papers back as it is read, so the table fills in on the page;
  * leaving or pressing Stop keeps what was read.
  *
- * Laid out as an analytics dashboard is (2026-10-28, the user's request): a
- * chart above the table, a picker of ready-made columns to show or hide, and a
- * Download menu with CSV, Excel and an image.
+ * Columns are shown or hidden from a picker of ready-made ones, as in an
+ * analytics dashboard (2026-10-28, the user's request), and the table
+ * downloads as CSV, Excel or an image.
  */
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ColumnPicker from "@/components/table/ColumnPicker";
-import TableChart from "@/components/table/TableChart";
 import TableDownloadMenu, { type DownloadFormat } from "@/components/table/TableDownloadMenu";
 import {
   CloseIcon,
@@ -42,12 +41,10 @@ import {
   MAX_COLUMNS,
   applyColumnChoice,
   cellKey,
-  chartChoices,
   missingCells,
   newColumnId,
   paperTableCsv,
   paperTableSheets,
-  tableChart,
   visibleColumns,
   type ColumnKind,
   type TableCell,
@@ -182,8 +179,8 @@ function QuotePanel({
 
 const KINDS: Array<{ value: ColumnKind; label: string; detail: string }> = [
   { value: "text", label: "Words", detail: "any length" },
-  { value: "category", label: "A short label", detail: "one to four words, counted in the chart" },
-  { value: "number", label: "A number", detail: "checked against its sentence, charted study by study" },
+  { value: "category", label: "A short label", detail: "one to four words, worded alike in every paper" },
+  { value: "number", label: "A number", detail: "checked against its sentence" },
 ];
 
 function ColumnDialog({
@@ -345,7 +342,6 @@ export default function PaperTableClient() {
   const [filling, setFilling] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<{ paperId: string; columnId: string } | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-  const [chartChoice, setChartChoice] = useState("found");
   const fillRef = useRef<AbortController | null>(null);
   const fillingTableRef = useRef<string | null>(null);
   // A table just made with columns is read as soon as it has opened, so its rows are there for the cells.
@@ -462,7 +458,6 @@ export default function PaperTableClient() {
     setLoadingTable(true);
     setSelected(null);
     setNotice(null);
-    setChartChoice("found");
     if (projectId) writeLastTable(projectId, tableId);
     call<{ table: PaperTableRecord; rows: TableRow[]; more: number }>(`/api/workspace/tables/${tableId}`)
       .then((data) => {
@@ -550,7 +545,6 @@ export default function PaperTableClient() {
             rows,
             columns: shownColumns,
             cells: table.cells,
-            chart: chart.bars.length > 0 ? chart : null,
             footnote: `Papertrend · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · a value is kept only when the paper's own sentence states it`,
           },
           `${base}.png`
@@ -601,10 +595,6 @@ export default function PaperTableClient() {
   const columns = useMemo(() => table?.columns ?? [], [table?.columns]);
   const shown = useMemo(() => visibleColumns(columns), [columns]);
   const cells = useMemo(() => table?.cells ?? {}, [table?.cells]);
-  const choices = useMemo(() => chartChoices(columns), [columns]);
-  const activeChart = choices.some((choice) => choice.value === chartChoice) ? chartChoice : "found";
-  const chart = useMemo(() => tableChart(activeChart, rows, columns, cells), [activeChart, rows, columns, cells]);
-  const chartByStudy = shown.find((column) => column.id === activeChart)?.kind === "number";
   const counts = useMemo(() => {
     const total = { found: 0, notStated: 0, unverified: 0 };
     for (const row of rows) {
@@ -744,10 +734,6 @@ export default function PaperTableClient() {
                   .join(" · ")}
             {more > 0 ? ` · the first ${rows.length.toLocaleString()} studies are shown` : ""}
           </p>
-
-          {shown.length > 0 && rows.length > 0 ? (
-            <TableChart data={chart} choice={activeChart} choices={choices} onChoose={setChartChoice} byStudy={chartByStudy} />
-          ) : null}
 
           {shown.length === 0 ? (
             <div className={`${panelClass} p-6 text-sm text-body`}>
