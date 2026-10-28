@@ -87,6 +87,14 @@ class TableImageTests(unittest.TestCase):
         # A table printed in text, a logo, a figure without a table caption, and a page already read are left out.
         self.assertEqual(_table_image_pages(document, texts, {4}), [0])
 
+    def test_a_table_reads_across_with_its_empty_cells_kept(self) -> None:
+        from nodes.extractor import _tables_read_across
+
+        self.assertEqual(
+            _tables_read_across("Table 2. Scores\n| Group | Pre | Post |\n|:---|---:|:---:|\n| DA |  | 14.2 |"),
+            "Table 2. Scores\nGroup · Pre · Post\nDA · - · 14.2",
+        )
+
     @patch("nodes.extractor._is_pdf_file", return_value=True)
     @patch("nodes.extractor._ocr_pages")
     @patch("nodes.extractor._table_image_pages", return_value=[1])
@@ -115,8 +123,15 @@ class TableImageTests(unittest.TestCase):
 
         self.assertEqual(result["extraction_method"], "fitz_text", "a typed paper with a table image is still read as typed")
         self.assertIn("In addition, ...\n\n[Tables on page 2, read from the page image]\nTable 3. Descriptive statistics", result["raw_text"])
-        self.assertIn("| DA1 | 12.40 | 3.10 |", result["raw_text"])
+        self.assertIn("Test · M · SD\nDA1 · 12.40 · 3.10", result["raw_text"])
+        self.assertNotIn("| --- |", result["raw_text"])
         self.assertTrue(result["raw_text"].startswith(prose.strip()), "the page's own text is kept as the PDF has it")
+        # The cleaner drops Markdown tables from the text the chat reads; a table read across stays.
+        from nodes.cleaner import clean_and_route_node
+
+        cleaned = clean_and_route_node({"raw_text": result["raw_text"]})["cleaned_english_text"]
+        self.assertIn("DA1 · 12.40 · 3.10", cleaned)
+        self.assertNotIn("[TABLE_REMOVED]", cleaned)
         self.assertEqual(mock_ocr.call_args.args[2], [1])
         self.assertIn("Transcribe every table", mock_ocr.call_args.args[3])
         self.assertTrue(any("tables printed as images were read with OCR (pages 2)" in line for line in result["warnings"]))

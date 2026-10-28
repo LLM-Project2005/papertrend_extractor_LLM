@@ -157,6 +157,24 @@ def _table_image_page_limit() -> int:
     return max(0, int(os.getenv("TABLE_IMAGE_MAX_PAGES", "12")))
 
 
+def _tables_read_across(text: str) -> str:
+    """A Markdown table as rows read across ("| DA1 | 12.40 |" -> "DA1 · 12.40"),
+    without its rule lines. The cleaner drops Markdown tables from the text the
+    chat reads, so a table kept in Markdown would reach the stored raw text
+    only. An empty cell stays as a dash so the columns still line up."""
+
+    lines = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if "-" in stripped and "|" in stripped and set(stripped) <= set("|-: \t"):
+            continue
+        if stripped.startswith("|") and stripped.endswith("|") and len(stripped) > 1:
+            cells = [cell.strip() or "-" for cell in stripped[1:-1].split("|")]
+            stripped = " · ".join(cells)
+        lines.append(stripped)
+    return "\n".join(lines).strip()
+
+
 def _ocr_pages(document: Any, pdf_path: str, page_indices: list[int], instruction: str = "") -> Dict[int, str]:
     import base64
 
@@ -300,7 +318,7 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
                 table_pages = _table_image_pages(document, page_texts, set(chosen))
                 read_tables = table_pages[: _table_image_page_limit()]
                 tables = _ocr_pages(document, pdf_path, read_tables, TABLE_OCR_INSTRUCTION) if read_tables else {}
-                tables = {index: text for index, text in tables.items() if "|" in text}
+                tables = {index: _tables_read_across(text) for index, text in tables.items() if "|" in text}
                 if tables:
                     merged = [
                         f"{text}\n\n[Tables on page {index + 1}, read from the page image]\n{tables[index]}" if index in tables else text
