@@ -105,6 +105,8 @@ The user asked for the table to work like YouTube Studio's analytics: many ready
 - **Found:** columns made before columns recorded their preset (the first seven presets) showed twice in the picker: ticked under *Your columns*, unticked in their group. Ticking the second would have added a duplicate. They are now matched to their preset by name (#298).
 - The check ran on the newest table, "Study details 3", which the user had made on the pilot, and added Country and Methodology to it. Those two were hidden again straight after, with their cells kept.
 
+**Taken back out** (same day, at the user's request): the chart above the table. Only the table is shown, the PNG is the table alone, and the Download menu is three one-line choices (CSV, Excel, Image) without descriptions. The short-label kind stays, for answers worded alike across papers. The chart code (`TableChart.tsx` and the chart data functions) was removed rather than left unused.
+
 ## 4. Open items
 
 - **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.51 after the table's pilot checks.

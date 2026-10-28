@@ -1,12 +1,12 @@
 /*
- * The paper table as a picture to save (docs/42): the chart chosen above it,
- * then the table with the columns shown. Drawn from the table's own data onto
+ * The paper table as a picture to save (docs/42): the table with the
+ * columns shown. Drawn from the table's own data onto
  * a canvas, as the semantic map's PNG is (semantic-map-png.ts), rather than
  * photographed from the page: the page scrolls sideways and clips long cells.
  * White, at twice its size where the browser allows, so it reads in a slide or
  * on paper. The layout is pure, so it is tested; the drawing needs a canvas.
  */
-import { cellKey, type TableCells, type TableChartData, type TableColumn, type TableRow } from "@/lib/paper-table";
+import { cellKey, type TableCells, type TableColumn, type TableRow } from "@/lib/paper-table";
 
 export const TABLE_IMAGE = {
   padding: 40,
@@ -17,9 +17,6 @@ export const TABLE_IMAGE = {
   fontSize: 13,
   cellLines: 6,
   titleLines: 4,
-  chartLabelWidth: 280,
-  chartRow: 24,
-  chartBars: 40,
 } as const;
 
 /** Width of a text in pixels at the table's font size; a canvas's measureText in the browser. */
@@ -72,8 +69,6 @@ export interface TableImageCell {
 export interface TableImageLayout {
   width: number;
   height: number;
-  chartTop: number;
-  chartHeight: number;
   tableTop: number;
   columns: Array<{ x: number; width: number; header: string[] }>;
   headerHeight: number;
@@ -86,19 +81,15 @@ export interface TableImageInput {
   rows: TableRow[];
   columns: TableColumn[];
   cells: TableCells;
-  chart: TableChartData | null;
   footnote: string;
 }
 
 /** Where everything goes, for the columns shown; every cell's lines are fitted here. */
 export function tableImageLayout(input: TableImageInput, measure: Measure): TableImageLayout {
-  const { padding, header, paperWidth, cellPadding, lineHeight, cellLines, titleLines, chartRow, chartBars } = TABLE_IMAGE;
+  const { padding, header, paperWidth, cellPadding, lineHeight, cellLines, titleLines } = TABLE_IMAGE;
   const tableWidth = paperWidth + input.columns.reduce((sum, column) => sum + columnWidth(column), 0);
   const width = Math.max(960, tableWidth + padding * 2);
-  const bars = input.chart?.bars.slice(0, chartBars) ?? [];
-  const chartHeight = bars.length > 0 ? 64 + bars.length * chartRow + 16 : 0;
-  const chartTop = header;
-  const tableTop = chartTop + chartHeight + (chartHeight ? 24 : 0);
+  const tableTop = header;
 
   let x = padding + paperWidth;
   const columns = input.columns.map((column) => {
@@ -130,7 +121,7 @@ export function tableImageLayout(input: TableImageInput, measure: Measure): Tabl
     y += placed.height;
     return placed;
   });
-  return { width, height: y + padding + 28, chartTop, chartHeight, tableTop, columns, headerHeight, rows };
+  return { width, height: y + padding + 28, tableTop, columns, headerHeight, rows };
 }
 
 type Canvas2D = Pick<
@@ -142,7 +133,6 @@ const INK = "#111111";
 const BODY = "#555555";
 const MUTED = "#8a8a8a";
 const RULE = "#e5e5e5";
-const BAR = "#3f3f3f";
 
 function fitWidth(text: string, width: number, measure: Measure, bold = false): string {
   return wrapLines(text, width, measure, 1, bold)[0] ?? "";
@@ -150,13 +140,9 @@ function fitWidth(text: string, width: number, measure: Measure, bold = false): 
 
 /** Draws the picture; `font` is the page's own font family. */
 export function drawPaperTable(context: Canvas2D, input: TableImageInput, layout: TableImageLayout, font = "system-ui, sans-serif") {
-  const { padding, paperWidth, cellPadding, lineHeight, fontSize, chartLabelWidth, chartRow } = TABLE_IMAGE;
+  const { padding, paperWidth, cellPadding, lineHeight, fontSize } = TABLE_IMAGE;
   const regular = `400 ${fontSize}px ${font}`;
   const bold = `600 ${fontSize}px ${font}`;
-  const measure: Measure = (text, heavy) => {
-    context.font = heavy ? bold : regular;
-    return context.measureText(text).width;
-  };
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, layout.width, layout.height);
   context.textAlign = "left";
@@ -168,32 +154,6 @@ export function drawPaperTable(context: Canvas2D, input: TableImageInput, layout
   context.fillStyle = BODY;
   context.font = `400 15px ${font}`;
   context.fillText(fitWidth(input.subtitle, layout.width - padding * 2, (text) => context.measureText(text).width), padding, padding + 44);
-
-  const chart = input.chart;
-  if (chart && layout.chartHeight > 0) {
-    let y = layout.chartTop;
-    context.fillStyle = INK;
-    context.font = `600 16px ${font}`;
-    context.fillText(chart.title, padding, y + 18);
-    context.fillStyle = BODY;
-    context.font = regular;
-    context.fillText(fitWidth(chart.stats.map((stat) => `${stat.label}: ${stat.value}`).join("   ·   "), layout.width - padding * 2, measure), padding, y + 42);
-    y += 64;
-    const bars = chart.bars.slice(0, TABLE_IMAGE.chartBars);
-    const max = Math.max(1, ...bars.map((bar) => bar.value));
-    const barLeft = padding + chartLabelWidth + 12;
-    const barSpace = layout.width - barLeft - padding - 90;
-    for (const bar of bars) {
-      context.fillStyle = BODY;
-      context.font = regular;
-      context.fillText(fitWidth(bar.label, chartLabelWidth, measure), padding, y + 16);
-      context.fillStyle = BAR;
-      context.fillRect(barLeft, y + 5, Math.max(2, (bar.value / max) * barSpace), chartRow - 10);
-      context.fillStyle = INK;
-      context.fillText(bar.value.toLocaleString("en-US"), barLeft + Math.max(2, (bar.value / max) * barSpace) + 8, y + 16);
-      y += chartRow;
-    }
-  }
 
   // The table: a light header band, then rows split by hairlines.
   const left = padding;

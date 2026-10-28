@@ -4,8 +4,8 @@ export const tablePage: DocsPageBase = {
   slug: "table",
   title: "Table",
   description:
-    "Lay a repository's studies out against columns you choose from over sixty ready-made ones or write yourself, each value with the paper's own sentence, with a chart above and downloads as CSV, Excel or an image.",
-  tags: ["table", "extraction", "columns", "compare papers", "csv", "excel", "xlsx", "png", "chart", "literature review"],
+    "Lay a repository's studies out against columns you choose from over sixty ready-made ones or write yourself, each value with the paper's own sentence, downloaded as CSV, Excel or an image.",
+  tags: ["table", "extraction", "columns", "compare papers", "csv", "excel", "xlsx", "png", "literature review"],
   related: ["chat", "dashboard"],
   sections: [
     {
@@ -54,18 +54,6 @@ export const tablePage: DocsPageBase = {
       },
     },
     {
-      id: "chart",
-      title: "The chart above the table",
-      body: [
-        "The chart shows what you choose from **Chart**. Every figure in it is counted from the table's cells, never written by an AI model.",
-      ],
-      bullets: [
-        "**What was found**: for each column shown, how many studies have a value.",
-        "A number column (such as **Sample size** or **Number of sessions**): each study's figure, largest first, with the total, median and range. Point at a bar to see the study.",
-        "A short-label column (such as **Country**, **Research design** or **Methodology**): how many studies give each answer, with capitals ignored.",
-      ],
-    },
-    {
       id: "download",
       title: "Downloading",
       body: ["**Download** saves the columns shown, in the format you choose:"],
@@ -74,7 +62,7 @@ export const tablePage: DocsPageBase = {
         rows: [
           ["CSV", "For each column, the value and then the paper's sentence for it. Opens in any spreadsheet or tool, with Thai titles intact."],
           ["Excel (.xlsx)", "Two sheets: **Table**, as on screen, with number columns as numbers a spreadsheet can add up; and **Sources**, one line per cell with its value, note, the paper's sentence and whether it was found."],
-          ["Image (.png)", "The chart and the table as a picture, for a slide or a report, with the date it was made."],
+          ["Image (.png)", "The table as a picture, for a slide or a report, with the date it was made."],
         ],
       },
     },
