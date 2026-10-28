@@ -90,6 +90,11 @@ test("a cell is kept only when its sentence is in the paper, and a number only w
     "a sentence the paper does not have"
   );
   assert.equal(checkCell({ column: "participants", reported: false, value: null, quote: null, note: null }, PARTICIPANTS, text).status, "not_stated");
+  // A total given only in parts: kept when each part is in the sentence and they add up.
+  const parts = checkable("The participants were 10 Thai learners and 10 native-speaker judges, recruited in 2012.");
+  const partsQuote = "The participants were 10 Thai learners and 10 native-speaker judges";
+  assert.equal(checkCell({ column: "sample-size", reported: true, value: "20 participants", quote: partsQuote, note: "10 learners and 10 judges" }, SIZE, parts).status, "found");
+  assert.equal(checkCell({ column: "sample-size", reported: true, value: "25 participants", quote: partsQuote, note: "10 learners and 10 judges" }, SIZE, parts).status, "unverified", "parts that do not add up");
   assert.equal(checkCell(undefined, PARTICIPANTS, text).status, "not_stated", "a paper the reply left out");
 });
 

@@ -6,7 +6,7 @@
  * number, the number is in its sentence.
  */
 import { z } from "zod";
-import { checkable, numberInQuote, quoteInText, toNumber, type CheckableText } from "@/lib/chart-reading";
+import { checkable, numberInQuote, numbersIn, quoteInText, toNumber, wordsOf, type CheckableText } from "@/lib/chart-reading";
 import { createChatCompletionResult } from "@/lib/openai";
 import { cellKey, type TableCell, type TableCells, type TableColumn } from "@/lib/paper-table";
 import { paperParts, readPapers, type ReadablePaper } from "@/lib/paper-reading";
@@ -74,7 +74,15 @@ export function checkCell(raw: RawCell | undefined, column: TableColumn, text: C
   if (!quote || !quoteInText(quote, text)) return { value, quote, note, status: "unverified" };
   if (column.kind === "number") {
     const number = toNumber(value);
-    if (number === null || !numberInQuote(number, quote, text)) return { value, quote, note, status: "unverified" };
+    if (number === null) return { value, quote, note, status: "unverified" };
+    if (!numberInQuote(number, quote, text)) {
+      // A total the paper gives only in parts ("10 learners and 10 judges"): each
+      // part printed in the sentence, and they add up, as Chart mode accepts.
+      const parts = numbersIn(wordsOf(note)).map((token) => token.value).slice(0, 12);
+      const sum = parts.reduce((total, part) => total + part, 0);
+      const adds = parts.length >= 2 && Math.abs(sum - number) < 1e-9 && parts.every((part) => numberInQuote(part, quote, text));
+      if (!adds) return { value, quote, note, status: "unverified" };
+    }
   }
   return { value, quote, note, status: "found" };
 }

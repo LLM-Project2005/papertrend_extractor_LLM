@@ -61,6 +61,17 @@ The word index used by the chat is keyed by each paper's content hash, so it was
 - `src/components/table/PaperTableClient.tsx` and `src/app/workspace/table/page.tsx`: the page.
 - `src/lib/docs/explore-table.ts`: the help page.
 
+**On the pilot** (00290-p9k, `p68-table.cjs`, the test repository):
+- A table with two columns, sample size and setting, filled 72 cells in 21 s, appearing as they were read: 59 values, 11 not stated, 4 not confirmed.
+- The values read true: "180 students", "60 learners (30 intermediate and 30 advanced)", "Thailand; King Mongkut's University of Technology Thonburi".
+- The CSV had 36 rows. At phone width the table scrolled inside its frame and the page did not. There were no page errors.
+- Three things were fixed after it (#295):
+  - The sentence panel opened at the foot of the page, out of sight; it is now drawn in a portal.
+  - Some notes said where a value was stated ("Thailand is stated in the preceding sentence") instead of qualifying it.
+  - A 2011 paper's sample size was its pilot's ("30 samples (Pilot)"); the instructions now ask for the study's own data first.
+- On the re-check (00291-l78) the panel was in view, notes only qualified their values ("three faculties", "two groups of 30", "50 initially; 49 analyzed"), and the 2011 value read "30 samples (pilot study only)". "Not confirmed" rose from 4 to 6 cells. Asking for a total where a paper gives only parts produced totals not printed in the paper (10 learners and 10 judges, "20"). A number cell now passes the same way as in Chart mode: when the parts in its note are each printed in the sentence and add up to it (#296).
+- A check proves the sentence is in the paper, not that it is the right sentence. The learner autonomy thesis gives 149 sixth graders in the intervention and 37 fifth graders in the study, and the table took the 149, as docs/41's C18 did.
+
 **Cost.** Luna is $0.10 per million input tokens and $0.50 per million output. A table of 36 studies and 5 columns reads about 36 × 14,000 characters, roughly 130,000 input tokens, and writes about 180 cells, roughly 15,000 output tokens: about $0.02.
 
 ## 4. Open items
