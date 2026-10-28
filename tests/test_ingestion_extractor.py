@@ -94,6 +94,7 @@ class TableImageTests(unittest.TestCase):
             _tables_read_across("Table 2. Scores\n| Group | Pre | Post |\n|:---|---:|:---:|\n| DA |  | 14.2 |"),
             "Table 2. Scores\nGroup · Pre · Post\nDA · - · 14.2",
         )
+        self.assertEqual(_tables_read_across("| **Phase** | Stage 1<br>Stage 2 |"), "Phase · Stage 1 Stage 2")
 
     @patch("nodes.extractor._is_pdf_file", return_value=True)
     @patch("nodes.extractor._ocr_pages")
