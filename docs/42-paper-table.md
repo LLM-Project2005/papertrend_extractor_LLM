@@ -74,6 +74,37 @@ The word index used by the chat is keyed by each paper's content hash, so it was
 
 **Cost.** Luna is $0.10 per million input tokens and $0.50 per million output. Each paper is read once a fill, about 14,000 characters, however many columns there are; the output grows with the cells. On the pilot a two-column fill of 36 studies cost about $0.022 (OpenRouter credit fell from $0.612 to $0.568 over the two fills), so a five-column table is about $0.03.
 
+### 3.1 The table as a dashboard (same day, #297)
+
+The user asked for the table to work like YouTube Studio's analytics: many ready-made columns to show or hide, a chart above the table, and a Download menu with more than CSV.
+
+- **62 ready-made columns** in seven groups (`paper-table-presets.ts`), up to 80 columns a table:
+  - study design (7), participants (12), setting (7), intervention (9), data and analysis (10), results (10), publication (7);
+  - **Columns** opens a picker with a search; tick to show, clear to hide, then **Apply**.
+  - Hiding keeps a column's cells (`hidden: true` on the column), so showing it again reads nothing. A ready-made column shown for the first time is added and read.
+  - A new table starts from a set: study overview, methods, intervention studies, results and implications, or empty.
+- **A third kind, the short label** (`category`): one to four words worded alike across papers, such as Country, Methodology or Research design, so the chart can count them.
+- **The chart above the table** (`TableChart.tsx`; figures from `foundChart`, `numberChart` and `categoryChart`, all computed from the cells):
+  - what was found per shown column;
+  - a number column study by study, with total, median and range;
+  - a label column's answers, with capitals ignored, and "A; B" counting for both.
+- **Download** (`TableDownloadMenu.tsx`), each with the shown columns:
+  - CSV as before.
+  - Excel: a **Table** sheet with number columns as numbers, and a **Sources** sheet with one line per cell: value, note, sentence and status. `xlsx-writer.ts` writes the .xlsx in the browser as a stored zip of the minimal Office parts, with no new library. Text is written as inline strings, so it is never a formula. A test reads the file back through its zip directory and CRCs, and openpyxl opened a sample with Thai text intact.
+  - PNG: the chart and the table drawn from the data onto a canvas, as the semantic map's PNG is (`paper-table-png.ts`). Each cell is wrapped to its column, at most six lines.
+- **Reading many columns:** eight columns go to a call (`COLUMNS_PER_CALL`), and each call finds its own passages, so a cell's 14,000 characters are chosen for the columns it is asked with. Twenty columns cost about three times one fill.
+
+**On the pilot** (00293-bcz, `p69-dashboard.cjs`):
+- The picker showed 7 groups. Ticking Country and Methodology read 72 cells in 15 s, 61 values found.
+- The Country chart counted 33 of 36 studies (Thailand 31, China 2, Vietnam 1). The Sample size chart gave 30 of 36 studies, total 2,149, median 31.5, range 5–484.
+- CSV, Excel and PNG all downloaded:
+  - openpyxl read the workbook: a Table sheet with 30 sample sizes as numbers, and Sources with 324 lines, the header frozen;
+  - the PNG was 4,920 × 9,532 pixels, with its chart and wrapped cells.
+- The page did not scroll sideways at phone width, and there were no errors.
+- The paper of "10 learners and 10 judges" now reads "20 people (10 learners and 10 judges)" (#296).
+- **Found:** columns made before columns recorded their preset (the first seven presets) showed twice in the picker: ticked under *Your columns*, unticked in their group. Ticking the second would have added a duplicate. They are now matched to their preset by name (#298).
+- The check ran on the newest table, "Study details 3", which the user had made on the pilot, and added Country and Methodology to it. Those two were hidden again straight after, with their cells kept.
+
 ## 4. Open items
 
 - **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.61 after this round.

@@ -63,7 +63,7 @@ export default function ColumnPicker({
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(columns.filter((column) => !column.hidden).map(columnChoiceKey)));
   const [search, setSearch] = useState("");
   const have = useMemo(() => new Set(columns.map(columnChoiceKey)), [columns]);
-  const own = columns.filter((column) => !column.preset);
+  const own = columns.filter((column) => columnChoiceKey(column).startsWith("column:"));
   const query = search.trim().toLowerCase();
   const matches = (name: string, description: string) => !query || `${name} ${description}`.toLowerCase().includes(query);
   const presets = COLUMN_PRESET_GROUPS.flatMap((group) => group.columns);

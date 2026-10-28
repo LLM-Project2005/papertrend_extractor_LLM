@@ -10,7 +10,7 @@
  */
 import { z } from "zod";
 import type { ChartCsv } from "@/lib/chart-csv";
-import type { ColumnPreset } from "@/lib/paper-table-presets";
+import { COLUMN_PRESETS, type ColumnPreset } from "@/lib/paper-table-presets";
 
 /** Columns a table can hold, shown or hidden: every ready-made one and some of the reader's own. */
 export const MAX_COLUMNS = 80;
@@ -95,9 +95,17 @@ export function visibleColumns(columns: TableColumn[]): TableColumn[] {
   return columns.filter((column) => !column.hidden);
 }
 
-/** How the column picker names a column: a ready-made one by its preset, the reader's own by its id. */
-export function columnChoiceKey(column: Pick<TableColumn, "id" | "preset">): string {
-  return column.preset ? `preset:${column.preset}` : `column:${column.id}`;
+const PRESET_BY_NAME = new Map(COLUMN_PRESETS.map((preset) => [preset.name.toLowerCase(), preset.key]));
+
+/**
+ * How the column picker names a column: a ready-made one by its preset, the
+ * reader's own by its id. A column made before columns recorded their preset
+ * (the first seven, 2026-10-28) is matched by its name, so the picker ticks
+ * it in its group instead of offering it again as a second column.
+ */
+export function columnChoiceKey(column: Pick<TableColumn, "id" | "preset" | "name">): string {
+  const preset = column.preset ?? PRESET_BY_NAME.get(column.name.trim().toLowerCase());
+  return preset ? `preset:${preset}` : `column:${column.id}`;
 }
 
 /**

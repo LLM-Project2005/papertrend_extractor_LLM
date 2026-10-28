@@ -364,6 +364,15 @@ const ROWS = [
 const COUNTRY: TableColumn = { id: "country", name: "Country", instruction: "", kind: "category", preset: "country" };
 const found = (value: string, note = "") => ({ value, quote: "q", note, status: "found" as const });
 
+test("a column made before columns recorded their preset is ticked in its group, not offered twice", () => {
+  const legacy: TableColumn = { id: "setting", name: "Setting", instruction: "The country and the kind of school or university where the study took place.", kind: "text" };
+  assert.equal(columnChoiceKey(legacy), "preset:setting");
+  const hidden = applyColumnChoice([legacy], new Set(["preset:country"]), COLUMN_PRESETS);
+  assert.deepEqual(hidden.map((column) => [column.id, Boolean(column.hidden)]), [["setting", true], ["country", false]], "cleared, it hides; no second Setting");
+  const kept = applyColumnChoice([legacy], new Set(["preset:setting"]), COLUMN_PRESETS);
+  assert.equal(kept.length, 1, "ticked, it stays the one column");
+});
+
 test("the chart counts what was found, charts a number study by study, and counts a label's answers", () => {
   const cells: TableCells = {
     "1:sample-size": found("180 students", "three faculties"),
