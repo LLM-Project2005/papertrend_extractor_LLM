@@ -8,7 +8,10 @@
  *
  * Tables are saved per repository. A fill reads the empty cells and streams
  * each batch of papers back as it is read, so the table fills in on the page;
- * leaving or pressing Stop keeps what was read.
+ * leaving or pressing Stop keeps what was read. "Read again" reads a cell
+ * answered "Not stated" or "Not confirmed" before second looks, from the whole
+ * paper. The table scrolls in a frame no taller than the screen, so its
+ * sideways scrollbar is always in view (the user's request, 2026-10-28).
  *
  * Columns are shown or hidden from a picker of ready-made ones, as in an
  * analytics dashboard (2026-10-28, the user's request), and the table
@@ -24,6 +27,7 @@ import {
   CloseIcon,
   PencilSquareIcon,
   PlusIcon,
+  RefreshIcon,
   SpinnerIcon,
   StopIcon,
   TableIcon,
@@ -41,10 +45,12 @@ import {
   MAX_COLUMNS,
   applyColumnChoice,
   cellKey,
+  doubtfulCells,
   missingCells,
   newColumnId,
   paperTableCsv,
   paperTableSheets,
+  tidyLabels,
   visibleColumns,
   type ColumnKind,
   type TableCell,
@@ -90,7 +96,8 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
-function CellView({ cell, reading, onOpen }: { cell: TableCell | undefined; reading: boolean; onOpen: () => void }) {
+function CellView({ cell, reading, again, onOpen }: { cell: TableCell | undefined; reading: boolean; again: boolean; onOpen: () => void }) {
+  if (again) return <span aria-label="Reading again" className="block h-3 w-20 rounded bg-subtle motion-safe:animate-pulse" />;
   if (!cell || (reading && cell.status === "failed")) {
     return reading ? (
       <span aria-label="Reading" className="block h-3 w-20 rounded bg-subtle motion-safe:animate-pulse" />
@@ -186,14 +193,19 @@ const KINDS: Array<{ value: ColumnKind; label: string; detail: string }> = [
 function ColumnDialog({
   column,
   busy,
+  doubtful,
   onSave,
   onRemove,
+  onReadAgain,
   onClose,
 }: {
   column: TableColumn | null;
   busy: boolean;
+  /** This column's cells "Read again" would read. */
+  doubtful: number;
   onSave: (column: TableColumn) => void;
   onRemove: (column: TableColumn) => void;
+  onReadAgain: () => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(column?.name ?? "");
@@ -247,6 +259,17 @@ function ColumnDialog({
           </div>
         </fieldset>
         {meaningChanges ? <p className={hintClass}>This column&apos;s cells will be read again.</p> : null}
+        {column && doubtful > 0 && !meaningChanges ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-subtle px-3 py-2 text-[13px] leading-5 text-body">
+            <span>
+              {plural(doubtful, "cell")} {doubtful === 1 ? "says" : "say"} Not stated or Not confirmed from part of a paper.
+            </span>
+            <button type="button" disabled={busy} onClick={onReadAgain} className={buttonClass("secondary", "sm")}>
+              <RefreshIcon className="h-3.5 w-3.5" />
+              Read again
+            </button>
+          </div>
+        ) : null}
         <div className="mt-5 flex items-center justify-between gap-2">
           {column ? (
             <button type="button" disabled={busy} onClick={() => onRemove(column)} className={buttonClass("danger", "sm")}>
@@ -340,6 +363,8 @@ export default function PaperTableClient() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState(false);
   const [filling, setFilling] = useState<{ done: number; total: number } | null>(null);
+  // Cells being read again; each shows as reading until its new answer comes.
+  const [rereading, setRereading] = useState<ReadonlySet<string>>(() => new Set());
   const [selected, setSelected] = useState<{ paperId: string; columnId: string } | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const fillRef = useRef<AbortController | null>(null);
@@ -361,7 +386,8 @@ export default function PaperTableClient() {
   );
 
   const fill = useCallback(
-    async (id: string) => {
+    /** `again`: "Read again", with the cells it reads (keys) and the columns it keeps to. */
+    async (id: string, again?: { keys: string[]; columnIds?: string[] }) => {
       if (!token) return;
       fillRef.current?.abort();
       const controller = new AbortController();
@@ -370,12 +396,14 @@ export default function PaperTableClient() {
       setError(null);
       setNotice(null);
       setFilling({ done: 0, total: 0 });
+      setRereading(new Set(again?.keys ?? []));
       let found = 0;
       let read = 0;
       try {
         const response = await fetch(`/api/workspace/tables/${id}/fill`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(again ? { again: true, ...(again.columnIds ? { columnIds: again.columnIds } : {}) } : {}),
           signal: controller.signal,
         });
         if (!response.ok || !response.body || !(response.headers.get("content-type") ?? "").includes("ndjson")) {
@@ -405,6 +433,12 @@ export default function PaperTableClient() {
               read = event.done;
               setFilling((current) => ({ done: event.done, total: current?.total ?? event.done }));
               setTable((current) => (current && current.id === id ? { ...current, cells: { ...current.cells, ...event.cells } } : current));
+              setRereading((current) => {
+                if (current.size === 0) return current;
+                const next = new Set(current);
+                for (const key of Object.keys(event.cells)) next.delete(key);
+                return next;
+              });
             } else if (event.type === "done") found = event.found;
             else if (event.type === "error") throw new Error(event.error);
           }
@@ -419,6 +453,7 @@ export default function PaperTableClient() {
           fillingTableRef.current = null;
         }
         setFilling(null);
+        setRereading(new Set());
       }
     },
     [token]
@@ -531,11 +566,12 @@ export default function PaperTableClient() {
     const shownColumns = visibleColumns(table.columns);
     const base = csvFileName(table.name).replace(/\.csv$/, "");
     try {
+      // The cells as shown, labels tidied.
       if (format === "csv") {
-        const csv = paperTableCsv(table.name, rows, shownColumns, table.cells);
+        const csv = paperTableCsv(table.name, rows, shownColumns, cells);
         saveBlob(new Blob([toCsv(csv.header, csv.rows)], { type: "text/csv;charset=utf-8" }), `${base}.csv`);
       } else if (format === "xlsx") {
-        const bytes = xlsxBytes(paperTableSheets(rows, shownColumns, table.cells));
+        const bytes = xlsxBytes(paperTableSheets(rows, shownColumns, cells));
         saveBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${base}.xlsx`);
       } else {
         await downloadPaperTablePng(
@@ -544,7 +580,7 @@ export default function PaperTableClient() {
             subtitle: `${plural(rows.length, "study", "studies")}${currentProject ? ` in ${currentProject.name}` : ""} · ${plural(shownColumns.length, "column")}`,
             rows,
             columns: shownColumns,
-            cells: table.cells,
+            cells,
             footnote: `Papertrend · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · a value is kept only when the paper's own sentence states it`,
           },
           `${base}.png`
@@ -594,7 +630,7 @@ export default function PaperTableClient() {
 
   const columns = useMemo(() => table?.columns ?? [], [table?.columns]);
   const shown = useMemo(() => visibleColumns(columns), [columns]);
-  const cells = useMemo(() => table?.cells ?? {}, [table?.cells]);
+  const cells = useMemo(() => tidyLabels(columns, table?.cells ?? {}), [columns, table?.cells]);
   const counts = useMemo(() => {
     const total = { found: 0, notStated: 0, unverified: 0 };
     for (const row of rows) {
@@ -608,6 +644,12 @@ export default function PaperTableClient() {
     return total;
   }, [cells, shown, rows]);
   const missing = useMemo(() => missingCells(rows, columns, cells).length, [cells, columns, rows]);
+  const doubtful = useMemo(() => doubtfulCells(rows, columns, cells), [cells, columns, rows]);
+  function readAgain(columnIds?: string[]) {
+    if (!table) return;
+    const keys = (columnIds ? doubtful.filter((cell) => columnIds.includes(cell.columnId)) : doubtful).map((cell) => cellKey(cell.paperId, cell.columnId));
+    void fill(table.id, { keys, columnIds });
+  }
   const selectedRow = selected ? rows.find((row) => row.paperId === selected.paperId) : undefined;
   const selectedColumn = selected ? columns.find((column) => column.id === selected.columnId) : undefined;
   const selectedCell = selected ? cells[cellKey(selected.paperId, selected.columnId)] : undefined;
@@ -659,7 +701,7 @@ export default function PaperTableClient() {
             <h2 className="text-lg font-semibold text-ink">Make a table of your papers</h2>
             <p className="mt-2 text-sm leading-6 text-body">
               Choose what you want from each study (participants, setting, design, instruments, findings, or anything you name) and every
-              paper is read for it. Each value keeps the sentence it came from, and the table downloads as a CSV for a spreadsheet.
+              paper is read for it. Each value keeps the sentence it came from, and the table downloads as CSV, Excel or an image.
             </p>
           </div>
           <button type="button" onClick={() => setDialog({ kind: "new" })} className={buttonClass("primary")}>
@@ -712,9 +754,23 @@ export default function PaperTableClient() {
                   Stop
                 </button>
               ) : (
-                <button type="button" disabled={missing === 0 || shown.length === 0} onClick={() => void fill(table.id)} className={buttonClass("primary", "sm")}>
-                  Fill table
-                </button>
+                <>
+                  {doubtful.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => readAgain()}
+                      title="Read the cells marked Not stated or Not confirmed again, each from the whole paper"
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      <RefreshIcon className="h-3.5 w-3.5" />
+                      Read again
+                      <span className="tabular-nums text-mute">{doubtful.length}</span>
+                    </button>
+                  ) : null}
+                  <button type="button" disabled={missing === 0 || shown.length === 0} onClick={() => void fill(table.id)} className={buttonClass("primary", "sm")}>
+                    Fill table
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -732,7 +788,7 @@ export default function PaperTableClient() {
                 ]
                   .filter(Boolean)
                   .join(" · ")}
-            {more > 0 ? ` · the first ${rows.length.toLocaleString()} studies are shown` : ""}
+            {more > 0 ? ` · the newest ${rows.length.toLocaleString()} of ${(rows.length + more).toLocaleString()} studies are shown` : ""}
           </p>
 
           {shown.length === 0 ? (
@@ -742,15 +798,21 @@ export default function PaperTableClient() {
           ) : rows.length === 0 ? (
             <div className={`${panelClass} p-6 text-sm text-body`}>This repository has no analysed papers yet.</div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-hairline bg-surface shadow-raise" data-paper-list="">
+            // No taller than the screen below the workspace bar, so the sideways scrollbar is in view
+            // without scrolling the page to the table's end; the header row and paper column stay put.
+            <div
+              className="max-h-[max(20rem,calc(100dvh-19rem))] overflow-auto rounded-xl border border-hairline bg-surface shadow-raise"
+              data-paper-list=""
+              data-table-frame=""
+            >
               <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
-                    <th scope="col" className="sticky left-0 z-10 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-bottom font-medium text-ink sm:w-[280px] sm:min-w-[220px] sm:px-4">
+                    <th scope="col" className="sticky left-0 top-0 z-30 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-bottom font-medium text-ink sm:w-[280px] sm:min-w-[220px] sm:px-4">
                       Paper
                     </th>
                     {shown.map((column) => (
-                      <th key={column.id} scope="col" className="min-w-[220px] max-w-[340px] border-b border-hairline px-4 py-3 text-left align-bottom font-medium text-ink">
+                      <th key={column.id} scope="col" className="sticky top-0 z-20 min-w-[220px] max-w-[340px] border-b border-hairline bg-surface px-4 py-3 text-left align-bottom font-medium text-ink">
                         <div className="flex items-center gap-1.5">
                           <span className="min-w-0 truncate">{column.name}</span>
                           <button
@@ -782,7 +844,12 @@ export default function PaperTableClient() {
                         const isSelected = selected?.paperId === row.paperId && selected.columnId === column.id;
                         return (
                           <td key={key} className={`min-w-[220px] max-w-[340px] border-b border-hairline px-4 py-3 align-top ${isSelected ? "bg-subtle" : ""}`}>
-                            <CellView cell={cells[key]} reading={Boolean(filling)} onOpen={() => setSelected({ paperId: row.paperId, columnId: column.id })} />
+                            <CellView
+                              cell={cells[key]}
+                              reading={Boolean(filling)}
+                              again={rereading.has(key)}
+                              onOpen={() => setSelected({ paperId: row.paperId, columnId: column.id })}
+                            />
                           </td>
                         );
                       })}
@@ -806,7 +873,14 @@ export default function PaperTableClient() {
         <ColumnDialog
           column={dialog.column}
           busy={busy}
+          doubtful={dialog.column ? doubtful.filter((cell) => cell.columnId === dialog.column?.id).length : 0}
           onClose={() => setDialog(null)}
+          onReadAgain={() => {
+            if (!dialog.column) return;
+            const columnIds = [dialog.column.id];
+            setDialog(null);
+            readAgain(columnIds);
+          }}
           onRemove={(column) => void saveColumns(columns.filter((entry) => entry.id !== column.id), false)}
           onSave={(column) => {
             const next = dialog.column

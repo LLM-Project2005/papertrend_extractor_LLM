@@ -4,6 +4,12 @@
  * paper that bear on the columns are found, a few papers are read in one call,
  * and code keeps a cell only when its sentence is in the paper and, for a
  * number, the number is in its sentence.
+ *
+ * A paper read in excerpts is read again, whole, before a cell of it says "Not
+ * stated" or "Not confirmed". Every paper of the test repository is longer
+ * than its excerpts (median 57,000 characters), and two readings of the same
+ * column disagreed for 10 of 36 papers: "Not stated" for "There were 25
+ * students in this section" (2026-10-28 audit).
  */
 import { z } from "zod";
 import { checkable, numberInQuote, numbersIn, quoteInText, toNumber, wordsOf, type CheckableText } from "@/lib/chart-reading";
@@ -15,6 +21,8 @@ type Complete = typeof createChatCompletionResult;
 
 /** Characters of each paper read for its row: the passages that bear on the columns, or the whole paper when it fits. */
 const ROW_READING = 14_000;
+/** Characters of a paper read on a second look: the whole of all but the longest (the test repository's longest is 103,000). */
+const SECOND_LOOK = 120_000;
 const BATCH_PAPERS = 4;
 /** Columns read in one call; more are read in further calls, each finding its own passages. */
 export const COLUMNS_PER_CALL = 8;
@@ -97,14 +105,26 @@ export function checkCell(raw: RawCell | undefined, column: TableColumn, text: C
   return { value, quote, note, status: "found" };
 }
 
+interface BatchReading {
+  /** Each paper's answers by column, or null when the call failed twice. */
+  answers: Map<string, Map<string, RawCell>> | null;
+  /** The papers read whole. */
+  whole: Set<string>;
+}
+
 async function readBatch(
   papers: ReadablePaper[],
   columns: TableColumn[],
+  budget: number,
   complete: Complete,
   model?: string
-): Promise<Map<string, Map<string, RawCell>> | null> {
-  const queries = columns.flatMap((column) => [column.name, column.instruction]).filter(Boolean);
-  const readings = readPapers(papers, queries, ROW_READING * papers.length);
+): Promise<BatchReading> {
+  // One search for each column. readPapers searches for the first ten, and a
+  // column's name and instruction searched apart left the last three of eight
+  // columns unsearched (2026-10-28 audit).
+  const queries = columns.map((column) => [column.name, column.instruction].filter(Boolean).join(": "));
+  const readings = readPapers(papers, queries, budget);
+  const whole = new Set(readings.filter((reading) => reading.whole).map((reading) => reading.paperId));
   const request = JSON.stringify({
     papers: papers.map((paper, index) => ({
       paperId: paper.paperId,
@@ -143,7 +163,7 @@ async function readBatch(
           const cells = entry.cells.map((cell) => RawCellSchema.safeParse(cell)).flatMap((cell) => (cell.success ? [cell.data] : []));
           byPaper.set(entry.paperId, new Map(cells.map((cell) => [cell.column, cell])));
         }
-        return byPaper;
+        return { answers: byPaper, whole };
       }
       // What went wrong, never what the papers say.
       console.warn("paper_table_unparsed", { attempt, replyChars: raw.length, issues: parsed.error.issues.slice(0, 3).map((issue) => `${issue.path.join(".")}:${issue.code}`) });
@@ -151,58 +171,123 @@ async function readBatch(
       console.warn("paper_table_read_failed", { attempt, message: error instanceof Error ? error.message : "unknown_error" });
     }
   }
-  return null;
+  return { answers: null, whole };
+}
+
+const FAILED: TableCell = { value: "", quote: "", note: "", status: "failed" };
+
+/** Runs the tasks, `limit` at a time. */
+async function runAll(tasks: Array<() => Promise<void>>, limit: number): Promise<void> {
+  let next = 0;
+  async function worker() {
+    while (next < tasks.length) {
+      const task = tasks[next];
+      next += 1;
+      await task();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+}
+
+/** Cells as lists of columns by paper. */
+function byPaper(cells: Array<{ paperId: string; columnId: string }>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const { paperId, columnId } of cells) {
+    if (!out.has(paperId)) out.set(paperId, new Set());
+    out.get(paperId)!.add(columnId);
+  }
+  return out;
 }
 
 /**
  * Reads the given cells, a few papers to a call, and reports each batch's
  * checked cells as it finishes, so a table fills in while it is read.
+ *
+ * A cell that comes back "Not stated" or "Not confirmed" from excerpts is held
+ * back and its paper read again whole, one paper to a call, for every column
+ * it lacked; the second look's answer stands. `again` (the page's "Read
+ * again") goes straight to that second look, and a cell whose second look
+ * fails is kept as it was (`previous`).
  */
 export async function readTableCells(input: {
   papers: ReadablePaper[];
   columns: TableColumn[];
   wanted: Array<{ paperId: string; columnId: string }>;
+  again?: Array<{ paperId: string; columnId: string }>;
+  previous?: TableCells;
   complete?: Complete;
   model?: string;
   onBatch?: (cells: TableCells) => void | Promise<void>;
 }): Promise<TableCells> {
   const complete = input.complete ?? createChatCompletionResult;
-  const columnsFor = new Map<string, Set<string>>();
-  for (const { paperId, columnId } of input.wanted) {
-    if (!columnsFor.has(paperId)) columnsFor.set(paperId, new Set());
-    columnsFor.get(paperId)!.add(columnId);
-  }
+  const all: TableCells = {};
+  const report = async (cells: TableCells) => {
+    if (Object.keys(cells).length === 0) return;
+    Object.assign(all, cells);
+    await input.onBatch?.(cells);
+  };
+
+  // First reading: each task is a few papers and at most COLUMNS_PER_CALL of the columns they still need.
+  const columnsFor = byPaper(input.wanted);
+  const second = byPaper(input.again ?? []);
   const papers = input.papers.filter((paper) => columnsFor.has(paper.paperId));
-  // Each task is a few papers and at most COLUMNS_PER_CALL of the columns they still need.
-  const tasks: Array<{ batch: ReadablePaper[]; columns: TableColumn[] }> = [];
+  const firstTasks: Array<() => Promise<void>> = [];
   for (let start = 0; start < papers.length; start += BATCH_PAPERS) {
     const batch = papers.slice(start, start + BATCH_PAPERS);
     // The columns any paper of the batch still needs; a cell already read is not replaced.
     const ids = new Set(batch.flatMap((paper) => [...(columnsFor.get(paper.paperId) ?? [])]));
     const needed = input.columns.filter((column) => ids.has(column.id));
-    for (let first = 0; first < needed.length; first += COLUMNS_PER_CALL) tasks.push({ batch, columns: needed.slice(first, first + COLUMNS_PER_CALL) });
-  }
-  const all: TableCells = {};
-  let next = 0;
-  async function worker() {
-    while (next < tasks.length) {
-      const { batch, columns } = tasks[next];
-      next += 1;
-      const answer = await readBatch(batch, columns, complete, input.model);
-      const cells: TableCells = {};
-      for (const paper of batch) {
-        const text = checkable(paperText(paper));
-        for (const column of columns) {
-          if (!columnsFor.get(paper.paperId)?.has(column.id)) continue;
-          cells[cellKey(paper.paperId, column.id)] = answer
-            ? checkCell(answer.get(paper.paperId)?.get(column.id), column, text)
-            : { value: "", quote: "", note: "", status: "failed" };
+    for (let first = 0; first < needed.length; first += COLUMNS_PER_CALL) {
+      const columns = needed.slice(first, first + COLUMNS_PER_CALL);
+      firstTasks.push(async () => {
+        const { answers, whole } = await readBatch(batch, columns, ROW_READING * batch.length, complete, input.model);
+        const cells: TableCells = {};
+        for (const paper of batch) {
+          const text = checkable(paperText(paper));
+          for (const column of columns) {
+            if (!columnsFor.get(paper.paperId)?.has(column.id)) continue;
+            const key = cellKey(paper.paperId, column.id);
+            if (!answers) {
+              cells[key] = FAILED;
+              continue;
+            }
+            const cell = checkCell(answers.get(paper.paperId)?.get(column.id), column, text);
+            if (whole.has(paper.paperId)) cells[key] = { ...cell, readWhole: true };
+            else if (cell.status === "found") cells[key] = cell;
+            else {
+              if (!second.has(paper.paperId)) second.set(paper.paperId, new Set());
+              second.get(paper.paperId)!.add(column.id);
+            }
+          }
         }
-      }
-      Object.assign(all, cells);
-      await input.onBatch?.(cells);
+        await report(cells);
+      });
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, worker));
+  await runAll(firstTasks, CONCURRENCY);
+
+  // The second look: one paper to a call, whole, for every column it lacked.
+  const again = new Set((input.again ?? []).map(({ paperId, columnId }) => cellKey(paperId, columnId)));
+  const secondTasks: Array<() => Promise<void>> = [];
+  for (const paper of input.papers) {
+    const ids = second.get(paper.paperId);
+    if (!ids) continue;
+    const needed = input.columns.filter((column) => ids.has(column.id));
+    for (let first = 0; first < needed.length; first += COLUMNS_PER_CALL) {
+      const columns = needed.slice(first, first + COLUMNS_PER_CALL);
+      secondTasks.push(async () => {
+        const { answers } = await readBatch([paper], columns, SECOND_LOOK, complete, input.model);
+        const text = checkable(paperText(paper));
+        const cells: TableCells = {};
+        for (const column of columns) {
+          const key = cellKey(paper.paperId, column.id);
+          const kept = again.has(key) ? input.previous?.[key] : undefined;
+          cells[key] = answers ? { ...checkCell(answers.get(paper.paperId)?.get(column.id), column, text), readWhole: true } : kept ?? FAILED;
+        }
+        await report(cells);
+      });
+    }
+  }
+  await runAll(secondTasks, CONCURRENCY);
   return all;
 }
