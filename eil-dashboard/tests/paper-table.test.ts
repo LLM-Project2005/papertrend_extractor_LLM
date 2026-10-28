@@ -315,7 +315,7 @@ test("the Table page is in the workspace's navigation and its search", () => {
 // chart above the table, and downloads as CSV, Excel and PNG.
 
 test("the ready-made columns are many, grouped, each with its own key, an instruction and a kind", () => {
-  assert.ok(COLUMN_PRESETS.length >= 45, `${COLUMN_PRESETS.length} ready-made columns`);
+  assert.ok(COLUMN_PRESETS.length >= 60, `${COLUMN_PRESETS.length} ready-made columns`);
   assert.equal(new Set(COLUMN_PRESETS.map((preset) => preset.key)).size, COLUMN_PRESETS.length, "keys are unique");
   assert.equal(new Set(COLUMN_PRESETS.map((preset) => preset.name.toLowerCase())).size, COLUMN_PRESETS.length, "names are unique");
   assert.ok(COLUMN_PRESET_GROUPS.length >= 6);

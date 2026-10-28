@@ -13,7 +13,7 @@ import type { ChartCsv } from "@/lib/chart-csv";
 import type { ColumnPreset } from "@/lib/paper-table-presets";
 
 /** Columns a table can hold, shown or hidden: every ready-made one and some of the reader's own. */
-export const MAX_COLUMNS = 64;
+export const MAX_COLUMNS = 80;
 /** Rows read for one table; a repository with more is read in its first this many. */
 export const MAX_TABLE_PAPERS = 120;
 export const MAX_TABLES_PER_REPOSITORY = 30;

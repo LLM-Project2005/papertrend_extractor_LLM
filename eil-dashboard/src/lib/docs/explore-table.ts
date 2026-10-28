@@ -4,7 +4,7 @@ export const tablePage: DocsPageBase = {
   slug: "table",
   title: "Table",
   description:
-    "Lay a repository's studies out against columns you choose from over forty ready-made ones or write yourself, each value with the paper's own sentence, with a chart above and downloads as CSV, Excel or an image.",
+    "Lay a repository's studies out against columns you choose from over sixty ready-made ones or write yourself, each value with the paper's own sentence, with a chart above and downloads as CSV, Excel or an image.",
   tags: ["table", "extraction", "columns", "compare papers", "csv", "excel", "xlsx", "png", "chart", "literature review"],
   related: ["chat", "dashboard"],
   sections: [
@@ -29,7 +29,7 @@ export const tablePage: DocsPageBase = {
       ],
       bullets: [
         "Hiding a column keeps what was read for it, so showing it again reads nothing and costs nothing.",
-        "A table holds up to 64 columns and the first 120 studies; a repository holds up to 30 tables.",
+        "A table holds up to 80 columns and the first 120 studies; a repository holds up to 30 tables.",
         "Renaming a column keeps its values. Changing what it reads, or its kind, clears it to be read again.",
         "Tables are saved with the repository and only you can see yours.",
       ],

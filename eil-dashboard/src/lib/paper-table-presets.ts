@@ -41,6 +41,7 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
       },
       { key: "theory", name: "Theoretical framework", instruction: "The theory or framework the study draws on.", kind: "text" },
       { key: "variables", name: "Variables", instruction: "The independent and dependent variables, if the study has them.", kind: "text" },
+      { key: "time-frame", name: "Time frame", instruction: "Cross-sectional or longitudinal; for a longitudinal study, over what period.", kind: "category" },
     ],
   },
   {
@@ -61,6 +62,14 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
       { key: "gender", name: "Gender", instruction: "How many participants were female and how many male.", kind: "text" },
       { key: "sampling", name: "Sampling method", instruction: "How the participants were chosen, e.g. purposive, random, convenience, stratified.", kind: "category" },
       { key: "groups", name: "Groups", instruction: "The groups compared and how many were in each.", kind: "text" },
+      {
+        key: "participant-role",
+        name: "Participant role",
+        instruction: "Who the participants were: students, teachers, students and teachers, or others (e.g. professionals).",
+        kind: "category",
+      },
+      { key: "attrition", name: "Attrition", instruction: "How many participants dropped out or were excluded, and why.", kind: "text" },
+      { key: "class-size", name: "Class size", instruction: "The number of students in each class taught.", kind: "number" },
     ],
   },
   {
@@ -75,6 +84,7 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
         kind: "category",
       },
       { key: "setting", name: "Setting", instruction: "The country and the kind of school or university where the study took place.", kind: "text" },
+      { key: "region", name: "City or region", instruction: "The city, province or region where the study took place.", kind: "text" },
       { key: "learning-context", name: "Learning context", instruction: "EFL, ESL, EMI, CLIL or another language learning context.", kind: "category" },
       { key: "target-language", name: "Target language", instruction: "The language being learned or studied.", kind: "category" },
       { key: "course", name: "Course or subject", instruction: "The course, subject or programme the study was part of.", kind: "text" },
@@ -90,6 +100,14 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
       { key: "sessions", name: "Number of sessions", instruction: "How many sessions or lessons the intervention had.", kind: "number" },
       { key: "materials", name: "Materials and technology", instruction: "The materials, tools or technology used in the teaching.", kind: "text" },
       { key: "skill", name: "Skill focus", instruction: "The language skill or area studied, e.g. reading, writing, speaking, listening, vocabulary, grammar, pronunciation.", kind: "category" },
+      { key: "teacher", name: "Who taught", instruction: "Who delivered the teaching: the researcher, the class teacher, or others.", kind: "text" },
+      {
+        key: "assessment-type",
+        name: "Assessment type",
+        instruction: "The kind of assessment studied or used, e.g. formative, summative, dynamic, peer, self, portfolio.",
+        kind: "category",
+      },
+      { key: "feedback", name: "Feedback", instruction: "The kind of feedback given to the learners, and by whom.", kind: "text" },
     ],
   },
   {
@@ -103,6 +121,9 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
       { key: "reliability", name: "Reliability and validity", instruction: "How the instruments' reliability or validity was checked, with any coefficient (e.g. Cronbach's alpha = .85).", kind: "text" },
       { key: "software", name: "Software", instruction: "The software used for the analysis, e.g. SPSS, NVivo, R, AntConc, Praat.", kind: "category" },
       { key: "corpus-size", name: "Corpus or text size", instruction: "The size of the corpus or the texts analysed, in words or texts.", kind: "text" },
+      { key: "scoring", name: "Scoring and rubrics", instruction: "How responses were scored, e.g. the rubric or band scale used.", kind: "text" },
+      { key: "inter-rater", name: "Inter-rater reliability", instruction: "Agreement between raters or coders, with its coefficient (e.g. kappa = .82).", kind: "text" },
+      { key: "pre-post", name: "Pre-test and post-test", instruction: "Whether the study used a pre-test and a post-test: yes or no.", kind: "category" },
     ],
   },
   {
@@ -110,6 +131,13 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
     label: "Results",
     columns: [
       { key: "main-finding", name: "Main finding", instruction: "The study's main finding, in one sentence.", kind: "text" },
+      { key: "conclusion", name: "Conclusion", instruction: "The authors' overall conclusion, in one sentence.", kind: "text" },
+      {
+        key: "significance",
+        name: "Statistical significance",
+        instruction: "Whether the main result was statistically significant: significant, not significant, or not tested.",
+        kind: "category",
+      },
       { key: "key-statistics", name: "Key statistics", instruction: "The statistics of the main result, e.g. means, t or F values and p values.", kind: "text" },
       { key: "effect-size", name: "Effect size", instruction: "The effect size reported for the main result, with its measure (e.g. d = 0.82, η2 = .14).", kind: "text" },
       {
@@ -133,6 +161,8 @@ export const COLUMN_PRESET_GROUPS: ColumnPresetGroup[] = [
       { key: "authors", name: "Authors", instruction: "The authors' names, as printed.", kind: "text" },
       { key: "affiliation", name: "Affiliation", instruction: "The authors' universities or institutions.", kind: "text" },
       { key: "funding", name: "Funding", instruction: "Who funded the study, if the paper says.", kind: "text" },
+      { key: "paper-language", name: "Language of the paper", instruction: "The language the paper is written in.", kind: "category" },
+      { key: "ethics", name: "Ethics and consent", instruction: "How ethical approval and the participants' consent were handled.", kind: "text" },
     ],
   },
 ];
