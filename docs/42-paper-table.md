@@ -72,7 +72,7 @@ The word index used by the chat is keyed by each paper's content hash, so it was
 - On the re-check (00291-l78) the panel was in view, notes only qualified their values ("three faculties", "two groups of 30", "50 initially; 49 analyzed"), and the 2011 value read "30 samples (pilot study only)". "Not confirmed" rose from 4 to 6 cells. Asking for a total where a paper gives only parts produced totals not printed in the paper (10 learners and 10 judges, "20"). A number cell now passes the same way as in Chart mode: when the parts in its note are each printed in the sentence and add up to it (#296).
 - A check proves the sentence is in the paper, not that it is the right sentence. The learner autonomy thesis gives 149 sixth graders in the intervention and 37 fifth graders in the study, and the table took the 149, as docs/41's C18 did.
 
-**Cost.** Luna is $0.10 per million input tokens and $0.50 per million output. A table of 36 studies and 5 columns reads about 36 × 14,000 characters, roughly 130,000 input tokens, and writes about 180 cells, roughly 15,000 output tokens: about $0.02.
+**Cost.** Luna is $0.10 per million input tokens and $0.50 per million output. Each paper is read once a fill, about 14,000 characters, however many columns there are; the output grows with the cells. On the pilot a two-column fill of 36 studies cost about $0.022 (OpenRouter credit fell from $0.612 to $0.568 over the two fills), so a five-column table is about $0.03.
 
 ## 4. Open items
 
