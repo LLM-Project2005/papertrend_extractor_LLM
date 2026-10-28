@@ -57,6 +57,7 @@ The planner routed 68 of the 70 chat and Chart mode questions as expected, for $
 **Tables printed as images** (nodes/extractor.py).
 - In the test repository, 57 of 298 table captions are followed by text with almost no numbers. About a third of those are real tables printed as pictures, among them "Descriptive statistics for the CDRA scores (n = 30)".
 - A page with a table caption whose pictures cover 12% of the page or more now has its tables transcribed by the vision model. They are added after the page's own text, so evidence can still be marked on the PDF. The extraction method stays `fitz_text`.
+- The tables are written with each row read across ("DA1 · 12.40 · 3.10"), without rule lines. The cleaner replaces Markdown tables with `[TABLE_REMOVED]` in the text the chat reads (`paper_content.body`), so the first version, which kept them in Markdown, reached `raw_text` only. This was caught before the production release.
 - At most 12 pages are read per paper (`TABLE_IMAGE_MAX_PAGES`). This applies to new uploads only.
 
 **Also fixed.**
