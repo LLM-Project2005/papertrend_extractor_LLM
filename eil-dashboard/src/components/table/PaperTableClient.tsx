@@ -801,7 +801,7 @@ export default function PaperTableClient() {
             // No taller than the screen below the workspace bar, so the sideways scrollbar is in view
             // without scrolling the page to the table's end; the header row and paper column stay put.
             <div
-              className="max-h-[max(20rem,calc(100dvh-19rem))] overflow-auto rounded-xl border border-hairline bg-surface shadow-raise"
+              className="max-h-[max(20rem,calc(100dvh-22rem))] overflow-auto rounded-xl border border-hairline bg-surface shadow-raise"
               data-paper-list=""
               data-table-frame=""
             >

@@ -128,7 +128,24 @@ Asked whether the table was perfect, I read the four tables in the test reposito
   - the empty page lists all three downloads;
   - the help page explains the second look, Read again and tidy labels;
   - the cost paragraph above.
-- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 19rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put.
+- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 22rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put. The first try, `− 19rem`, left the frame's foot 8 px below a 950 px screen: the table starts 312 px down.
+
+**On the pilot** (00296-rm6, `p71-second-look.cjs`, the test repository):
+- **Frame.** The header row and the paper column stayed in place when the frame was scrolled down and sideways. Nothing scrolled the page sideways, on a desktop screen or a phone (390 px).
+- **Read again on "Pilot check".** 13 cells, about 9 s, $0.015:
+  - Sample size: found 30 → 33, Not confirmed 4 → 2, Not stated 2 → 1;
+  - Setting: found 29 → 33, Not stated 7 → 3;
+  - the button then went away.
+- **A new table, Duration + Research design + Methodology.** 36 studies, 108 cells in 39 s, $0.045. Against the same columns in "Study details 3" (read before these fixes):
+
+  | Column | Found before | Found now | Not stated before | Not stated now |
+  |---|---|---|---|---|
+  | Research design | 23 | 28 | 13 | 8 |
+  | Duration | 17 | 20 | 19 | 16 |
+  | Methodology | 28 | 33 | 8 | 3 |
+
+  Methodology used one spelling, "Mixed methods", 24 times. The table was deleted after the check.
+- **Left as they were.** Found values from older readings with notes like "Country not stated" stay: Read again reads only Not stated and Not confirmed. Editing a column's instruction reads the whole column again.
 
 ## 4. Open items
 
