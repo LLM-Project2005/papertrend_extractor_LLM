@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { PaperTableError, createPaperTable, listPaperTables } from "@/lib/cloudsql/paper-table-repository";
-import { COLUMN_PRESETS, ColumnsSchema, TableNameSchema } from "@/lib/paper-table";
+import { ColumnsSchema, TableNameSchema } from "@/lib/paper-table";
 import { getDatabaseProvider } from "@/lib/server-env";
 
 export const runtime = "nodejs";
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   const projectId = new URL(request.url).searchParams.get("projectId") ?? "";
   if (!z.string().uuid().safeParse(projectId).success) return NextResponse.json({ error: "Choose a repository." }, { status: 400 });
   const tables = await listPaperTables(user.id, projectId);
-  return NextResponse.json({ tables, presets: COLUMN_PRESETS }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ tables }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Sign in to make a table." }, { status: 401 });
   if (getDatabaseProvider() !== "cloud-sql") return unavailable();
   const parsed = CreateSchema.safeParse(await request.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: "Give the table a name of up to 120 characters and at most 8 columns." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Give the table a name of up to 120 characters." }, { status: 400 });
   try {
     const table = await createPaperTable(user.id, parsed.data.projectId, parsed.data.name, parsed.data.columns);
     return NextResponse.json({ table }, { status: 201 });

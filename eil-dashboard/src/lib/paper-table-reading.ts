@@ -16,7 +16,17 @@ type Complete = typeof createChatCompletionResult;
 /** Characters of each paper read for its row: the passages that bear on the columns, or the whole paper when it fits. */
 const ROW_READING = 14_000;
 const BATCH_PAPERS = 4;
+/** Columns read in one call; more are read in further calls, each finding its own passages. */
+export const COLUMNS_PER_CALL = 8;
 const CONCURRENCY = 6;
+
+const KIND_HINTS: Record<TableColumn["kind"], string> = {
+  text: "",
+  number:
+    " (a number: the value starts with it in digits, then its unit, e.g. '30 students'; where the paper gives only parts, the value is their total and the note the parts)",
+  category:
+    " (a short label: one to four words, worded the same way for the same thing in every paper, e.g. 'Quasi-experimental'; two labels only when the paper has both, separated by '; ')",
+};
 
 // Lenient for the reasons given in chart-reading.ts: a strict schema threw
 // away whole batches for a null where a string was expected.
@@ -51,7 +61,7 @@ export function tableSystem(columns: TableColumn[]): string {
     "The columns:",
     ...columns.map(
       (column) =>
-        `- ${column.id}: ${column.name}${column.instruction ? ` - ${column.instruction}` : ""}${column.kind === "number" ? " (a number: the value starts with it in digits, then its unit, e.g. '30 students'; where the paper gives only parts, the value is their total and the note the parts)" : ""}`
+        `- ${column.id}: ${column.name}${column.instruction ? ` - ${column.instruction}` : ""}${KIND_HINTS[column.kind]}`
     ),
     "For each paper and each column give: reported (false when the text given does not state it); value (the answer, short: at most 25 words, in English); quote (the sentence that states it, copied word for word from the paper's text, at most 300 characters; use … to leave out words inside it); note (a few words qualifying the value itself, e.g. 'two groups of 24 and 25' or 'pilot study only', else empty; never say where in the paper it is stated or what the paper leaves out).",
     "Never infer or estimate what the paper does not state. A number must be printed in its quote. Report the study's own data, not a pilot or a cited study, unless that is all the paper has; then say so in the note.",
@@ -163,17 +173,21 @@ export async function readTableCells(input: {
     columnsFor.get(paperId)!.add(columnId);
   }
   const papers = input.papers.filter((paper) => columnsFor.has(paper.paperId));
-  const batches: ReadablePaper[][] = [];
-  for (let start = 0; start < papers.length; start += BATCH_PAPERS) batches.push(papers.slice(start, start + BATCH_PAPERS));
+  // Each task is a few papers and at most COLUMNS_PER_CALL of the columns they still need.
+  const tasks: Array<{ batch: ReadablePaper[]; columns: TableColumn[] }> = [];
+  for (let start = 0; start < papers.length; start += BATCH_PAPERS) {
+    const batch = papers.slice(start, start + BATCH_PAPERS);
+    // The columns any paper of the batch still needs; a cell already read is not replaced.
+    const ids = new Set(batch.flatMap((paper) => [...(columnsFor.get(paper.paperId) ?? [])]));
+    const needed = input.columns.filter((column) => ids.has(column.id));
+    for (let first = 0; first < needed.length; first += COLUMNS_PER_CALL) tasks.push({ batch, columns: needed.slice(first, first + COLUMNS_PER_CALL) });
+  }
   const all: TableCells = {};
   let next = 0;
   async function worker() {
-    while (next < batches.length) {
-      const batch = batches[next];
+    while (next < tasks.length) {
+      const { batch, columns } = tasks[next];
       next += 1;
-      // The columns any paper of the batch still needs; a cell already read is not replaced.
-      const ids = new Set(batch.flatMap((paper) => [...(columnsFor.get(paper.paperId) ?? [])]));
-      const columns = input.columns.filter((column) => ids.has(column.id));
       const answer = await readBatch(batch, columns, complete, input.model);
       const cells: TableCells = {};
       for (const paper of batch) {
@@ -189,6 +203,6 @@ export async function readTableCells(input: {
       await input.onBatch?.(cells);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, worker));
   return all;
 }
