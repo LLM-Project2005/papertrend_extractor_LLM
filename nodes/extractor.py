@@ -171,6 +171,8 @@ def _tables_read_across(text: str) -> str:
         if stripped.startswith("|") and stripped.endswith("|") and len(stripped) > 1:
             cells = [cell.strip() or "-" for cell in stripped[1:-1].split("|")]
             stripped = " · ".join(cells)
+        # Line breaks inside a cell and bold marks, as the vision model writes them.
+        stripped = re.sub(r"\s*<br\s*/?>\s*", " ", stripped, flags=re.IGNORECASE).replace("**", "")
         lines.append(stripped)
     return "\n".join(lines).strip()
 
