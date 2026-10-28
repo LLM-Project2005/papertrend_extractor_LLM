@@ -147,10 +147,10 @@ Sources:
 
 ## 5. Open items
 
-- **Backfill the table images in existing papers.** The worker change applies to new uploads. Existing papers need their table pages transcribed and their stored text updated, about 20–30 pages in the test repository at under $0.001 a page with the vision model. That writes to production data, so it waits for the user.
+- **Backfill the table images in existing papers.** Done on 2026-10-28 at the user's go-ahead: 14 paper copies, 20 pages, $0.0104 (docs/42 §2).
 - **A blind comparison with NotebookLM.** The only way to back a claim of being better is to upload the same 41 papers to NotebookLM and judge the two tools' answers to the same 15 questions without names. Ten bank questions and five benchmark questions fit (C05, C07, C08, C19, C27, C31, C40, C43, C45, C46, Bpron, Bwriting, Bgaps, Bthai, K04). It needs the user's Google account.
 - **A second real collection** outside English-language education, about 15 open-access papers, to test what was tuned on one collection.
-- **The next build.** The extraction table (gap 1) has the largest effect, and today's value reader is its engine for one column. It needs a decision on where the table lives: inside a chat answer, or as its own page beside the Library.
+- **The next build.** The extraction table (gap 1) has the largest effect, and today's value reader is its engine for one column. Built as its own page, **Table** (docs/42 §3).
 - **Not done.** Chart image export: the charts are drawn as HTML, so a PNG has to be drawn from the chart's data, as the semantic map's is.
 
 ## 6. Tests
