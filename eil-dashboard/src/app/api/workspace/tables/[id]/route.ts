@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: Params): Promise<Respo
   const checked = await guard(request, params);
   if ("error" in checked) return checked.error;
   const parsed = UpdateSchema.safeParse(await request.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: "A name of up to 120 characters, and at most 8 columns." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "A name of up to 120 characters, and at most 64 columns." }, { status: 400 });
   try {
     return NextResponse.json({ table: await updatePaperTable(checked.user.id, checked.id, parsed.data) });
   } catch (error) {

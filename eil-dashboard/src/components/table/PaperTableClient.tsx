@@ -9,12 +9,18 @@
  * Tables are saved per repository. A fill reads the empty cells and streams
  * each batch of papers back as it is read, so the table fills in on the page;
  * leaving or pressing Stop keeps what was read.
+ *
+ * Laid out as an analytics dashboard is (2026-10-28, the user's request): a
+ * chart above the table, a picker of ready-made columns to show or hide, and a
+ * Download menu with CSV, Excel and an image.
  */
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
-import ChartCsvButton from "@/components/tabs/ChartCsvButton";
+import ColumnPicker from "@/components/table/ColumnPicker";
+import TableChart from "@/components/table/TableChart";
+import TableDownloadMenu, { type DownloadFormat } from "@/components/table/TableDownloadMenu";
 import {
   CloseIcon,
   PencilSquareIcon,
@@ -30,25 +36,33 @@ import { buttonClass, fieldClass, hintClass, iconButtonClass, labelClass, panelC
 import PaperLink from "@/components/workspace/PaperLink";
 import { useTabTitleRepository } from "@/components/workspace/WorkspaceTabTitle";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { csvFileName, toCsv } from "@/lib/chart-csv";
 import type { PaperTableRecord, PaperTableSummary } from "@/lib/cloudsql/paper-table-repository";
 import {
   MAX_COLUMNS,
+  applyColumnChoice,
   cellKey,
+  chartChoices,
   missingCells,
   newColumnId,
   paperTableCsv,
+  paperTableSheets,
+  tableChart,
+  visibleColumns,
   type ColumnKind,
   type TableCell,
   type TableCells,
   type TableColumn,
   type TableRow,
 } from "@/lib/paper-table";
-
-type Preset = Omit<TableColumn, "id">;
+import { downloadPaperTablePng, saveBlob } from "@/lib/paper-table-png";
+import { COLUMN_PRESETS, STARTER_SETS, type ColumnPreset } from "@/lib/paper-table-presets";
+import { xlsxBytes } from "@/lib/xlsx-writer";
 
 type Dialog =
   | { kind: "new" }
   | { kind: "column"; column: TableColumn | null }
+  | { kind: "columns" }
   | { kind: "rename" }
   | { kind: "delete" };
 
@@ -74,9 +88,6 @@ function writeLastTable(projectId: string, tableId: string | null): void {
     // Storage blocked: the page opens the newest table instead.
   }
 }
-
-/** The columns a new table starts with, ticked in the dialog. */
-const STARTING_COLUMNS = new Set(["Participants", "Setting", "Research design", "Main finding"]);
 
 function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
@@ -169,18 +180,20 @@ function QuotePanel({
   );
 }
 
+const KINDS: Array<{ value: ColumnKind; label: string; detail: string }> = [
+  { value: "text", label: "Words", detail: "any length" },
+  { value: "category", label: "A short label", detail: "one to four words, counted in the chart" },
+  { value: "number", label: "A number", detail: "checked against its sentence, charted study by study" },
+];
+
 function ColumnDialog({
   column,
-  presets,
-  taken,
   busy,
   onSave,
   onRemove,
   onClose,
 }: {
   column: TableColumn | null;
-  presets: Preset[];
-  taken: string[];
   busy: boolean;
   onSave: (column: TableColumn) => void;
   onRemove: (column: TableColumn) => void;
@@ -189,13 +202,13 @@ function ColumnDialog({
   const [name, setName] = useState(column?.name ?? "");
   const [instruction, setInstruction] = useState(column?.instruction ?? "");
   const [kind, setKind] = useState<ColumnKind>(column?.kind ?? "text");
-  const unused = presets.filter((preset) => !taken.includes(preset.name.toLowerCase()));
   const meaningChanges = Boolean(column) && (instruction.trim() !== column?.instruction || kind !== column?.kind || (!instruction.trim() && name.trim() !== column?.name));
 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
     onSave({
+      ...(column ?? {}),
       id: column?.id ?? newColumnId(name, []),
       name: name.trim(),
       instruction: instruction.trim(),
@@ -207,24 +220,6 @@ function ColumnDialog({
     <Modal onClose={() => (busy ? undefined : onClose())} zIndexClassName="z-[70]">
       <form onSubmit={submit} className="w-[min(480px,92vw)] rounded-xl border border-hairline bg-surface p-5 shadow-overlay">
         <h2 className="text-base font-semibold text-ink">{column ? "Edit column" : "Add a column"}</h2>
-        {!column && unused.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {unused.map((preset) => (
-              <button
-                key={preset.name}
-                type="button"
-                onClick={() => {
-                  setName(preset.name);
-                  setInstruction(preset.instruction);
-                  setKind(preset.kind);
-                }}
-                className={buttonClass("ghost", "sm", "border border-hairline")}
-              >
-                {preset.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
         <label className="mt-4 block">
           <span className={labelClass}>Name</span>
           <input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={60} className={`mt-1.5 ${fieldClass}`} placeholder="e.g. Participants" />
@@ -243,11 +238,13 @@ function ColumnDialog({
         </label>
         <fieldset className="mt-4">
           <legend className={labelClass}>Kind of value</legend>
-          <div className="mt-1.5 flex gap-4 text-sm text-body">
-            {(["text", "number"] as const).map((value) => (
-              <label key={value} className="inline-flex items-center gap-2">
-                <input type="radio" name="kind" value={value} checked={kind === value} onChange={() => setKind(value)} />
-                {value === "text" ? "Words" : "A number (checked against the sentence)"}
+          <div className="mt-1.5 grid gap-1.5 text-sm text-body">
+            {KINDS.map((entry) => (
+              <label key={entry.value} className="inline-flex items-start gap-2">
+                <input type="radio" name="kind" className="mt-1" value={entry.value} checked={kind === entry.value} onChange={() => setKind(entry.value)} />
+                <span>
+                  {entry.label} <span className="text-mute">{entry.detail}</span>
+                </span>
               </label>
             ))}
           </div>
@@ -277,67 +274,50 @@ function ColumnDialog({
 }
 
 function NewTableDialog({
-  presets,
   busy,
   onCreate,
   onClose,
 }: {
-  presets: Preset[];
   busy: boolean;
   onCreate: (name: string, columns: TableColumn[]) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("Study details");
-  const [chosen, setChosen] = useState<Set<string>>(() => new Set(presets.map((preset) => preset.name).filter((label) => STARTING_COLUMNS.has(label))));
+  const [starter, setStarter] = useState(STARTER_SETS[0].id);
   function submit(event: FormEvent) {
     event.preventDefault();
-    const taken: string[] = [];
-    const columns = presets
-      .filter((preset) => chosen.has(preset.name))
-      .map((preset) => {
-        const id = newColumnId(preset.name, taken);
-        taken.push(id);
-        return { id, ...preset };
-      });
-    onCreate(name.trim() || "Study details", columns);
+    const keys = new Set((STARTER_SETS.find((set) => set.id === starter)?.keys ?? []).map((key) => `preset:${key}`));
+    onCreate(name.trim() || "Study details", applyColumnChoice([], keys, COLUMN_PRESETS));
   }
   return (
     <Modal onClose={() => (busy ? undefined : onClose())} zIndexClassName="z-[70]">
-      <form onSubmit={submit} className="w-[min(480px,92vw)] rounded-xl border border-hairline bg-surface p-5 shadow-overlay">
+      <form onSubmit={submit} className="w-[min(520px,92vw)] rounded-xl border border-hairline bg-surface p-5 shadow-overlay">
         <h2 className="text-base font-semibold text-ink">New table</h2>
         <label className="mt-4 block">
           <span className={labelClass}>Name</span>
           <input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={120} className={`mt-1.5 ${fieldClass}`} />
         </label>
         <fieldset className="mt-4">
-          <legend className={labelClass}>Start with these columns</legend>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {presets.map((preset) => (
-              <label key={preset.name} className="inline-flex items-center gap-2 text-sm text-body">
-                <input
-                  type="checkbox"
-                  checked={chosen.has(preset.name)}
-                  onChange={(event) =>
-                    setChosen((current) => {
-                      const next = new Set(current);
-                      if (event.target.checked) next.add(preset.name);
-                      else next.delete(preset.name);
-                      return next;
-                    })
-                  }
-                />
-                {preset.name}
+          <legend className={labelClass}>Start with</legend>
+          <div className="mt-2 grid gap-1">
+            {STARTER_SETS.map((set) => (
+              <label key={set.id} className="flex cursor-pointer gap-3 rounded-lg px-2.5 py-2 hover:bg-subtle">
+                <input type="radio" name="starter" className="mt-1" checked={starter === set.id} onChange={() => setStarter(set.id)} />
+                <span>
+                  <span className="block text-sm font-medium text-ink">{set.label}</span>
+                  <span className="block text-[13px] leading-5 text-mute">{set.description}</span>
+                </span>
               </label>
             ))}
           </div>
-          <p className={hintClass}>You can add your own columns, and change or remove these, once the table is made.</p>
+          <p className={hintClass}>Afterwards, Columns shows or hides any of the {COLUMN_PRESETS.length} ready-made columns, and you can write your own.</p>
         </fieldset>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" disabled={busy} onClick={onClose} className={buttonClass("secondary", "sm")}>
             Cancel
           </button>
           <button type="submit" disabled={busy} className={buttonClass("primary", "sm")}>
-            {chosen.size > 0 ? "Make and read" : "Make table"}
+            {starter === "empty" ? "Make table" : "Make and read"}
           </button>
         </div>
       </form>
@@ -353,7 +333,6 @@ export default function PaperTableClient() {
   useTabTitleRepository(currentProject?.name);
 
   const [tables, setTables] = useState<PaperTableSummary[] | null>(null);
-  const [presets, setPresets] = useState<Preset[]>([]);
   const [tableId, setTableId] = useState<string | null>(null);
   const [table, setTable] = useState<PaperTableRecord | null>(null);
   const [rows, setRows] = useState<TableRow[]>([]);
@@ -366,6 +345,7 @@ export default function PaperTableClient() {
   const [filling, setFilling] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<{ paperId: string; columnId: string } | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [chartChoice, setChartChoice] = useState("found");
   const fillRef = useRef<AbortController | null>(null);
   const fillingTableRef = useRef<string | null>(null);
   // A table just made with columns is read as soon as it has opened, so its rows are there for the cells.
@@ -456,11 +436,10 @@ export default function PaperTableClient() {
     setTable(null);
     setTableId(null);
     setError(null);
-    call<{ tables: PaperTableSummary[]; presets: Preset[] }>(`/api/workspace/tables?projectId=${encodeURIComponent(projectId)}`)
+    call<{ tables: PaperTableSummary[] }>(`/api/workspace/tables?projectId=${encodeURIComponent(projectId)}`)
       .then((data) => {
         if (cancelled) return;
         setTables(data.tables);
-        setPresets(data.presets);
         const last = readLastTable(projectId);
         setTableId(data.tables.some((entry) => entry.id === last) ? last : data.tables[0]?.id ?? null);
       })
@@ -483,6 +462,7 @@ export default function PaperTableClient() {
     setLoadingTable(true);
     setSelected(null);
     setNotice(null);
+    setChartChoice("found");
     if (projectId) writeLastTable(projectId, tableId);
     call<{ table: PaperTableRecord; rows: TableRow[]; more: number }>(`/api/workspace/tables/${tableId}`)
       .then((data) => {
@@ -547,6 +527,40 @@ export default function PaperTableClient() {
     }
   }
 
+  function applyChoice(chosen: Set<string>, presets: ColumnPreset[]) {
+    void saveColumns(applyColumnChoice(columns, chosen, presets), true);
+  }
+
+  async function download(format: DownloadFormat) {
+    if (!table) return;
+    const shownColumns = visibleColumns(table.columns);
+    const base = csvFileName(table.name).replace(/\.csv$/, "");
+    try {
+      if (format === "csv") {
+        const csv = paperTableCsv(table.name, rows, shownColumns, table.cells);
+        saveBlob(new Blob([toCsv(csv.header, csv.rows)], { type: "text/csv;charset=utf-8" }), `${base}.csv`);
+      } else if (format === "xlsx") {
+        const bytes = xlsxBytes(paperTableSheets(rows, shownColumns, table.cells));
+        saveBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${base}.xlsx`);
+      } else {
+        await downloadPaperTablePng(
+          {
+            title: table.name,
+            subtitle: `${plural(rows.length, "study", "studies")}${currentProject ? ` in ${currentProject.name}` : ""} · ${plural(shownColumns.length, "column")}`,
+            rows,
+            columns: shownColumns,
+            cells: table.cells,
+            chart: chart.bars.length > 0 ? chart : null,
+            footnote: `Papertrend · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · a value is kept only when the paper's own sentence states it`,
+          },
+          `${base}.png`
+        );
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The file could not be made.");
+    }
+  }
+
   async function rename(name: string) {
     if (!table || !name.trim()) return;
     setBusy(true);
@@ -585,11 +599,16 @@ export default function PaperTableClient() {
   }
 
   const columns = useMemo(() => table?.columns ?? [], [table?.columns]);
+  const shown = useMemo(() => visibleColumns(columns), [columns]);
   const cells = useMemo(() => table?.cells ?? {}, [table?.cells]);
+  const choices = useMemo(() => chartChoices(columns), [columns]);
+  const activeChart = choices.some((choice) => choice.value === chartChoice) ? chartChoice : "found";
+  const chart = useMemo(() => tableChart(activeChart, rows, columns, cells), [activeChart, rows, columns, cells]);
+  const chartByStudy = shown.find((column) => column.id === activeChart)?.kind === "number";
   const counts = useMemo(() => {
     const total = { found: 0, notStated: 0, unverified: 0 };
     for (const row of rows) {
-      for (const column of columns) {
+      for (const column of shown) {
         const cell = cells[cellKey(row.paperId, column.id)];
         if (cell?.status === "found") total.found += 1;
         else if (cell?.status === "not_stated") total.notStated += 1;
@@ -597,7 +616,7 @@ export default function PaperTableClient() {
       }
     }
     return total;
-  }, [cells, columns, rows]);
+  }, [cells, shown, rows]);
   const missing = useMemo(() => missingCells(rows, columns, cells).length, [cells, columns, rows]);
   const selectedRow = selected ? rows.find((row) => row.paperId === selected.paperId) : undefined;
   const selectedColumn = selected ? columns.find((column) => column.id === selected.columnId) : undefined;
@@ -682,7 +701,12 @@ export default function PaperTableClient() {
               <TrashIcon className="h-4 w-4" />
             </button>
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <ChartCsvButton csv={paperTableCsv(table.name, rows, columns, cells)} />
+              <TableDownloadMenu disabled={shown.length === 0 || rows.length === 0} onDownload={download} />
+              <button type="button" disabled={Boolean(filling)} onClick={() => setDialog({ kind: "columns" })} className={buttonClass("secondary", "sm")}>
+                <TableIcon className="h-3.5 w-3.5" />
+                Columns
+                <span className="tabular-nums text-mute">{shown.length}</span>
+              </button>
               <button
                 type="button"
                 disabled={columns.length >= MAX_COLUMNS || Boolean(filling)}
@@ -698,7 +722,7 @@ export default function PaperTableClient() {
                   Stop
                 </button>
               ) : (
-                <button type="button" disabled={missing === 0 || columns.length === 0} onClick={() => void fill(table.id)} className={buttonClass("primary", "sm")}>
+                <button type="button" disabled={missing === 0 || shown.length === 0} onClick={() => void fill(table.id)} className={buttonClass("primary", "sm")}>
                   Fill table
                 </button>
               )}
@@ -710,20 +734,24 @@ export default function PaperTableClient() {
               : notice ??
                 [
                   plural(rows.length, "study", "studies"),
-                  plural(columns.length, "column"),
+                  plural(shown.length, "column"),
                   counts.found ? `${plural(counts.found, "value")} found` : null,
                   counts.notStated ? `${counts.notStated.toLocaleString()} not stated` : null,
                   counts.unverified ? `${counts.unverified.toLocaleString()} not confirmed` : null,
-                  missing && columns.length ? `${plural(missing, "cell")} to read` : null,
+                  missing && shown.length ? `${plural(missing, "cell")} to read` : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
             {more > 0 ? ` · the first ${rows.length.toLocaleString()} studies are shown` : ""}
           </p>
 
-          {columns.length === 0 ? (
+          {shown.length > 0 && rows.length > 0 ? (
+            <TableChart data={chart} choice={activeChart} choices={choices} onChoose={setChartChoice} byStudy={chartByStudy} />
+          ) : null}
+
+          {shown.length === 0 ? (
             <div className={`${panelClass} p-6 text-sm text-body`}>
-              Add a column to say what to read from each paper.
+              Choose columns to show, or write your own, to say what to read from each paper.
             </div>
           ) : rows.length === 0 ? (
             <div className={`${panelClass} p-6 text-sm text-body`}>This repository has no analysed papers yet.</div>
@@ -735,7 +763,7 @@ export default function PaperTableClient() {
                     <th scope="col" className="sticky left-0 z-10 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-bottom font-medium text-ink sm:w-[280px] sm:min-w-[220px] sm:px-4">
                       Paper
                     </th>
-                    {columns.map((column) => (
+                    {shown.map((column) => (
                       <th key={column.id} scope="col" className="min-w-[220px] max-w-[340px] border-b border-hairline px-4 py-3 text-left align-bottom font-medium text-ink">
                         <div className="flex items-center gap-1.5">
                           <span className="min-w-0 truncate">{column.name}</span>
@@ -763,7 +791,7 @@ export default function PaperTableClient() {
                         </PaperLink>
                         {row.year && row.year !== "Unknown" ? <span className="text-xs text-mute">{row.year}</span> : null}
                       </th>
-                      {columns.map((column) => {
+                      {shown.map((column) => {
                         const key = cellKey(row.paperId, column.id);
                         const isSelected = selected?.paperId === row.paperId && selected.columnId === column.id;
                         return (
@@ -786,13 +814,11 @@ export default function PaperTableClient() {
       ) : null}
 
       {dialog?.kind === "new" ? (
-        <NewTableDialog presets={presets} busy={busy} onCreate={(name, chosen) => void createTable(name, chosen)} onClose={() => setDialog(null)} />
+        <NewTableDialog busy={busy} onCreate={(name, chosen) => void createTable(name, chosen)} onClose={() => setDialog(null)} />
       ) : null}
       {dialog?.kind === "column" && table ? (
         <ColumnDialog
           column={dialog.column}
-          presets={presets}
-          taken={columns.filter((column) => column.id !== dialog.column?.id).map((column) => column.name.toLowerCase())}
           busy={busy}
           onClose={() => setDialog(null)}
           onRemove={(column) => void saveColumns(columns.filter((entry) => entry.id !== column.id), false)}
@@ -802,6 +828,16 @@ export default function PaperTableClient() {
               : [...columns, { ...column, id: newColumnId(column.name, columns.map((entry) => entry.id)) }];
             void saveColumns(next, true);
           }}
+        />
+      ) : null}
+      {dialog?.kind === "columns" && table ? (
+        <ColumnPicker
+          columns={columns}
+          studies={rows.length}
+          busy={busy}
+          onApply={applyChoice}
+          onAddOwn={() => setDialog({ kind: "column", column: null })}
+          onClose={() => setDialog(null)}
         />
       ) : null}
       {dialog?.kind === "rename" && table ? (

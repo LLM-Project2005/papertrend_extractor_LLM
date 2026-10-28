@@ -5,7 +5,7 @@ import { withAiTokenUsageTracking, type AiTokenUsageTotals } from "@/lib/ai-toke
 import { summarizeSpend } from "@/lib/answer-cost";
 import { runWithCancellation } from "@/lib/chat-cancellation";
 import { PaperTableError, getPaperTable, mergePaperTableCells } from "@/lib/cloudsql/paper-table-repository";
-import { missingCells, type TableCells } from "@/lib/paper-table";
+import { missingCells, visibleColumns, type TableCells } from "@/lib/paper-table";
 import { readTableCells } from "@/lib/paper-table-reading";
 import { tablePapers } from "@/lib/paper-table-server";
 import { assertAiTokenBudget, assertAndRecordAiUsage, GuardError, persistAiTokenUsage } from "@/lib/security-guards";
@@ -15,9 +15,10 @@ export const runtime = "nodejs";
 export const maxDuration = 600;
 
 /*
- * Reads a table's empty cells (docs/42): every cell not read yet, and any
- * whose reading failed. The reply is a stream of JSON lines, one per batch of
- * papers as it is read and saved, so the table fills in on the page:
+ * Reads a table's empty cells (docs/42): in the columns shown, every cell not
+ * read yet and any whose reading failed; a hidden column is not read. The
+ * reply is a stream of JSON lines, one per batch of papers as it is read and
+ * saved, so the table fills in on the page:
  *   {"type":"start","papers":N,"cells":M}
  *   {"type":"cells","cells":{...},"done":K}
  *   {"type":"done","found":F,"usd":0.012}   or   {"type":"error","error":"..."}
@@ -42,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "The papers could not be read just now. Try again in a moment." }, { status: 503 });
   }
   const wanted = missingCells(loaded.rows, table.columns, table.cells);
-  if (table.columns.length === 0) return NextResponse.json({ error: "Add a column first." }, { status: 400 });
+  if (visibleColumns(table.columns).length === 0) return NextResponse.json({ error: "Show or add a column first." }, { status: 400 });
   if (wanted.length === 0) return NextResponse.json({ done: true, found: 0, usd: 0 });
 
   try {

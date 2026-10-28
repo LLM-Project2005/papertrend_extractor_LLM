@@ -9,16 +9,27 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { checkable } from "../src/lib/chart-reading";
 import {
+  applyColumnChoice,
+  categoryChart,
   cellKey,
+  cellNumber,
   cellsForColumns,
   changedColumns,
+  chartChoices,
+  columnChoiceKey,
+  foundChart,
   missingCells,
   newColumnId,
+  numberChart,
   paperTableCsv,
+  paperTableSheets,
   type TableCells,
   type TableColumn,
 } from "../src/lib/paper-table";
-import { checkCell, readTableCells, tableSystem } from "../src/lib/paper-table-reading";
+import { tableImageLayout, wrapLines } from "../src/lib/paper-table-png";
+import { COLUMN_PRESETS, COLUMN_PRESET_GROUPS, STARTER_SETS } from "../src/lib/paper-table-presets";
+import { COLUMNS_PER_CALL, checkCell, readTableCells, tableSystem } from "../src/lib/paper-table-reading";
+import { columnLetter, crc32, xlsxBytes } from "../src/lib/xlsx-writer";
 import { params, routeHarness } from "./support/route-harness";
 
 const PARTICIPANTS: TableColumn = { id: "participants", name: "Participants", instruction: "Who took part and how many in all.", kind: "text" };
@@ -246,7 +257,6 @@ test("a table is made, opened with the repository's studies, filled with checked
 
   const listed = await (await tables.GET(request(`/api/workspace/tables?projectId=${PROJECT}`, { headers: owner }))).json();
   assert.deepEqual(listed.tables.map((entry: { name: string }) => entry.name), ["Study details"]);
-  assert.ok(listed.presets.some((preset: { name: string }) => preset.name === "Main finding"));
 
   const opened = await (await one.GET(request(`/api/workspace/tables/${table.id}`, { headers: owner }), params({ id: table.id }))).json();
   assert.deepEqual(
@@ -298,4 +308,175 @@ test("the Table page is in the workspace's navigation and its search", () => {
   const shell = readFileSync(new URL("../src/components/workspace/WorkspaceShell.tsx", import.meta.url), "utf8");
   assert.match(shell, /\{ href: "\/workspace\/table", label: "Table", icon: TableIcon \}/);
   assert.match(shell, /id: "table",\s+label: "Table",/);
+});
+
+// ---------------------------------------------------------------------------
+// The dashboard layout (2026-10-28): ready-made columns to show or hide, the
+// chart above the table, and downloads as CSV, Excel and PNG.
+
+test("the ready-made columns are many, grouped, each with its own key, an instruction and a kind", () => {
+  assert.ok(COLUMN_PRESETS.length >= 45, `${COLUMN_PRESETS.length} ready-made columns`);
+  assert.equal(new Set(COLUMN_PRESETS.map((preset) => preset.key)).size, COLUMN_PRESETS.length, "keys are unique");
+  assert.equal(new Set(COLUMN_PRESETS.map((preset) => preset.name.toLowerCase())).size, COLUMN_PRESETS.length, "names are unique");
+  assert.ok(COLUMN_PRESET_GROUPS.length >= 6);
+  for (const preset of COLUMN_PRESETS) {
+    assert.match(preset.key, /^[a-z0-9-]{1,40}$/, preset.key);
+    assert.ok(preset.instruction.length > 10 && preset.instruction.length <= 300, preset.key);
+    assert.ok(["text", "number", "category"].includes(preset.kind), preset.key);
+  }
+  const keys = new Set(COLUMN_PRESETS.map((preset) => preset.key));
+  for (const set of STARTER_SETS) for (const key of set.keys) assert.ok(keys.has(key), `${set.id}: ${key}`);
+});
+
+test("the picker shows, hides and adds columns; a hidden column keeps its cells and is not read", () => {
+  const start = applyColumnChoice([], new Set(["preset:participants", "preset:sample-size"]), COLUMN_PRESETS);
+  assert.deepEqual(start.map((column) => [column.id, column.preset, column.hidden]), [
+    ["participants", "participants", undefined],
+    ["sample-size", "sample-size", undefined],
+  ]);
+  const own: TableColumn = { id: "motivation", name: "Motivation", instruction: "", kind: "text" };
+  const cells: TableCells = { "101:participants": { value: "30", quote: "q", note: "", status: "found" } };
+  const hidden = applyColumnChoice([...start, own], new Set(["preset:sample-size", "column:motivation", "preset:country"]), COLUMN_PRESETS);
+  assert.deepEqual(hidden.map((column) => [column.id, Boolean(column.hidden)]), [
+    ["participants", true],
+    ["sample-size", false],
+    ["motivation", false],
+    ["country", false],
+  ]);
+  assert.equal(columnChoiceKey(own), "column:motivation");
+  assert.deepEqual(cellsForColumns(cells, start, hidden), cells, "hiding a column keeps what was read");
+  const rows = [{ paperId: "101", runId: "r", title: "A", year: "2024" }];
+  assert.deepEqual(
+    missingCells(rows, hidden, cells).map((cell) => cell.columnId),
+    ["sample-size", "motivation", "country"],
+    "a hidden column is not read"
+  );
+  const shownAgain = applyColumnChoice(hidden, new Set(["preset:participants", "preset:sample-size", "column:motivation", "preset:country"]), COLUMN_PRESETS);
+  assert.equal(shownAgain[0].hidden, undefined, "showing it again reads nothing: its cell is still there");
+  assert.deepEqual(missingCells(rows, shownAgain, cells).map((cell) => cell.columnId), ["sample-size", "motivation", "country"]);
+});
+
+const ROWS = [
+  { paperId: "1", runId: "r1", title: "Reading study", year: "2021" },
+  { paperId: "2", runId: "r2", title: "Writing study", year: "2022" },
+  { paperId: "3", runId: "r3", title: "Speaking study", year: "2023" },
+];
+const COUNTRY: TableColumn = { id: "country", name: "Country", instruction: "", kind: "category", preset: "country" };
+const found = (value: string, note = "") => ({ value, quote: "q", note, status: "found" as const });
+
+test("the chart counts what was found, charts a number study by study, and counts a label's answers", () => {
+  const cells: TableCells = {
+    "1:sample-size": found("180 students", "three faculties"),
+    "2:sample-size": found("1,200 texts"),
+    "3:sample-size": { value: "", quote: "", note: "", status: "not_stated" },
+    "1:country": found("Thailand"),
+    "2:country": found("thailand"),
+    "3:country": found("Thailand; Vietnam"),
+  };
+  assert.equal(cellNumber("1,200 texts"), 1200);
+  assert.equal(cellNumber("30 samples"), 30);
+  assert.equal(cellNumber("none"), null);
+
+  const coverage = foundChart(ROWS, [SIZE, COUNTRY, { ...PARTICIPANTS, hidden: true }], cells);
+  assert.deepEqual(coverage.bars.map((bar) => [bar.label, bar.value]), [["Sample size", 2], ["Country", 3]], "hidden columns are not charted");
+  assert.equal(coverage.bars[0].detail, "2 found · 1 not stated");
+
+  const numbers = numberChart(ROWS, SIZE, cells);
+  assert.deepEqual(numbers.bars.map((bar) => bar.value), [1200, 180], "largest first");
+  assert.deepEqual(numbers.stats.find((stat) => stat.label === "Total"), { label: "Total", value: "1,380" });
+  assert.deepEqual(numbers.stats.find((stat) => stat.label === "Median"), { label: "Median", value: "690" });
+  assert.equal(numbers.bars[1].detail, "180 students (three faculties)");
+
+  const labels = categoryChart(ROWS, COUNTRY, cells);
+  assert.deepEqual(labels.bars.map((bar) => [bar.label, bar.value]), [["Thailand", 3], ["Vietnam", 1]], "capitals ignored; two names count for both");
+
+  assert.deepEqual(chartChoices([PARTICIPANTS, SIZE, COUNTRY, { ...COUNTRY, id: "hidden-country", hidden: true }]).map((choice) => choice.value), ["found", "sample-size", "country"]);
+});
+
+/** The files in a stored zip, with each entry's CRC checked. */
+function unzip(bytes: Uint8Array): Map<string, string> {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const files = new Map<string, string>();
+  let at = 0;
+  while (view.getUint32(at, true) === 0x04034b50) {
+    assert.equal(view.getUint16(at + 8, true), 0, "stored");
+    const crc = view.getUint32(at + 14, true);
+    const size = view.getUint32(at + 18, true);
+    const nameLength = view.getUint16(at + 26, true);
+    const name = new TextDecoder().decode(bytes.slice(at + 30, at + 30 + nameLength));
+    const data = bytes.slice(at + 30 + nameLength, at + 30 + nameLength + size);
+    assert.equal(crc32(data), crc, `${name}: CRC`);
+    files.set(name, new TextDecoder().decode(data));
+    at += 30 + nameLength + size;
+  }
+  assert.equal(view.getUint32(bytes.length - 22, true), 0x06054b50, "the zip ends with its directory");
+  return files;
+}
+
+test("the Excel file has the table, numbers as numbers, and a sheet of sources; text is never a formula", () => {
+  const cells: TableCells = { "1:sample-size": found("180 students", "three faculties"), "1:country": found("=HYPERLINK(\"x\") & <Thailand>") };
+  const sheets = paperTableSheets(ROWS.slice(0, 1), [SIZE, COUNTRY], cells);
+  assert.deepEqual(sheets.map((sheet) => sheet.name), ["Table", "Sources"]);
+  assert.deepEqual(sheets[0].rows[1], ["Reading study", 2021, 180, "=HYPERLINK(\"x\") & <Thailand>"]);
+  assert.deepEqual(sheets[1].rows[1], ["Reading study", 2021, "Sample size", "180 students", "three faculties", "q", "Found"]);
+
+  const files = unzip(xlsxBytes(sheets, new Date(2026, 9, 28, 12, 0, 0)));
+  assert.deepEqual([...files.keys()].sort(), [
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "xl/_rels/workbook.xml.rels",
+    "xl/styles.xml",
+    "xl/workbook.xml",
+    "xl/worksheets/sheet1.xml",
+    "xl/worksheets/sheet2.xml",
+  ]);
+  const table = files.get("xl/worksheets/sheet1.xml") ?? "";
+  assert.match(table, /<c r="C2"><v>180<\/v><\/c>/, "a number cell");
+  assert.match(table, /<c r="D2" t="inlineStr" s="2"><is><t xml:space="preserve">=HYPERLINK\(&quot;x&quot;\) &amp; &lt;Thailand&gt;<\/t><\/is><\/c>/, "text, escaped, not a formula");
+  assert.doesNotMatch(table, /<f>/);
+  assert.match(table, /<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"\/>/, "the header row stays in view");
+  assert.match(files.get("xl/workbook.xml") ?? "", /<sheet name="Sources" sheetId="2" r:id="rId2"\/>/);
+  assert.equal(columnLetter(0), "A");
+  assert.equal(columnLetter(26), "AA");
+});
+
+test("the picture fits every cell's text to its column, cutting a long one with an ellipsis", () => {
+  const measure = (text: string) => text.length * 7;
+  assert.deepEqual(wrapLines("one two three four", 70, measure, 3), ["one two", "three four"]);
+  assert.deepEqual(wrapLines("a b c d e f g h i j k l", 28, measure, 2), ["a b", "c d…"]);
+  assert.deepEqual(wrapLines("การศึกษาภาษาอังกฤษ", 42, measure, 4), ["การศึก", "ษาภาษา", "อังกฤษ"], "a word with no spaces is broken by characters");
+  const layout = tableImageLayout(
+    { title: "Study details", subtitle: "", rows: ROWS, columns: [SIZE, COUNTRY], cells: { "1:sample-size": found("180 students") }, chart: null, footnote: "" },
+    measure
+  );
+  assert.equal(layout.columns.length, 2);
+  assert.equal(layout.rows.length, 3);
+  assert.deepEqual(layout.rows[0].cells.map((cell) => cell.muted), [false, true], "a value in ink; an empty cell muted");
+  for (let index = 1; index < layout.rows.length; index += 1) {
+    assert.equal(layout.rows[index].y, layout.rows[index - 1].y + layout.rows[index - 1].height, "rows follow on");
+  }
+  assert.ok(layout.height > layout.rows[2].y + layout.rows[2].height);
+});
+
+test("many columns are read a few to a call, each call finding its own passages", async () => {
+  const calls: number[] = [];
+  const complete = (async (messages: Array<{ role: string; content: string }>) => {
+    calls.push((messages[0].content.match(/^- /gm) ?? []).length);
+    return { content: JSON.stringify({ papers: [] }), toolCalls: [] };
+  }) as unknown as Parameters<typeof readTableCells>[0]["complete"];
+  const columns = COLUMN_PRESETS.slice(0, 20).map((preset) => ({ id: preset.key, name: preset.name, instruction: preset.instruction, kind: preset.kind }));
+  const wanted = columns.map((column) => ({ paperId: PAPER_A.paperId, columnId: column.id }));
+  const cells = await readTableCells({ papers: [PAPER_A], columns, wanted, complete });
+  assert.equal(COLUMNS_PER_CALL, 8);
+  assert.deepEqual(calls, [8, 8, 4]);
+  assert.equal(Object.keys(cells).length, 20);
+});
+
+test("the page offers the picker, the chart and the three downloads", () => {
+  const page = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
+  assert.match(page, /<TableDownloadMenu /);
+  assert.match(page, /<TableChart /);
+  assert.match(page, /<ColumnPicker/);
+  const menu = readFileSync(new URL("../src/components/table/TableDownloadMenu.tsx", import.meta.url), "utf8");
+  for (const label of ["CSV", "Excel (.xlsx)", "Image (.png)"]) assert.ok(menu.includes(`label: "${label}"`), label);
 });
