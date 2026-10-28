@@ -315,6 +315,16 @@
    "representation_version": "text not null",
    "updated_at": "timestamptz not null"
   },
+  "paper_tables": {
+   "cells": "jsonb not null",
+   "columns": "jsonb not null",
+   "created_at": "timestamptz not null",
+   "id": "uuid not null",
+   "name": "text not null",
+   "owner_user_id": "uuid not null",
+   "project_id": "uuid not null",
+   "updated_at": "timestamptz not null"
+  },
   "paper_term_index": {
    "content_hash": "text not null",
    "created_at": "timestamptz not null",
@@ -633,6 +643,7 @@
   "idx_paper_research_typologies_owner_user_id",
   "idx_paper_research_typologies_primary",
   "idx_paper_semantic_embeddings_owner_project",
+  "idx_paper_tables_owner_project",
   "idx_paper_term_index_owner_run",
   "idx_papers_folder_id",
   "idx_papers_owner_user_id",
@@ -687,6 +698,7 @@
   "paper_retrieval_documents_pkey",
   "paper_semantic_embeddings_owner_user_id_paper_id_representa_key",
   "paper_semantic_embeddings_pkey",
+  "paper_tables_pkey",
   "paper_term_index_pkey",
   "paper_tracks_multi_pkey",
   "paper_tracks_single_pkey",

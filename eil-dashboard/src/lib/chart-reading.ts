@@ -470,7 +470,7 @@ export interface ValueReading {
   skipped: number;
 }
 
-function toNumber(value: unknown): number | null {
+export function toNumber(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value !== "string") return null;
   const match = value.replace(/\s/g, "").match(/-?\d+(?:,\d{3})*(?:\.\d+)?/);

@@ -89,6 +89,7 @@ import {
   SlidersHorizontalGlyph as SlidersHorizontalIcon,
   SparkleGlyph as SparkleIcon,
   SquaresFourGlyph as SquaresFourIcon,
+  TableGlyph as PhTable,
   StackGlyph as PhStack,
   StarGlyph as PhStar,
   StopGlyph as PhStop,
@@ -199,6 +200,7 @@ export const EqualizerIcon = /*#__PURE__*/ glyph(SlidersHorizontalIcon, "Equaliz
 export const SearchIcon = /*#__PURE__*/ glyph(MagnifyingGlassIcon, "SearchIcon");
 export const ListViewIcon = /*#__PURE__*/ glyph(ListBulletsIcon, "ListViewIcon");
 export const GridViewIcon = /*#__PURE__*/ glyph(SquaresFourIcon, "GridViewIcon");
+export const TableIcon = /*#__PURE__*/ glyph(PhTable, "TableIcon");
 export const SortIcon = /*#__PURE__*/ glyph(ArrowsDownUpIcon, "SortIcon");
 export const EyeIcon = /*#__PURE__*/ glyph(PhEye, "EyeIcon");
 
