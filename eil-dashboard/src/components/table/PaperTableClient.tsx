@@ -362,6 +362,9 @@ export default function PaperTableClient() {
   const [selected, setSelected] = useState<{ paperId: string; columnId: string } | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const fillRef = useRef<AbortController | null>(null);
+  const fillingTableRef = useRef<string | null>(null);
+  // A table just made with columns is read as soon as it has opened, so its rows are there for the cells.
+  const fillWhenOpenRef = useRef<string | null>(null);
 
   const call = useCallback(
     async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -376,68 +379,13 @@ export default function PaperTableClient() {
     [token]
   );
 
-  // The repository's tables; the last one opened here, or the newest, is opened.
-  useEffect(() => {
-    if (!token || !projectId) return;
-    let cancelled = false;
-    setTables(null);
-    setTable(null);
-    setTableId(null);
-    setError(null);
-    call<{ tables: PaperTableSummary[]; presets: Preset[] }>(`/api/workspace/tables?projectId=${encodeURIComponent(projectId)}`)
-      .then((data) => {
-        if (cancelled) return;
-        setTables(data.tables);
-        setPresets(data.presets);
-        const last = readLastTable(projectId);
-        setTableId(data.tables.some((entry) => entry.id === last) ? last : data.tables[0]?.id ?? null);
-      })
-      .catch((reason: Error) => {
-        if (!cancelled) {
-          setTables([]);
-          setError(reason.message);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [call, projectId, token]);
-
-  useEffect(() => {
-    if (!tableId || !token) return;
-    let cancelled = false;
-    fillRef.current?.abort();
-    setLoadingTable(true);
-    setSelected(null);
-    setNotice(null);
-    if (projectId) writeLastTable(projectId, tableId);
-    call<{ table: PaperTableRecord; rows: TableRow[]; more: number }>(`/api/workspace/tables/${tableId}`)
-      .then((data) => {
-        if (cancelled) return;
-        setTable(data.table);
-        setRows(data.rows);
-        setMore(data.more);
-      })
-      .catch((reason: Error) => {
-        if (!cancelled) setError(reason.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingTable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [call, projectId, tableId, token]);
-
-  // Leaving the page stops a fill; what was read is kept.
-  useEffect(() => () => fillRef.current?.abort(), []);
-
   const fill = useCallback(
     async (id: string) => {
       if (!token) return;
       fillRef.current?.abort();
       const controller = new AbortController();
       fillRef.current = controller;
+      fillingTableRef.current = id;
       setError(null);
       setNotice(null);
       setFilling({ done: 0, total: 0 });
@@ -485,12 +433,77 @@ export default function PaperTableClient() {
         if (controller.signal.aborted) setNotice("Stopped. What was read is kept; fill again to read the rest.");
         else setError(reason instanceof Error ? reason.message : "The table could not be filled just now.");
       } finally {
-        if (fillRef.current === controller) fillRef.current = null;
+        if (fillRef.current === controller) {
+          fillRef.current = null;
+          fillingTableRef.current = null;
+        }
         setFilling(null);
       }
     },
     [token]
   );
+
+  // The repository's tables; the last one opened here, or the newest, is opened.
+  useEffect(() => {
+    if (!token || !projectId) return;
+    let cancelled = false;
+    setTables(null);
+    setTable(null);
+    setTableId(null);
+    setError(null);
+    call<{ tables: PaperTableSummary[]; presets: Preset[] }>(`/api/workspace/tables?projectId=${encodeURIComponent(projectId)}`)
+      .then((data) => {
+        if (cancelled) return;
+        setTables(data.tables);
+        setPresets(data.presets);
+        const last = readLastTable(projectId);
+        setTableId(data.tables.some((entry) => entry.id === last) ? last : data.tables[0]?.id ?? null);
+      })
+      .catch((reason: Error) => {
+        if (!cancelled) {
+          setTables([]);
+          setError(reason.message);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [call, projectId, token]);
+
+  useEffect(() => {
+    if (!tableId || !token) return;
+    let cancelled = false;
+    // Another table stops a fill; the same table loaded again (a refreshed sign-in) does not.
+    if (fillingTableRef.current && fillingTableRef.current !== tableId) fillRef.current?.abort();
+    setLoadingTable(true);
+    setSelected(null);
+    setNotice(null);
+    if (projectId) writeLastTable(projectId, tableId);
+    call<{ table: PaperTableRecord; rows: TableRow[]; more: number }>(`/api/workspace/tables/${tableId}`)
+      .then((data) => {
+        if (cancelled) return;
+        setTable(data.table);
+        setRows(data.rows);
+        setMore(data.more);
+        if (fillWhenOpenRef.current === data.table.id) {
+          fillWhenOpenRef.current = null;
+          void fill(data.table.id);
+        }
+      })
+      .catch((reason: Error) => {
+        if (!cancelled) setError(reason.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [call, fill, projectId, tableId, token]);
+
+  // Leaving the page stops a fill; what was read is kept.
+  useEffect(() => () => fillRef.current?.abort(), []);
+
 
   async function createTable(name: string, columns: TableColumn[]) {
     if (!projectId) return;
@@ -503,10 +516,7 @@ export default function PaperTableClient() {
       setTables((current) => [{ ...created }, ...(current ?? [])]);
       setDialog(null);
       setTableId(created.id);
-      if (columns.length > 0) {
-        // The table opens first, then reads: the rows are there before the cells.
-        window.setTimeout(() => void fill(created.id), 600);
-      }
+      if (columns.length > 0) fillWhenOpenRef.current = created.id;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The table could not be made.");
     } finally {
