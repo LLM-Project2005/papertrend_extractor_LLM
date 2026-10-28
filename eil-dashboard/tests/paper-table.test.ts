@@ -673,7 +673,8 @@ test("Read again reads the doubtful cells from the whole paper, and only those",
 
 test("the table scrolls in a frame no taller than the screen, its header row and paper column kept in view", () => {
   const page = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
-  assert.match(page, /className="max-h-\[max\(20rem,calc\(100dvh-19rem\)\)\] overflow-auto /);
+  // The table starts 312px down at 1440x950 (pilot, 2026-10-29): 19rem left its foot 8px below the screen.
+  assert.match(page, /className="max-h-\[max\(20rem,calc\(100dvh-22rem\)\)\] overflow-auto /);
   assert.match(page, /sticky left-0 top-0 z-30/, "the corner stays over both");
   assert.match(page, /sticky top-0 z-20 [^"]*bg-surface/, "column names stay at the top");
   assert.match(page, /Read again/);
