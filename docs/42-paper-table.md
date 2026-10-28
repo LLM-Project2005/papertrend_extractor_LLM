@@ -107,7 +107,7 @@ The user asked for the table to work like YouTube Studio's analytics: many ready
 
 ## 4. Open items
 
-- **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.61 after this round.
+- **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.51 after the table's pilot checks.
 - **Semantic index after the backfill**: the 14 updated papers keep their earlier embeddings until they are re-indexed.
 - From docs/41 §4, still to do: chart PNG and answer DOCX/PDF export, saved notes and sharing, a gap matrix, an agreement view, column suggestions written by the model.
 
