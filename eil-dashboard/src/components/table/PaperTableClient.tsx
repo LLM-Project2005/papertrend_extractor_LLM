@@ -12,6 +12,7 @@
  */
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import {
@@ -130,7 +131,10 @@ function QuotePanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  return (
+  // In a portal: inside the workspace's page, `fixed` placed the panel at the
+  // foot of the page rather than of the screen, out of sight (pilot, 2026-10-28).
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <aside
       aria-label={`${column.name}: where it comes from`}
       className="fixed inset-x-3 bottom-3 z-40 rounded-xl border border-hairline bg-surface p-4 shadow-overlay sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[440px]"
@@ -160,7 +164,8 @@ function QuotePanel({
           Show in paper
         </PaperLink>
       </div>
-    </aside>
+    </aside>,
+    document.body
   );
 }
 
@@ -727,7 +732,7 @@ export default function PaperTableClient() {
               <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
-                    <th scope="col" className="sticky left-0 z-10 w-[280px] min-w-[220px] border-b border-r border-hairline bg-surface px-4 py-3 text-left align-bottom font-medium text-ink">
+                    <th scope="col" className="sticky left-0 z-10 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-bottom font-medium text-ink sm:w-[280px] sm:min-w-[220px] sm:px-4">
                       Paper
                     </th>
                     {columns.map((column) => (
@@ -752,8 +757,8 @@ export default function PaperTableClient() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.paperId}>
-                      <th scope="row" className="sticky left-0 z-10 border-b border-r border-hairline bg-surface px-4 py-3 text-left align-top font-normal">
-                        <PaperLink paper={{ paperId: row.paperId }} className="line-clamp-3 font-medium leading-6 text-ink hover:underline">
+                      <th scope="row" className="sticky left-0 z-10 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-top font-normal sm:w-[280px] sm:min-w-[220px] sm:px-4">
+                        <PaperLink paper={{ paperId: row.paperId }} className="line-clamp-3 text-[13px] font-medium leading-5 text-ink hover:underline sm:text-sm sm:leading-6">
                           {row.title}
                         </PaperLink>
                         {row.year && row.year !== "Unknown" ? <span className="text-xs text-mute">{row.year}</span> : null}

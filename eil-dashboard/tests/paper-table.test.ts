@@ -131,7 +131,9 @@ test("the table is read a few papers to a call, each batch reported as it is che
 test("the instructions name each column and forbid a value the paper does not state", () => {
   const system = tableSystem([PARTICIPANTS, SIZE]);
   assert.match(system, /- participants: Participants - Who took part/);
-  assert.match(system, /- sample-size: Sample size - .*\(a number: give it as digits/);
+  assert.match(system, /- sample-size: Sample size - .*\(a number: the value starts with it in digits/);
+  assert.match(system, /never say where in the paper it is stated/, "a note qualifies the value; it does not narrate the reading");
+  assert.match(system, /not a pilot or a cited study/);
   assert.match(system, /Never infer or estimate what the paper does not state/);
   assert.match(system, /copied word for word/);
 });
