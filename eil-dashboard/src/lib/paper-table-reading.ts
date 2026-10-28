@@ -51,10 +51,10 @@ export function tableSystem(columns: TableColumn[]): string {
     "The columns:",
     ...columns.map(
       (column) =>
-        `- ${column.id}: ${column.name}${column.instruction ? ` - ${column.instruction}` : ""}${column.kind === "number" ? " (a number: give it as digits, with its unit if any)" : ""}`
+        `- ${column.id}: ${column.name}${column.instruction ? ` - ${column.instruction}` : ""}${column.kind === "number" ? " (a number: the value starts with it in digits, then its unit, e.g. '30 students'; where the paper gives only parts, the value is their total and the note the parts)" : ""}`
     ),
-    "For each paper and each column give: reported (false when the text given does not state it); value (the answer, short: at most 25 words, in English); quote (the sentence that states it, copied word for word from the paper's text, at most 300 characters; use … to leave out words inside it); note (a few words when the value needs qualifying, e.g. 'two groups of 24 and 25', else empty).",
-    "Never infer or estimate what the paper does not state. A number must be printed in its quote.",
+    "For each paper and each column give: reported (false when the text given does not state it); value (the answer, short: at most 25 words, in English); quote (the sentence that states it, copied word for word from the paper's text, at most 300 characters; use … to leave out words inside it); note (a few words qualifying the value itself, e.g. 'two groups of 24 and 25' or 'pilot study only', else empty; never say where in the paper it is stated or what the paper leaves out).",
+    "Never infer or estimate what the paper does not state. A number must be printed in its quote. Report the study's own data, not a pilot or a cited study, unless that is all the paper has; then say so in the note.",
     "Each paper's text says whether it is the whole paper or excerpts; read all of it before deciding a paper does not state something.",
     'Return JSON only: {"papers":[{"paperId","cells":[{"column","reported","value","quote","note"}]}]} with every paperId given once and every column for each.',
   ].join("\n");
