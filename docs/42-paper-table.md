@@ -128,7 +128,7 @@ Asked whether the table was perfect, I read the four tables in the test reposito
   - the empty page lists all three downloads;
   - the help page explains the second look, Read again and tidy labels;
   - the cost paragraph above.
-- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 22rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put. The first try, `− 19rem`, left the frame's foot 8 px below a 950 px screen: the table starts 312 px down.
+- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 22rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put. The first try, `− 19rem`, left the frame's foot 8 px below a 950 px screen: the table starts 312 px down. With `− 22rem` (#301, pilot 00297-kfq) the foot is at 910 px; on a phone the frame is 492 px.
 
 **On the pilot** (00296-rm6, `p71-second-look.cjs`, the test repository):
 - **Frame.** The header row and the paper column stayed in place when the frame was scrolled down and sideways. Nothing scrolled the page sideways, on a desktop screen or a phone (390 px).
