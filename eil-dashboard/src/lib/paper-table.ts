@@ -14,7 +14,7 @@ import { COLUMN_PRESETS, type ColumnPreset } from "@/lib/paper-table-presets";
 
 /** Columns a table can hold, shown or hidden: every ready-made one and some of the reader's own. */
 export const MAX_COLUMNS = 80;
-/** Rows read for one table; a repository with more is read in its first this many. */
+/** Rows read for one table; a repository with more is read in its newest this many. */
 export const MAX_TABLE_PAPERS = 120;
 export const MAX_TABLES_PER_REPOSITORY = 30;
 
@@ -45,6 +45,11 @@ export interface TableCell {
   quote: string;
   note: string;
   status: CellStatus;
+  /**
+   * Read from the whole paper, or on a second look; "Read again" passes it by.
+   * A cell read before second looks (2026-10-28) has none.
+   */
+  readWhole?: boolean;
 }
 
 /** Cells by `${paperId}:${columnId}`, so a fill merges into the stored table key by key. */
@@ -169,6 +174,92 @@ export function missingCells(rows: TableRow[], columns: TableColumn[], cells: Ta
       })
       .map((column) => ({ paperId: row.paperId, columnId: column.id }))
   );
+}
+
+/**
+ * The cells "Read again" reads: in the columns shown (or those given), each
+ * "Not stated" or "Not confirmed" that has not had the whole paper read for it.
+ * A fill reads only empty cells, so without this a cell read before a fix to
+ * the reading kept its old answer (2026-10-28).
+ */
+export function doubtfulCells(
+  rows: TableRow[],
+  columns: TableColumn[],
+  cells: TableCells,
+  columnIds?: string[]
+): Array<{ paperId: string; columnId: string }> {
+  const shown = visibleColumns(columns).filter((column) => !columnIds || columnIds.includes(column.id));
+  return rows.flatMap((row) =>
+    shown
+      .filter((column) => {
+        const cell = cells[cellKey(row.paperId, column.id)];
+        return Boolean(cell && (cell.status === "not_stated" || cell.status === "unverified") && !cell.readWhole);
+      })
+      .map((column) => ({ paperId: row.paperId, columnId: column.id }))
+  );
+}
+
+/**
+ * A table's studies: past `max`, the newest, since a table of where a field
+ * is going needs its latest work; listed oldest first, as a review lists them.
+ */
+export function tableStudies<T extends { year: string; title: string }>(studies: T[], max = MAX_TABLE_PAPERS): T[] {
+  const year = (study: T) => Number(study.year) || null;
+  const newest = [...studies].sort((a, b) => (year(b) ?? 0) - (year(a) ?? 0) || a.title.localeCompare(b.title)).slice(0, max);
+  return newest.sort((a, b) => (year(a) ?? 9999) - (year(b) ?? 9999) || a.title.localeCompare(b.title));
+}
+
+/** How labels are compared: case, hyphens, spacing and a plural aside ("Mixed-methods" is "Mixed methods"). */
+export function labelKey(label: string): string {
+  return label
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[‐-―_/-]+/g, " ")
+    .replace(/[^\p{L}\p{M}\p{N} ]+/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((word) => (word.length <= 3 || /(?:ss|us|is)$/.test(word) ? word : word.endsWith("ies") ? `${word.slice(0, -3)}y` : word.replace(/s$/, "")))
+    .join(" ");
+}
+
+/**
+ * A short-label column's labels, each worded one way. Papers are read a few
+ * to a call, so nothing makes their labels match: one table had Mixed methods
+ * 12 times, Mixed-methods 9 and Mixed-method 2 (2026-10-28). Labels that
+ * differ only as labelKey allows are shown as their commonest spelling. The
+ * stored cells keep what was read; the page and its downloads show these.
+ */
+export function tidyLabels(columns: TableColumn[], cells: TableCells): TableCells {
+  const labelColumns = new Set(columns.filter((column) => column.kind === "category").map((column) => column.id));
+  if (labelColumns.size === 0) return cells;
+  const parts = (value: string) => value.split(";").map((part) => part.trim()).filter(Boolean);
+  const labelCells = Object.entries(cells).filter(
+    ([key, cell]) => cell.status === "found" && labelColumns.has(key.slice(key.indexOf(":") + 1))
+  );
+  // Each spelling's count, by column and key.
+  const spellings = new Map<string, Map<string, number>>();
+  for (const [key, cell] of labelCells) {
+    const columnId = key.slice(key.indexOf(":") + 1);
+    for (const part of parts(cell.value)) {
+      const group = `${columnId}\u0000${labelKey(part)}`;
+      const counts = spellings.get(group) ?? new Map<string, number>();
+      counts.set(part, (counts.get(part) ?? 0) + 1);
+      spellings.set(group, counts);
+    }
+  }
+  const chosen = new Map(
+    [...spellings].map(([group, counts]) => [group, [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]])
+  );
+  let tidy: TableCells | null = null;
+  for (const [key, cell] of labelCells) {
+    const columnId = key.slice(key.indexOf(":") + 1);
+    const value = [...new Set(parts(cell.value).map((part) => chosen.get(`${columnId}\u0000${labelKey(part)}`) ?? part))].join("; ");
+    if (value === cell.value) continue;
+    tidy ??= { ...cells };
+    tidy[key] = { ...cell, value };
+  }
+  return tidy ?? cells;
 }
 
 // ---------------------------------------------------------------------------

@@ -15,10 +15,14 @@ import {
   cellsForColumns,
   changedColumns,
   columnChoiceKey,
+  doubtfulCells,
+  labelKey,
   missingCells,
   newColumnId,
   paperTableCsv,
   paperTableSheets,
+  tableStudies,
+  tidyLabels,
   type TableCells,
   type TableColumn,
 } from "../src/lib/paper-table";
@@ -453,6 +457,228 @@ test("many columns are read a few to a call, each call finding its own passages"
   assert.equal(COLUMNS_PER_CALL, 8);
   assert.deepEqual(calls, [8, 8, 4]);
   assert.equal(Object.keys(cells).length, 20);
+});
+
+// ---------------------------------------------------------------------------
+// The flaws found in the stored tables (2026-10-28 audit): excerpts that
+// missed a stated value, labels spelled three ways, old answers never read
+// again, and the oldest studies kept past the limit.
+
+const FILLER = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore. ";
+/** A paper longer than its excerpts, with the sample stated near its end. */
+const LONG = {
+  ...PAPER_A,
+  paperId: "301",
+  title: "A long thesis chapter",
+  content: `${FILLER.repeat(420)}There were 25 students in this section. ${FILLER.repeat(20)}`,
+};
+
+type Asked = { papers: Array<{ paperId: string; read: string; text: string }> };
+
+test("a paper read in excerpts is read again whole before a cell says Not stated, in one call for every column it lacked", async () => {
+  const asked: Asked[] = [];
+  const complete = (async (messages: Array<{ role: string; content: string }>) => {
+    const request = JSON.parse(messages[1].content) as Asked;
+    asked.push(request);
+    return {
+      content: JSON.stringify({
+        papers: request.papers.map((paper) => ({
+          paperId: paper.paperId,
+          cells:
+            paper.read === "the whole paper" && paper.paperId === LONG.paperId
+              ? [
+                  { column: "participants", reported: true, value: "25 students", quote: "There were 25 students in this section.", note: "" },
+                  { column: "sample-size", reported: true, value: "25 students", quote: "There were 25 students in this section.", note: "" },
+                ]
+              : [
+                  { column: "participants", reported: false },
+                  { column: "sample-size", reported: false },
+                ],
+        })),
+      }),
+      toolCalls: [],
+    };
+  }) as unknown as Parameters<typeof readTableCells>[0]["complete"];
+  const batches: TableCells[] = [];
+  const wanted = [PAPER_A, LONG].flatMap((paper) => [PARTICIPANTS, SIZE].map((column) => ({ paperId: paper.paperId, columnId: column.id })));
+  const cells = await readTableCells({ papers: [PAPER_A, LONG], columns: [PARTICIPANTS, SIZE], wanted, complete, onBatch: (batch) => void batches.push(batch) });
+
+  assert.equal(LONG.content.length > 40_000, true);
+  assert.equal(asked.length, 2, "the first reading, then one second look");
+  assert.equal(asked[0].papers.find((paper) => paper.paperId === LONG.paperId)?.read, "excerpts; […] marks text left out");
+  assert.deepEqual(asked[1].papers.map((paper) => [paper.paperId, paper.read]), [[LONG.paperId, "the whole paper"]]);
+  assert.ok(!Object.keys(batches[0]).some((key) => key.startsWith(`${LONG.paperId}:`)), "a cell from excerpts is not shown as Not stated before the second look");
+  assert.equal(cells["301:participants"].status, "found");
+  assert.equal(cells["301:sample-size"].value, "25 students");
+  assert.equal(cells["301:participants"].readWhole, true);
+  assert.equal(cells["101:participants"].status, "not_stated", "a short paper was read whole the first time, so it is not read again");
+  assert.equal(cells["101:participants"].readWhole, true);
+});
+
+test("a second look that fails leaves the cell to read again; Read again goes straight to the whole paper and keeps the old answer when it fails", async () => {
+  const asked: Asked[] = [];
+  let answer = false;
+  const complete = (async (messages: Array<{ role: string; content: string }>) => {
+    const request = JSON.parse(messages[1].content) as Asked;
+    asked.push(request);
+    if (request.papers.some((paper) => paper.read === "the whole paper") && !answer) return null;
+    return {
+      content: JSON.stringify({
+        papers: request.papers.map((paper) => ({
+          paperId: paper.paperId,
+          cells: [{ column: "sample-size", reported: answer, value: answer ? "25 students" : null, quote: answer ? "There were 25 students in this section." : null }],
+        })),
+      }),
+      toolCalls: [],
+    };
+  }) as unknown as Parameters<typeof readTableCells>[0]["complete"];
+
+  const filled = await readTableCells({ papers: [LONG], columns: [SIZE], wanted: [{ paperId: LONG.paperId, columnId: SIZE.id }], complete });
+  assert.equal(filled["301:sample-size"].status, "failed", "not looked at again, so not yet read");
+
+  const old = { value: "", quote: "", note: "", status: "not_stated" as const };
+  asked.length = 0;
+  const kept = await readTableCells({
+    papers: [LONG],
+    columns: [SIZE],
+    wanted: [],
+    again: [{ paperId: LONG.paperId, columnId: SIZE.id }],
+    previous: { "301:sample-size": old },
+    complete,
+  });
+  assert.ok(asked.every((request) => request.papers.every((paper) => paper.read === "the whole paper")), "Read again does not read excerpts first");
+  assert.deepEqual(kept["301:sample-size"], old);
+
+  answer = true;
+  const read = await readTableCells({
+    papers: [LONG],
+    columns: [SIZE],
+    wanted: [],
+    again: [{ paperId: LONG.paperId, columnId: SIZE.id }],
+    previous: { "301:sample-size": old },
+    complete,
+  });
+  assert.equal(read["301:sample-size"].status, "found");
+  assert.equal(read["301:sample-size"].readWhole, true);
+});
+
+test("every column of a call is searched for, the eighth as much as the first", async () => {
+  const texts: string[] = [];
+  const complete = (async (messages: Array<{ role: string; content: string }>) => {
+    texts.push((JSON.parse(messages[1].content) as Asked).papers[0].text);
+    return { content: JSON.stringify({ papers: [] }), toolCalls: [] };
+  }) as unknown as Parameters<typeof readTableCells>[0]["complete"];
+  const columns: TableColumn[] = [
+    ...COLUMN_PRESETS.slice(0, 7).map((preset) => ({ id: preset.key, name: preset.name, instruction: preset.instruction, kind: preset.kind })),
+    { id: "intonation", name: "Intonation", instruction: "How intonation was rated.", kind: "text" },
+  ];
+  const paper = { ...LONG, content: `${FILLER.repeat(420)}Intonation was rated by two trained judges on a five-point scale. ${FILLER.repeat(20)}` };
+  await readTableCells({ papers: [paper], columns, wanted: columns.map((column) => ({ paperId: paper.paperId, columnId: column.id })), complete });
+  assert.match(texts[0], /Intonation was rated by two trained judges/, "the eighth column's passage is among the excerpts");
+});
+
+test("a label written in different ways is shown one way, the commonest", () => {
+  const METHOD: TableColumn = { id: "methodology", name: "Methodology", instruction: "", kind: "category" };
+  const label = (value: string) => ({ value, quote: "q", note: "", status: "found" as const });
+  const cells: TableCells = {
+    "1:methodology": label("Mixed methods"),
+    "2:methodology": label("Mixed methods"),
+    "3:methodology": label("Mixed-methods"),
+    "4:methodology": label("Mixed-method; Case studies"),
+    "5:methodology": label("Case study"),
+    "6:methodology": label("Case study"),
+    "7:methodology": label("Mixed methods; Mixed-methods"),
+    "8:methodology": label("การวิจัยเชิงคุณภาพ"),
+    "1:participants": { ...label("Mixed-methods sample"), value: "Mixed-methods sample" },
+    "9:methodology": { value: "", quote: "", note: "", status: "not_stated" },
+  };
+  const tidy = tidyLabels([METHOD, PARTICIPANTS], cells);
+  assert.deepEqual(
+    ["1", "3", "4", "5", "7", "8"].map((paper) => tidy[`${paper}:methodology`].value),
+    ["Mixed methods", "Mixed methods", "Mixed methods; Case study", "Case study", "Mixed methods", "การวิจัยเชิงคุณภาพ"]
+  );
+  assert.equal(tidy["1:participants"].value, "Mixed-methods sample", "a words column is left as read");
+  assert.equal(cells["3:methodology"].value, "Mixed-methods", "the stored cells keep what was read");
+  assert.equal(labelKey("Case Studies"), labelKey("case-study"));
+  assert.notEqual(labelKey("Quantitative"), labelKey("Qualitative"));
+  const settled = { "1:methodology": label("Mixed methods") };
+  assert.equal(tidyLabels([METHOD], settled), settled, "nothing to tidy, nothing copied");
+});
+
+test("Read again takes the Not stated and Not confirmed cells read from part of a paper, in the columns shown or the one given", () => {
+  const rows = [
+    { paperId: "1", runId: "r1", title: "A", year: "2020" },
+    { paperId: "2", runId: "r2", title: "B", year: "2021" },
+  ];
+  const none = (status: "not_stated" | "unverified" | "failed", readWhole?: boolean) => ({ value: "", quote: "", note: "", status, ...(readWhole ? { readWhole } : {}) });
+  const cells: TableCells = {
+    "1:participants": none("not_stated"),
+    "1:sample-size": none("unverified"),
+    "2:participants": none("not_stated", true),
+    "2:sample-size": none("failed"),
+    "1:country": none("not_stated"),
+  };
+  const country = { ...COUNTRY, hidden: true };
+  assert.deepEqual(doubtfulCells(rows, [PARTICIPANTS, SIZE, country], cells), [
+    { paperId: "1", columnId: "participants" },
+    { paperId: "1", columnId: "sample-size" },
+  ]);
+  assert.deepEqual(doubtfulCells(rows, [PARTICIPANTS, SIZE], cells, ["sample-size"]), [{ paperId: "1", columnId: "sample-size" }]);
+});
+
+test("past the limit a table keeps the newest studies, listed oldest first", () => {
+  const studies = [
+    ...Array.from({ length: 130 }, (_, index) => ({ title: `Study ${index}`, year: String(1900 + index) })),
+    { title: "Undated", year: "Unknown" },
+  ];
+  const kept = tableStudies(studies);
+  assert.equal(kept.length, 120);
+  assert.equal(kept[0].year, "1910", "the ten oldest and the undated one are left out");
+  assert.equal(kept.at(-1)?.year, "2029");
+  const few = tableStudies([{ title: "B", year: "Unknown" }, { title: "A", year: "2024" }, { title: "C", year: "2011" }]);
+  assert.deepEqual(few.map((study) => study.title), ["C", "A", "B"], "under the limit, every study, undated last");
+});
+
+test("Read again reads the doubtful cells from the whole paper, and only those", async () => {
+  const { db, request, owner } = await repository();
+  const requests = model();
+  const tables = await import("../src/app/api/workspace/tables/route");
+  const fillRoute = await import("../src/app/api/workspace/tables/[id]/fill/route");
+  const made = await tables.POST(request("/api/workspace/tables", { headers: owner, body: { projectId: PROJECT, name: "Study details", columns: [PARTICIPANTS] } }));
+  const { table } = await made.json();
+  const old: TableCells = {
+    "101:participants": { value: "", quote: "", note: "", status: "not_stated" },
+    "102:participants": { value: "", quote: "", note: "", status: "not_stated", readWhole: true },
+  };
+  await db.query(`UPDATE paper_tables SET cells = $1::jsonb WHERE id = $2`, [JSON.stringify(old), table.id]);
+
+  const plain = await fillRoute.POST(request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, method: "POST" }), params({ id: table.id }));
+  assert.deepEqual(await plain.json(), { done: true, found: 0, usd: 0 }, "a fill reads only empty cells");
+
+  const again = await fillRoute.POST(request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: true } }), params({ id: table.id }));
+  const events = (await again.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events[0].cells, 1, "the cell already read from the whole paper is passed by");
+  assert.equal(events.at(-1).found, 1);
+  assert.equal(requests.length, 1);
+  const stored = (await db.query<{ cells: TableCells }>(`SELECT cells FROM paper_tables WHERE id = $1`, [table.id])).rows[0].cells;
+  assert.equal(stored["101:participants"].status, "found");
+  assert.equal(stored["101:participants"].readWhole, true);
+  assert.deepEqual(stored["102:participants"], old["102:participants"]);
+
+  const twice = await fillRoute.POST(request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: true } }), params({ id: table.id }));
+  assert.deepEqual(await twice.json(), { done: true, found: 0, usd: 0 }, "nothing is left to read again");
+  const refused = await fillRoute.POST(request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: "yes" } }), params({ id: table.id }));
+  assert.equal(refused.status, 400);
+});
+
+test("the table scrolls in a frame no taller than the screen, its header row and paper column kept in view", () => {
+  const page = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
+  assert.match(page, /className="max-h-\[max\(20rem,calc\(100dvh-19rem\)\)\] overflow-auto /);
+  assert.match(page, /sticky left-0 top-0 z-30/, "the corner stays over both");
+  assert.match(page, /sticky top-0 z-20 [^"]*bg-surface/, "column names stay at the top");
+  assert.match(page, /Read again/);
+  assert.match(page, /tidyLabels\(columns,/);
+  assert.doesNotMatch(page, /downloads as a CSV for a spreadsheet/);
 });
 
 test("the page offers the picker and the three downloads, and no chart", () => {

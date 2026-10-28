@@ -72,7 +72,7 @@ The word index used by the chat is keyed by each paper's content hash, so it was
 - On the re-check (00291-l78) the panel was in view, notes only qualified their values ("three faculties", "two groups of 30", "50 initially; 49 analyzed"), and the 2011 value read "30 samples (pilot study only)". "Not confirmed" rose from 4 to 6 cells. Asking for a total where a paper gives only parts produced totals not printed in the paper (10 learners and 10 judges, "20"). A number cell now passes the same way as in Chart mode: when the parts in its note are each printed in the sentence and add up to it (#296).
 - A check proves the sentence is in the paper, not that it is the right sentence. The learner autonomy thesis gives 149 sixth graders in the intervention and 37 fifth graders in the study, and the table took the 149, as docs/41's C18 did.
 
-**Cost.** Luna is $0.10 per million input tokens and $0.50 per million output. Each paper is read once a fill, about 14,000 characters, however many columns there are; the output grows with the cells. On the pilot a two-column fill of 36 studies cost about $0.022 (OpenRouter credit fell from $0.612 to $0.568 over the two fills), so a five-column table is about $0.03.
+**Cost.** Luna is $0.10 per million input tokens and $0.50 per million output. Each paper is read once for every eight columns a fill reads (`COLUMNS_PER_CALL`, since #297), about 14,000 characters each time; the output grows with the cells. Since §3.2 a paper read in excerpts is read again whole for the cells it lacked. On the pilot a two-column fill of 36 studies cost about $0.022 (OpenRouter credit fell from $0.612 to $0.568 over the two fills), so a five-column table is about $0.03.
 
 ### 3.1 The table as a dashboard (same day, #297)
 
@@ -107,6 +107,29 @@ The user asked for the table to work like YouTube Studio's analytics: many ready
 
 **Taken back out** (same day, at the user's request): the chart above the table. Only the table is shown, the PNG is the table alone, and the Download menu is three one-line choices (CSV, Excel, Image) without descriptions. The short-label kind stays, for answers worded alike across papers. The chart code (`TableChart.tsx` and the chart data functions) was removed rather than left unused.
 
+### 3.2 Flaws found in the stored tables, and their fixes (same day)
+
+Asked whether the table was perfect, I read the four tables in the test repository directly (read-only, no model calls).
+
+**What the audit found.**
+- **Excerpts missed stated values.** Every one of the 36 papers is longer than the 14,000 characters a row reads; the median is 57,000 and the longest 103,000. The same column read in different tables disagreed on a cell's status for 10 of 36 papers (Sample size), 6 (Setting) and 5 (Research design). "Not stated" was given for "all the 149 sixth graders" and "There were 25 students in this section", both in their papers, including by the current version.
+- **One column in eight was not even searched.** `readPapers` searches for the first ten queries. A column gave two (its name and its instruction), so in a call of eight columns the last three were never searched. In "Study details 3" those were Duration (19 of 36 not stated), Main finding and Methodology. Main finding was still found, because the abstract is always read.
+- **Labels did not match.** Methodology read "Mixed methods" 12 times, "Mixed-methods" 9 and "Mixed-method" 2. Papers are read four to a call, so nothing made them agree.
+- **Old answers were final.** A fill reads only empty and failed cells, so a later fix never reached a cell already answered. "105 participants" (3 teachers and 102 learners) stayed Not confirmed in two older tables, though the newest one confirms it.
+- **The limit kept the oldest.** Past 120 studies the oldest were kept and the newest dropped.
+
+**The fixes (the user chose these; hand-editing a cell was not wanted).**
+- **A second look** (`paper-table-reading.ts`). A cell that comes back Not stated or Not confirmed from excerpts is held back. Its paper is then read again whole: up to 120,000 characters, one paper a call, all the columns it lacked in that call. The second look's answer stands, and a failed second look leaves the cell to be read again. A paper read whole the first time is not read again. Each cell records `readWhole`.
+- **One search per column.** Name and instruction now go in as one query, so all eight columns of a call are searched.
+- **Labels tidied** (`tidyLabels`, `labelKey` in `paper-table.ts`). In a short-label column, labels that differ only in case, hyphens, spacing or a plural are shown as their commonest spelling, on the page and in all three downloads. The stored cells keep what was read.
+- **Read again.** A button by Fill table, and one in each column's edit box. It reads every Not stated and Not confirmed cell that has not had a whole-paper read (`doubtfulCells`) straight from the whole paper, so it appears only for cells read before the second look. The fill route takes `{"again": true, "columnIds": [...]}`, and it counts against the allowance as a fill does.
+- **The newest 120** (`tableStudies`): past the limit the newest studies are kept, listed oldest first. The status line names it ("the newest 120 of 200 studies").
+- **Wording:**
+  - the empty page lists all three downloads;
+  - the help page explains the second look, Read again and tidy labels;
+  - the cost paragraph above.
+- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 19rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put.
+
 ## 4. Open items
 
 - **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.51 after the table's pilot checks.
@@ -123,7 +146,14 @@ The user asked for the table to work like YouTube Studio's analytics: many ready
   - the instructions and the CSV;
   - the migration;
   - the routes against PGlite under the app's role with the model stubbed: owner only, rows one per study, the stream, cells saved, nothing read twice, the allowance recorded;
-  - the navigation.
+  - the navigation;
+  - from §3.2:
+    - the second look: held back until it is done, one call for all the columns a paper lacked, a failure left to read again;
+    - Read again: straight to the whole paper, keeps the old answer when it fails, passes cells already read whole;
+    - every column of a call searched;
+    - labels tidied;
+    - the newest studies past the limit;
+    - the framed table.
 - `tests/schema-authority.test.ts` checks the new table is in `schema.sql`.
 - `tests/spend-limits.test.ts` lists `paper-table-reading.ts` among the files that call a model.
 - `tests/test_ingestion_extractor.py`: tables read across, empty cells kept, `<br>` and bold dropped, and the cleaner keeping them.

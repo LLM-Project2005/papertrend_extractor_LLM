@@ -23,13 +23,13 @@ export const tablePage: DocsPageBase = {
       steps: [
         "Open **Table** and choose **New table**.",
         "Name it, choose what to start with (**Study overview**, **Methods**, **Intervention studies**, **Results and implications**, or **Empty**) and choose **Make and read**.",
-        "The table opens with the studies down the side and fills in as the papers are read, a few papers at a time. **Stop** keeps what was read; **Fill table** reads the rest.",
+        "The table opens with the studies down the side and fills in as the papers are read, a few papers at a time. **Stop** keeps what was read; **Fill table** reads the rest. A long table scrolls inside its frame, with the column names and the papers kept in view.",
         "**Columns** lists every ready-made column by group (study design, participants, setting, intervention, data and analysis, results, publication) with a search. Tick to show a column, clear to hide it, then **Apply**. A column shown for the first time is read straight away.",
         "**Add column** adds a column of your own: a name, what to read from each paper (said as you would to a research assistant), and whether the answer is words, a short label or a number. It is read straight away.",
       ],
       bullets: [
         "Hiding a column keeps what was read for it, so showing it again reads nothing and costs nothing.",
-        "A table holds up to 80 columns and the first 120 studies; a repository holds up to 30 tables.",
+        "A table holds up to 80 columns and 120 studies (the newest, when the repository has more); a repository holds up to 30 tables.",
         "Renaming a column keeps its values. Changing what it reads, or its kind, clears it to be read again.",
         "Tables are saved with the repository and only you can see yours.",
       ],
@@ -42,11 +42,15 @@ export const tablePage: DocsPageBase = {
         columns: ["The cell shows", "What it means"],
         rows: [
           ["A value", "The paper states it, and its sentence was found in the paper. Select the value to see the sentence; **Show in paper** opens the PDF with it marked."],
-          ["Not stated", "The paper, as read, does not say."],
+          ["Not stated", "The paper does not say. A long paper is first read in the passages that bear on the columns; before a cell says this, the whole paper is read again for it."],
           ["Not confirmed", "An answer was given, but its sentence is not in the paper, or a number is not in its sentence, so it is not shown."],
           ["Not read yet", "The reading of that paper failed; **Fill table** reads it again."],
         ],
       },
+      bullets: [
+        "**Read again** appears when cells say Not stated or Not confirmed from only part of a paper, as cells read before the second look do. It reads each of them from the whole paper; a value already found is kept. To read one column again, select the pencil by its name.",
+        "In a short-label column, a label written in different ways (Mixed methods, Mixed-methods) is shown one way, the way most papers' cells have it.",
+      ],
       callout: {
         tone: "info",
         title: "A number is checked twice",
@@ -70,7 +74,7 @@ export const tablePage: DocsPageBase = {
       id: "usage",
       title: "Daily allowance",
       body: [
-        "Filling a table reads the papers with the same model as Chat (GPT-6 Luna) and counts against the same daily allowance as Chat. A table of 40 papers and 5 columns uses about as much as a few chat answers. Making a table, opening it and downloading it use none.",
+        "Filling a table reads the papers with the same model as Chat (GPT-6 Luna) and counts against the same daily allowance as Chat; so does **Read again**. A table of 40 papers and 5 columns uses about as much as a few chat answers. Making a table, opening it and downloading it use none.",
       ],
     },
   ],
