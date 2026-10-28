@@ -269,7 +269,20 @@ export interface LikelyDuplicate {
   originalTitle: string;
 }
 
-const TITLE_STOP_WORDS = new Set(["a", "an", "the", "of", "on", "in", "to", "and", "for", "by", "with", "among", "its", "their"]);
+const TITLE_STOP_WORDS = new Set(["a", "an", "the", "of", "on", "in", "to", "and", "for", "by", "with", "among", "amongst", "its", "their"]);
+
+/** A title word in one spelling: "Effects" and "effect", "analyse" and "analyze", "behaviour" and "behavior". */
+function titleWord(word: string): string {
+  let folded = word.replace(/'s$/, "");
+  if (folded.length > 4 && folded.endsWith("ies")) folded = `${folded.slice(0, -3)}y`;
+  else if (folded.length > 3 && folded.endsWith("s") && !/(?:ss|us|is)$/.test(folded)) folded = folded.slice(0, -1);
+  folded = folded.replace(/([a-z]{3})is(e|ed|es|ing|ation|ations|ational|er|ers)$/, "$1iz$2").replace(/ys(e|ed|es|ing)$/, "yz$1");
+  if (folded.length > 5) folded = folded.replace(/our$/, "or");
+  return folded;
+}
+
+/** A number, a roman numeral or "part": what tells "Study 1" from "Study 2". */
+const NUMBERING = /^(?:\d+|[ivx]+|part)$/;
 
 /**
  * Papers whose titles say they are the same study uploaded twice.
@@ -277,10 +290,15 @@ const TITLE_STOP_WORDS = new Set(["a", "an", "the", "of", "on", "in", "to", "and
  * Six of the 39 papers in the test repository were: the same thesis chapter
  * and article, or one file uploaded twice. The analysis gave each copy its own
  * topics, and every chart counted both - "5 papers" in a theme was three
- * studies. Found by title: the shorter title's content words nearly all appear
- * in the longer one, which allows a subtitle or a leading "The" and on that
- * repository found exactly the six pairs and nothing else. Deleting a copy is
- * the reader's decision, so this only reports them.
+ * studies. Found by title: every content word of the shorter title is in the
+ * longer one, which allows a subtitle or a leading "The".
+ *
+ * It used to take 80% of the shorter title's words, which also made one study
+ * of "... among Thai EFL learners" and "... among Vietnamese EFL learners", and
+ * of a paper's Part 1 and Part 2: on generated collections 500 papers counted
+ * as 458 (docs/38). A title that differs by one content word, or whose extra
+ * words number it, is another study. Deleting a copy is the reader's decision,
+ * so this only reports them.
  */
 export function likelyDuplicatePapers(trends: TrendRow[]): LikelyDuplicate[] {
   const titles = new Map<PaperId, string>();
@@ -288,7 +306,16 @@ export function likelyDuplicatePapers(trends: TrendRow[]): LikelyDuplicate[] {
   const words = new Map(
     [...titles.entries()].map(([id, title]) => [
       id,
-      new Set(title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((word) => word && !TITLE_STOP_WORDS.has(word))),
+      new Set(
+        title
+          .toLowerCase()
+          .replace(/[’‘]/g, "'")
+          .replace(/[^a-z0-9'\s-]/g, " ")
+          .split(/[\s-]+/)
+          .map((word) => word.replace(/^'+|'+$/g, ""))
+          .filter((word) => word && !TITLE_STOP_WORDS.has(word))
+          .map(titleWord)
+      ),
     ])
   );
   const ids = [...titles.keys()].sort();
@@ -299,10 +326,10 @@ export function likelyDuplicatePapers(trends: TrendRow[]): LikelyDuplicate[] {
       if (copies.has(ids[j])) continue;
       const a = words.get(ids[i])!;
       const b = words.get(ids[j])!;
-      const shorter = Math.min(a.size, b.size);
-      if (shorter < 4) continue;
-      const shared = [...a].filter((word) => b.has(word)).length;
-      if (shared / shorter < 0.8) continue;
+      const [shorter, longer] = a.size <= b.size ? [a, b] : [b, a];
+      if (shorter.size < 4) continue;
+      if ([...shorter].some((word) => !longer.has(word))) continue;
+      if ([...longer].some((word) => !shorter.has(word) && NUMBERING.test(word))) continue;
       copies.add(ids[j]);
       found.push({ paperId: ids[j], title: titles.get(ids[j])!, originalId: ids[i], originalTitle: titles.get(ids[i])! });
     }

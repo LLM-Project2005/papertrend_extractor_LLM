@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { csvCell, csvFileName, seriesTable, toCsv } from "../src/lib/chart-csv";
+import { chatChartCsv, csvCell, csvFileName, seriesTable, toCsv } from "../src/lib/chart-csv";
 import { readChatScopeTransfer, runsInTransfer, writeChatScopeTransfer } from "../src/lib/chat-scope-transfer";
 import { hasViewInAddress, readDashboardAddress, withDashboardAddress } from "../src/lib/dashboard-address";
 import { dashboardPayloadForBrowser } from "../src/lib/dashboard-payload";
@@ -195,4 +195,19 @@ test("the browser gets no topic-family evidence snippets, which only the server 
   assert.deepEqual(sent.topicFamilies?.[0].evidenceSnippets, []);
   assert.equal(sent.topicFamilies?.[0].totalKeywordFrequency, 4, "what Home reads stays");
   assert.deepEqual(family.evidenceSnippets, ["a long passage"], "the server's copy is untouched");
+});
+
+test("a chat chart downloads as CSV: a chart read from the papers as each paper, its value and its sentence", () => {
+  // Chat charts had no download, while the dashboard's did (2026-10-28).
+  const read = chatChartCsv({
+    title: "Participants in each study",
+    yKeys: ["Participants"],
+    data: [{ label: "Study A", Participants: 49 }],
+    sources: [{ title: "Study A", year: "2025", value: "49 participants", quote: "Forty-nine seventh-grade students read a word list.", note: "" }],
+  });
+  assert.deepEqual(read.header, ["Paper", "Year", "Value", "Note", "Sentence in the paper"]);
+  assert.deepEqual(read.rows, [["Study A", "2025", "49 participants", "", "Forty-nine seventh-grade students read a word list."]]);
+  const counted = chatChartCsv({ title: "feedback occurrences by paper", yKeys: ["feedback"], data: [{ label: "Study A", feedback: 12 }, { label: "Study B", feedback: "" }] });
+  assert.deepEqual(counted.header, ["Label", "feedback"]);
+  assert.deepEqual(counted.rows, [["Study A", 12], ["Study B", ""]], "a figure a paper does not give stays empty, not zero");
 });

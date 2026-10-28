@@ -87,7 +87,72 @@ test("the request is short per paper and asks for the reader's language", () => 
   });
   assert.match(messages[0].content, /Write each detail in Thai/);
   assert.match(messages[0].content, /never through a study it cites/);
-  assert.ok(SCREEN_CHARS <= 5_000, "a short share of each paper keeps the check cheap");
+  assert.ok(SCREEN_CHARS <= 8_000, "a short share of each paper keeps the check cheap");
+  const partial = screenMessages({
+    question: "Which instruments measured speaking ability?",
+    condition: "measured English speaking ability with an instrument",
+    answerLanguage: "English",
+    papers: [{ label: "P1", title: "Study 1", year: "2020", text: "x", partial: true }],
+  });
+  assert.match(partial[1].content, /\[P1\] Study 1 \(2020\) \(excerpts\)/, "the model is told which papers it sees in part");
+  assert.match(partial[0].content, /put its label in unsure/);
+});
+
+test("a paper read in part that the short read cannot settle is read again, longer, and kept if it meets the condition", async () => {
+  // The question bank (2026-10-28): the oral communication study's test is described past its abstract.
+  const late = paper(5, `${"Project-based blended learning for engineering students. ".repeat(300)}Oral communication ability was measured with a speaking test and an analytic rubric.`);
+  const requests: string[] = [];
+  const complete = (async (messages: Array<{ content: string }>) => {
+    requests.push(messages[1].content);
+    const content = requests.length === 1
+      ? { matches: [{ paper: "P2", detail: "a speaking test", quote: "" }], unsure: ["P1", "P2", "P9"] }
+      : { decisions: [{ paper: "P1", meets: true, detail: "a speaking test and an analytic rubric", quote: "Oral communication ability was measured with a speaking test and an analytic rubric." }] };
+    return { content: JSON.stringify(content), annotations: [], toolCalls: [] };
+  }) as unknown as Complete;
+  const result = await screenPapers({
+    papers: [late, paper(6, "A speaking test measured oral ability.")],
+    question: "Which instruments were used to measure English speaking ability?",
+    condition: "measured English speaking ability with an instrument",
+    answerLanguage: "English",
+    complete,
+  });
+  assert.equal(requests.length, 2, "one more call, for the unsure paper alone");
+  assert.match(requests[0], /Study 5 \(2015\) \(excerpts\)/);
+  assert.doesNotMatch(requests[0], /Study 6 \(2016\) \(excerpts\)/, "a paper read whole is not marked");
+  assert.ok(!requests[1].includes("Study 6"), "a matched paper, and a paper read whole, are not read again");
+  assert.ok(requests[1].includes("analytic rubric"), "the longer read reaches the passage");
+  assert.deepEqual(result.matches.map((match) => match.paperId), ["p5", "p6"]);
+  assert.match(result.matches[0].quote, /analytic rubric/, "the sentence is checked against the longer read");
+});
+
+test("read again, a paper is kept only on a yes: a paper listed with a detail that rules it out is not a match", async () => {
+  // The question bank (2026-10-28): four papers of undergraduates came back as "school students" from the longer read.
+  const long = (index: number, line: string) => paper(index, `${"Background on second language learning. ".repeat(300)}${line}`);
+  const papers = [
+    long(7, "The participants were 20 L1 Thai first-year undergraduate learners at a university in Bangkok."),
+    long(8, "Participants were 49 seventh-grade students in two public schools."),
+  ];
+  let call = 0;
+  const complete = (async () => {
+    call += 1;
+    const content = call === 1
+      ? { matches: [], unsure: ["P1", "P2"] }
+      : { decisions: [
+          { paper: "P1", meets: false, detail: "first-year undergraduates", quote: "" },
+          { paper: "P2", meets: "true", detail: "49 seventh-grade students", quote: "Participants were 49 seventh-grade students in two public schools." },
+        ] };
+    return { content: JSON.stringify(content), annotations: [], toolCalls: [] };
+  }) as unknown as Complete;
+  const result = await screenPapers({
+    papers,
+    question: "Which papers studied school students rather than university students?",
+    condition: "studied school students rather than university students",
+    answerLanguage: "English",
+    complete,
+    details: false,
+  });
+  assert.equal(call, 2);
+  assert.deepEqual(result.matches.map((match) => match.paperId), ["p8"]);
 });
 
 test("a question about a paper's length is counted, not read", () => {

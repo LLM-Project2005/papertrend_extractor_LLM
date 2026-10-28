@@ -113,7 +113,71 @@ def _scanned_pages(document: Any, page_texts: list[str]) -> list[int]:
     return scanned
 
 
-def _ocr_pages(document: Any, pdf_path: str, page_indices: list[int]) -> Dict[int, str]:
+# A table's caption at the start of a line: "Table 3", "**Table 3.**".
+TABLE_CAPTION = re.compile(r"(?mi)^\s*\**\s*table\s+\d+")
+# The share of a page that pictures must cover before its table is taken to be one.
+TABLE_IMAGE_SHARE = 0.12
+TABLE_OCR_INSTRUCTION = (
+    "One or more tables on this page are printed as pictures. Transcribe every table on the page as a Markdown table, "
+    "under its caption exactly as printed (for example 'Table 3. Descriptive statistics'), with every number, sign and "
+    "label exactly as printed. Output only the tables, nothing else. If the page has no table, output nothing."
+)
+
+
+def _table_image_pages(document: Any, page_texts: list[str], skip: set[int]) -> list[int]:
+    """Pages whose table is printed as a picture: a table caption in the text
+    layer and pictures covering a good part of the page.
+
+    The text layer of a typed PDF holds a table's caption but not a table that
+    is a picture, so the table's numbers never reached the analysis or the
+    chat: in the test repository about one table caption in five was followed
+    by prose, among them "Descriptive statistics for the CDRA scores (n = 30)"
+    (2026-10-28). A journal logo is too small to count.
+    """
+
+    pages = []
+    for index, text in enumerate(page_texts):
+        if index in skip or not TABLE_CAPTION.search(text or ""):
+            continue
+        try:
+            page = document.load_page(index)
+            area = max(float(page.rect.width) * float(page.rect.height), 1.0)
+            covered = 0.0
+            for info in page.get_image_info() or []:
+                x0, y0, x1, y1 = info.get("bbox", (0, 0, 0, 0))
+                covered += max(0.0, float(x1) - float(x0)) * max(0.0, float(y1) - float(y0))
+        except Exception:
+            continue
+        if min(covered, area) / area >= TABLE_IMAGE_SHARE:
+            pages.append(index)
+    return pages
+
+
+def _table_image_page_limit() -> int:
+    return max(0, int(os.getenv("TABLE_IMAGE_MAX_PAGES", "12")))
+
+
+def _tables_read_across(text: str) -> str:
+    """A Markdown table as rows read across ("| DA1 | 12.40 |" -> "DA1 · 12.40"),
+    without its rule lines. The cleaner drops Markdown tables from the text the
+    chat reads, so a table kept in Markdown would reach the stored raw text
+    only. An empty cell stays as a dash so the columns still line up."""
+
+    lines = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if "-" in stripped and "|" in stripped and set(stripped) <= set("|-: \t"):
+            continue
+        if stripped.startswith("|") and stripped.endswith("|") and len(stripped) > 1:
+            cells = [cell.strip() or "-" for cell in stripped[1:-1].split("|")]
+            stripped = " · ".join(cells)
+        # Line breaks inside a cell and bold marks, as the vision model writes them.
+        stripped = re.sub(r"\s*<br\s*/?>\s*", " ", stripped, flags=re.IGNORECASE).replace("**", "")
+        lines.append(stripped)
+    return "\n".join(lines).strip()
+
+
+def _ocr_pages(document: Any, pdf_path: str, page_indices: list[int], instruction: str = "") -> Dict[int, str]:
     import base64
 
     import fitz
@@ -135,7 +199,8 @@ def _ocr_pages(document: Any, pdf_path: str, page_indices: list[int]) -> Dict[in
             content=[
                 {
                     "type": "text",
-                    "text": f"Page {page_num + 1}/{document_pages}. OCR the page verbatim in Markdown. Preserve headings and Thai or English text exactly.",
+                    "text": f"Page {page_num + 1}/{document_pages}. "
+                    + (instruction or "OCR the page verbatim in Markdown. Preserve headings and Thai or English text exactly."),
                 },
                 {
                     "type": "image_url",
@@ -235,18 +300,42 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
                 # A typed PDF can still have scanned pages, often the cover
                 # that carries the title and year. OCR those pages too.
                 page_texts = _page_texts(document)
+                merged = list(page_texts)
                 scanned = _scanned_pages(document, page_texts)
+                chosen: list[int] = []
                 if scanned and (scanned[0] < 2 or len(scanned) >= max(2, page_count // 5)):
                     chosen = scanned[: _vision_page_limit()]
                     recovered = _ocr_pages(document, pdf_path, chosen)
                     if recovered:
                         extraction_method = "fitz_text+vision_pages"
-                        merged = [recovered.get(index) or text for index, text in enumerate(page_texts)]
-                        md_text = "\n\n".join(text for text in merged if text).strip()
+                        merged = [recovered.get(index) or text for index, text in enumerate(merged)]
                     if len(scanned) > len(chosen):
                         warnings.append(
                             f"extraction: {len(scanned) - len(chosen)} scanned page(s) were beyond the OCR limit and skipped"
                         )
+                # Tables printed as pictures: only the tables are read from the
+                # page image, and they follow the page's own text, which stays
+                # as the PDF has it so evidence can still be marked on it. The
+                # method is unchanged: the paper's text is its own.
+                table_pages = _table_image_pages(document, page_texts, set(chosen))
+                read_tables = table_pages[: _table_image_page_limit()]
+                tables = _ocr_pages(document, pdf_path, read_tables, TABLE_OCR_INSTRUCTION) if read_tables else {}
+                tables = {index: _tables_read_across(text) for index, text in tables.items() if "|" in text}
+                if tables:
+                    merged = [
+                        f"{text}\n\n[Tables on page {index + 1}, read from the page image]\n{tables[index]}" if index in tables else text
+                        for index, text in enumerate(merged)
+                    ]
+                    warnings.append(
+                        f"extraction: {len(tables)} page(s) with tables printed as images were read with OCR "
+                        f"(pages {', '.join(str(index + 1) for index in sorted(tables))})"
+                    )
+                if len(table_pages) > len(read_tables):
+                    warnings.append(
+                        f"extraction: {len(table_pages) - len(read_tables)} page(s) with tables printed as images were beyond the OCR limit"
+                    )
+                if extraction_method != "fitz_text" or tables:
+                    md_text = "\n\n".join(text for text in merged if text).strip()
             max_pages = int(os.getenv("MAX_PDF_PAGES", "0") or 0)
             if max_pages and page_count > max_pages:
                 warnings.append(f"extraction: the PDF has {page_count} pages, more than the {max_pages}-page limit")

@@ -40,6 +40,38 @@ export function csvFileName(name: string): string {
 }
 
 /**
+ * A chart in a chat answer as CSV. A chart read from the papers is downloaded
+ * as its sources - each paper, its value and the paper's own sentence - so the
+ * file can be checked and cited, as the card's list can; any other chart as
+ * its rows. Chat charts had no download at all, while the dashboard's did
+ * (the question bank and competitor review, 2026-10-28).
+ */
+export function chatChartCsv(chart: {
+  title: string;
+  yKeys: string[];
+  data: Array<Record<string, string | number>>;
+  sources?: Array<{ title: string; year: string; value: string; quote: string; note?: string }>;
+}): ChartCsv {
+  if (chart.sources && chart.sources.length > 0) {
+    return {
+      name: chart.title,
+      header: ["Paper", "Year", "Value", "Note", "Sentence in the paper"],
+      rows: chart.sources.map((source) => [source.title, source.year, source.value, source.note ?? "", source.quote]),
+    };
+  }
+  const keys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
+  return {
+    name: chart.title,
+    header: ["Label", ...keys],
+    rows: chart.data.map((row) => [String(row.label ?? ""), ...keys.map((key) => {
+      const value = row[key];
+      const number = typeof value === "number" ? value : Number(value);
+      return value === undefined || value === "" ? "" : Number.isFinite(number) ? number : String(value);
+    })]),
+  };
+}
+
+/**
  * A stacked chart's rows ({ year, [series]: n }) as a table: one row per
  * category on the axis, one column per series, in the order given.
  */

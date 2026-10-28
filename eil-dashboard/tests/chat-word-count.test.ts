@@ -316,6 +316,22 @@ test("a length question ignores planner-supplied meta terms", () => {
   assert.doesNotMatch(result.answer, /Exact word count/);
 });
 
+test("a term count answers with the total first, counts a study uploaded twice once, and lists only the papers that use the word", () => {
+  // The question bank (2026-10-28): 41 rows for 36 studies, mostly zeros, the total in the last row.
+  const motivation = paper({ paperId: "1", title: "Motivation of undergraduates", content: "motivation and more motivation shape motivation" });
+  const copy = { ...motivation, paperId: "2", runId: "run-2" };
+  const other = paper({ paperId: "3", title: "Peer feedback", content: "motivation rose after feedback" });
+  const none = paper({ paperId: "4", title: "Word stress", content: "stress placement in words" });
+  const result = wordCountResult(context([motivation, copy, other, none]), plan({ terms: ["motivation"], needsChart: true }));
+  const [lead, table, notes] = result.answer.split("\n\n");
+  assert.equal(lead, "**“motivation”** appears **4 times** in 2 of the 3 studies; most often in “Motivation of undergraduates” (3).");
+  assert.match(table, /^\| Paper \| motivation \|\n\| --- \| ---: \|\n\| Motivation of undergraduates \| 3 \|\n\| Peer feedback \| 1 \|\n\| \*\*Total \(3 studies\)\*\* \| \*\*4\*\* \|$/);
+  assert.match(notes, /The other study does not use it\. One paper was uploaded twice and is counted once\./);
+  assert.doesNotMatch(result.answer, /Word stress/, "a study without the word is not a row");
+  assert.deepEqual(result.citations.map((citation) => citation.paperId), ["1", "3"]);
+  assert.deepEqual(result.charts[0].data.map((row) => row.label), ["Motivation of undergraduates", "Peer feedback"]);
+});
+
 test("a genuine term question keeps its planner terms", () => {
   const execution = {
     operation: "analyze_text" as const,

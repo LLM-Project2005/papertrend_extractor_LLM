@@ -20,7 +20,9 @@ import LineChart from "@/components/charts/LineChart";
 import Pie, { PIE_MAX_PARTS } from "@/components/charts/Pie";
 import StackedBars from "@/components/charts/StackedBars";
 import YearColumns from "@/components/charts/YearColumns";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import { categoricalColor } from "@/lib/chart-palette";
+import { chatChartCsv } from "@/lib/chart-csv";
 import PaperLink from "@/components/workspace/PaperLink";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
 
@@ -178,9 +180,12 @@ function Plot({ chart }: { chart: ChatChartPayload }) {
 export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]" data-chat-chart={chart.metric}>
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
-        <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Chart · {chart.scopeLabel}</p>
-        <h3 className="mt-1 text-base font-semibold leading-6 text-slate-900 dark:text-white">{chart.title}</h3>
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Chart · {chart.scopeLabel}</p>
+          <h3 className="mt-1 text-base font-semibold leading-6 text-slate-900 dark:text-white">{chart.title}</h3>
+        </div>
+        <ChartCsvButton csv={chatChartCsv({ ...chart, data: chart.data ?? [] })} />
       </div>
       <div className="px-4 py-4">
         <Plot chart={chart} />

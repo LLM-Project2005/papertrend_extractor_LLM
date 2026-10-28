@@ -129,6 +129,12 @@ test("each paper's value is kept only when it checks out against the paper", asy
   assert.deepEqual(chart.sources.map((source) => source.value), ["49 participants", "49 participants"]);
   assert.ok(chart.limitations.some((line) => /1 paper does not state total number of participants in the text read: “Study d/.test(line)));
   assert.ok(chart.limitations.some((line) => /1 value could not be found word for word in its paper and was left out/.test(line)));
+  assert.doesNotMatch(chart.lead, /Added up|mean is/, "no total unless one is asked for");
+
+  // "What is the total number of participants across all the studies?" (the question bank, 2026-10-28)
+  const total = valueChart(reading, PLAN, "What is the total number of participants across all the studies? And the average?");
+  assert.match(total.lead, /Added up, they come to \*\*98\*\* participants\. The mean is \*\*49\*\* participants\./);
+  assert.ok(total.limitations.some((line) => /the 2 papers that state it; anyone counted in more than one study is counted once for each/.test(line)));
 });
 
 test("answers named in many ways are counted in shared groups, and a null field costs nothing", async () => {

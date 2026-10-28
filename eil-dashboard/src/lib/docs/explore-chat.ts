@@ -23,8 +23,11 @@ export const chatPage: DocsPageBase = {
       table: {
         columns: ["You ask", "What happens"],
         rows: [
-          ["How many, which, list, oldest or newest, word counts", "Counted exactly from the stored analysis, without an AI model, and every paper involved is cited."],
-          ["A focused question (\"What did the studies find about peer feedback?\")", "The most relevant passages are found and an answer is written from them, then checked against that evidence."],
+          ["How many papers, list them, oldest or newest, word counts", "Counted exactly from the stored analysis, without an AI model, and every paper involved is cited. A paper uploaded twice is one study."],
+          ["Which papers meet a condition (\"Which studies used a pretest-posttest design?\")", "Every paper is checked in a short read, and a paper the short read cannot settle is read again, longer. Each match is listed with what you asked about it."],
+          ["A total, average or breakdown of what the papers report (\"What is the total number of participants?\")", "Each paper is read for that value, each value is checked against the paper's own sentence, and the arithmetic is done in code. A chart and the sentences come with it."],
+          ["A group of studies (\"What did the dynamic assessment studies find?\")", "Every paper is checked for the group first. When the group is small enough to read whole, the answer reads all of them, so it does not change with the search."],
+          ["A focused question (\"What do the papers say about peer feedback?\")", "The most relevant passages are found and an answer is written from them, then checked against that evidence."],
           ["Summarize each paper", "A paper-by-paper analysis."],
           ["Across the whole repository (\"What are the main themes?\")", "One overview written from every paper in scope. Large ones run in the background."],
           ["A greeting, or something unrelated to the papers", "A short conversational reply, marked **Repository context not used**."],
@@ -90,7 +93,9 @@ export const chatPage: DocsPageBase = {
       title: "Chart mode",
       body: [
         "Open **+** and turn on **Chart mode** to get a chart built from the repository's data. Describe the chart you want in your own words, or send an empty box for the strongest pattern in the papers. Typing chart words in a normal message (in English, or กราฟ and แผนภูมิ in Thai) offers **Use Chart mode**.",
-        "The chart is worked out from your question and drawn from the same themes, methods and research areas as the dashboard, with a likely duplicate upload counted once. Its title, numbers and caption are computed, not written by a model. Press a bar or cell to list the papers behind it; each opens in place.",
+        "The chart is worked out from your question. A chart of themes, methods, research areas or years is drawn from the same data as the dashboard, with a likely duplicate upload counted once; press a bar or cell to list the papers behind it, and each opens in place.",
+        "A chart of something the papers report, such as participants, countries or how long each intervention lasted, is read from the papers' own text. A value is charted only when the sentence it comes from is in the paper and the number is in that sentence. **Where each value comes from** lists every value with that sentence, and opens the paper at it. Ask for a total or an average and it is added up from those values.",
+        "Its title, numbers and caption are computed, not written by a model.",
       ],
       table: {
         columns: ["You can ask for", "For example"],
@@ -100,11 +105,13 @@ export const chatPage: DocsPageBase = {
           ["Narrowed to a subject, or two values compared", "\"What do the writing papers set out to produce?\", \"Writing compared with reading\""],
           ["How shares changed from the earlier papers to the later", "\"Is qualitative research becoming more common?\""],
           ["Words per paper, or a term's occurrences by paper", "\"How often does 'feedback' appear in each paper?\""],
+          ["What each paper reports, for every paper or a group of them", "\"How many participants did each study have?\", \"Compare the durations of the writing interventions\""],
+          ["One paper's own figures, from its tables and results", "\"Plot the results table of the listening supports study\""],
         ],
       },
       bullets: [
-        "A question the papers' data cannot answer, such as authors, citations or sample sizes, gets a reason and what can be charted instead, not a chart of something else.",
-        "Charts cannot be downloaded. For more views, use the [dashboard](/docs/dashboard).",
+        "A question the papers cannot answer, such as citation counts or this week's weather, gets a reason and what can be charted instead, not a chart of something else.",
+        "**Download CSV** saves a chart's data. For a chart read from the papers, the file lists each paper, its value and the paper's own sentence.",
         "Chart mode goes up to **High** effort: a chart is counted from the papers, not researched, so turning Chart mode on brings **Max** down to High.",
         "Web search does not apply to charts.",
       ],

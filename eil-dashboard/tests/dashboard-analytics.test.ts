@@ -433,6 +433,21 @@ test("a study uploaded twice is reported, not silently counted twice", () => {
   assert.deepEqual(found.map((d) => [d.paperId, d.originalId]), [["2", "1"], ["4", "3"]]);
 });
 
+test("titles one content word or one number apart are different studies", () => {
+  const titled = (paper: string, title: string) => row(paper, "2020", "T", "k", { title });
+  const found = likelyDuplicatePapers([
+    titled("1", "Pronunciation Problems of English Fricatives among Thai EFL Learners"),
+    titled("2", "Pronunciation Problems of English Fricatives among Vietnamese EFL Learners"),
+    titled("3", "Washback of a National English Test on Classroom Teaching: Part 1"),
+    titled("4", "Washback of a National English Test on Classroom Teaching: Part 2"),
+    titled("5", "Washback of a National English Test on Classroom Teaching"),
+    titled("6", "Organisational Behaviour and Teacher Agency in Thai Schools"),
+    titled("7", "Organizational Behavior and Teacher Agency in Thai Schools"),
+  ]);
+  // Only the spelling variant is one study; Part 1 and Part 2 are two, and neither repeats the title without a part.
+  assert.deepEqual(found.map((d) => [d.paperId, d.originalId]), [["7", "6"]]);
+});
+
 test("legend text is drawn in the readable label colour, not the series colour (U5)", async () => {
   // Measured on the pilot: palette colours on white put legend labels at
   // 2.0-3.9:1, under the 4.5:1 that 11px text needs.
