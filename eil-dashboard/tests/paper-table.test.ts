@@ -9,22 +9,37 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { checkable } from "../src/lib/chart-reading";
 import {
+  MAX_LEFT_OUT,
+  SORT_TITLE,
+  SORT_YEAR,
   applyColumnChoice,
   cellKey,
   cellNumber,
+  cellsByKey,
   cellsForColumns,
+  changeLeftOut,
   changedColumns,
+  cleanView,
   columnChoiceKey,
+  columnCounts,
   doubtfulCells,
   labelKey,
+  leftOutReason,
   missingCells,
   newColumnId,
   paperTableCsv,
   paperTableSheets,
+  readTableView,
+  sortRows,
   tableStudies,
   tidyLabels,
+  viewChips,
+  viewFilters,
+  viewRows,
+  yesNo,
   type TableCells,
   type TableColumn,
+  type TableView,
 } from "../src/lib/paper-table";
 import { tableImageLayout, wrapLines } from "../src/lib/paper-table-png";
 import { COLUMN_PRESETS, COLUMN_PRESET_GROUPS, STARTER_SETS } from "../src/lib/paper-table-presets";
@@ -684,9 +699,264 @@ test("the table scrolls in a frame no taller than the screen, its header row and
 
 test("the page offers the picker and the three downloads, and no chart", () => {
   const page = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
-  assert.match(page, /<TableDownloadMenu /);
+  assert.match(page, /<TableDownloadMenu\s/);
   assert.match(page, /<ColumnPicker/);
   assert.doesNotMatch(page, /TableChart|recharts/, "only the table, at the user's request");
   const menu = readFileSync(new URL("../src/components/table/TableDownloadMenu.tsx", import.meta.url), "utf8");
   for (const label of ["CSV", "Excel (.xlsx)", "Image (.png)"]) assert.ok(menu.includes(`label: "${label}"`), label);
+});
+
+// ---------------------------------------------------------------------------
+// The rows (2026-10-29, the user's request): sorting and filtering, papers
+// left out by hand or by a yes/no column's No, and downloads of the rows shown.
+
+const DESIGN: TableColumn = { id: "design", name: "Design", instruction: "", kind: "category" };
+const UNIVERSITY: TableColumn = { id: "university", name: "University students", instruction: "are empirical studies with university students", kind: "yesno" };
+const valued = (value: string, note = "") => ({ value, quote: `${value} quote`, note, status: "found" as const });
+const blank = (status: "not_stated" | "unverified" | "failed") => ({ value: "", quote: "", note: "", status });
+
+const VIEW_ROWS = [
+  { paperId: "1", runId: "r1", title: "Peer feedback in writing", year: "2011" },
+  { paperId: "2", runId: "r2", title: "Dynamic assessment of reading", year: "2019" },
+  { paperId: "3", runId: "r3", title: "A corpus of learner speech", year: "2024" },
+  { paperId: "4", runId: "r4", title: "Teacher talk", year: "Unknown" },
+];
+const VIEW_CELLS: TableCells = {
+  "1:sample-size": valued("180 students"),
+  "2:sample-size": valued("30 learners"),
+  "3:sample-size": valued("1,200 texts"),
+  "4:sample-size": blank("not_stated"),
+  "1:design": valued("Mixed-methods"),
+  "2:design": valued("Quasi-experimental; Mixed methods"),
+  "3:design": valued("Corpus study"),
+  "4:design": blank("unverified"),
+  "1:participants": valued("Thai EFL undergraduates", "two intact classes"),
+  "2:participants": valued("Grade 11 students"),
+};
+
+test("rows sort by a number as a number and by words as words, a cell without a value last either way", () => {
+  const columns = [SIZE, DESIGN, PARTICIPANTS];
+  const initials = (rows: Array<{ title: string }>) => rows.map((row) => row.title[0]);
+  assert.deepEqual(initials(sortRows(VIEW_ROWS, columns, VIEW_CELLS, { by: "sample-size", descending: true })), ["A", "P", "D", "T"]);
+  assert.deepEqual(initials(sortRows(VIEW_ROWS, columns, VIEW_CELLS, { by: "sample-size", descending: false })), ["D", "P", "A", "T"]);
+  assert.deepEqual(initials(sortRows(VIEW_ROWS, columns, VIEW_CELLS, { by: "design", descending: false })), ["A", "P", "D", "T"]);
+  assert.deepEqual(initials(sortRows(VIEW_ROWS, columns, VIEW_CELLS, { by: SORT_YEAR, descending: true })), ["A", "D", "P", "T"], "an undated paper stays last");
+  assert.deepEqual(initials(sortRows(VIEW_ROWS, columns, VIEW_CELLS, { by: SORT_TITLE, descending: false })), ["A", "D", "P", "T"]);
+  assert.equal(sortRows(VIEW_ROWS, columns, VIEW_CELLS, null), VIEW_ROWS, "no sort keeps the table's own order");
+});
+
+test("rows filter by a label however it is written, a range, words, the kind of cell, the title and the years", () => {
+  const columns = [SIZE, DESIGN, PARTICIPANTS];
+  const ids = (view: TableView) => viewRows(VIEW_ROWS, columns, VIEW_CELLS, view).map((row) => row.paperId);
+  assert.deepEqual(ids({ columns: { design: { show: ["found"], labels: ["Mixed methods"] } } }), ["1", "2"], "Mixed-methods, and one of two labels, both count");
+  assert.deepEqual(ids({ columns: { design: { show: ["found", "unverified"], labels: ["Corpus study"] } } }), ["3", "4"]);
+  assert.deepEqual(ids({ columns: { "sample-size": { show: ["found"], min: 100, max: null } } }), ["1", "3"], "1,200 is read as 1200");
+  assert.deepEqual(ids({ columns: { "sample-size": { show: ["not_stated"] } } }), ["4"]);
+  assert.deepEqual(ids({ columns: { participants: { show: ["found"], text: "INTACT" } } }), ["1"], "words are found in the note too");
+  assert.deepEqual(ids({ columns: { participants: { show: ["empty"] } } }), ["3", "4"], "a cell not read yet");
+  assert.deepEqual(ids({ title: "reading" }), ["2"]);
+  assert.deepEqual(ids({ yearFrom: 2015 }), ["2", "3"], "an undated paper is outside any range of years");
+  assert.deepEqual(ids({ columns: { design: { show: [] } } }), ["1", "2", "3", "4"], "a filter with nothing chosen hides nothing");
+  assert.deepEqual(
+    ids({ sort: { by: "sample-size", descending: true }, columns: { design: { show: ["found"], labels: ["mixed method"] } } }),
+    ["1", "2"],
+    "filtered, then sorted"
+  );
+});
+
+test("a filter or sort on a column no longer shown is set aside, and the view reads as chips", () => {
+  const hidden = [SIZE, { ...DESIGN, hidden: true }];
+  const view: TableView = { sort: { by: "design", descending: false }, columns: { design: { show: ["found"], labels: ["Corpus study"] } } };
+  const clean = cleanView(view, hidden);
+  assert.equal(clean.sort, null);
+  assert.deepEqual(clean.columns, {});
+  assert.equal(viewFilters(clean, hidden), false);
+  assert.equal(viewRows(VIEW_ROWS, hidden, VIEW_CELLS, clean).length, 4);
+
+  const chips = viewChips(
+    {
+      title: "writing",
+      yearFrom: 2015,
+      yearTo: 2024,
+      sort: { by: "sample-size", descending: true },
+      columns: { design: { show: ["found", "not_stated"], labels: ["Mixed methods"] }, "sample-size": { show: ["found"], min: 30, max: null } },
+    },
+    [SIZE, DESIGN]
+  );
+  assert.deepEqual(
+    chips.map((chip) => chip.label),
+    ["Title has “writing”", "Years 2015–2024", "Sample size: 30 or more", "Design: Mixed methods, Not stated", "Sorted: Sample size, high to low"]
+  );
+});
+
+test("a view kept in the browser is read back only when it is one", () => {
+  assert.deepEqual(readTableView({ sort: { by: "design", descending: true }, columns: { design: { labels: ["Corpus study"] } } }), {
+    sort: { by: "design", descending: true },
+    columns: { design: { show: [], labels: ["Corpus study"] } },
+  });
+  assert.deepEqual(readTableView({ sort: "design" }), {});
+  assert.deepEqual(readTableView("junk"), {});
+  assert.deepEqual(readTableView(undefined), {});
+});
+
+test("a filter offers a column's labels with their counts, and each kind of cell", () => {
+  const counts = columnCounts(VIEW_ROWS, DESIGN, VIEW_CELLS);
+  assert.deepEqual(counts.labels, [
+    { key: labelKey("Mixed methods"), label: "Mixed-methods", count: 2 },
+    { key: labelKey("Corpus study"), label: "Corpus study", count: 1 },
+    { key: labelKey("Quasi-experimental"), label: "Quasi-experimental", count: 1 },
+  ]);
+  assert.deepEqual(counts.kinds, { found: 3, not_stated: 0, unverified: 1, empty: 0 });
+  assert.deepEqual(columnCounts(VIEW_ROWS, PARTICIPANTS, VIEW_CELLS).labels, [], "a words column has no labels to offer");
+});
+
+test("papers are left out with a reason and put back; the newest reason stands", () => {
+  let leftOut = changeLeftOut({}, [
+    { paperId: "1", reason: "Not empirical" },
+    { paperId: "2", reason: "", columnId: "university" },
+  ]);
+  assert.deepEqual(leftOut, { "1": { reason: "Not empirical" }, "2": { reason: "", columnId: "university" } });
+  leftOut = changeLeftOut(leftOut, [{ paperId: "1", reason: "A review" }], ["2"]);
+  assert.deepEqual(leftOut, { "1": { reason: "A review" } });
+  const many = changeLeftOut({}, Array.from({ length: MAX_LEFT_OUT + 3 }, (_, index) => ({ paperId: `p${index}`, reason: "" })));
+  assert.equal(Object.keys(many).length, MAX_LEFT_OUT);
+  assert.equal(many.p0, undefined, "past the limit the oldest go first");
+  assert.equal(leftOutReason({ reason: "", columnId: "university" }, [UNIVERSITY]), "University students: No");
+  assert.equal(leftOutReason({ reason: "Off topic", columnId: "university" }, [UNIVERSITY]), "Off topic");
+});
+
+test("a yes/no column answers Yes or No with the sentence that decides it, and anything else is not confirmed", () => {
+  const text = checkable(PAPER_A.content);
+  const quote = "Thirty Thai EFL undergraduates (n = 30) took part in the study";
+  const yes = checkCell({ column: "university", reported: true, value: "yes - undergraduates", quote, note: "undergraduates" }, UNIVERSITY, text);
+  assert.deepEqual(yes, { value: "Yes", quote, note: "undergraduates", status: "found" });
+  assert.equal(checkCell({ column: "university", reported: true, value: "NO", quote, note: "" }, UNIVERSITY, text).value, "No");
+  assert.equal(checkCell({ column: "university", reported: true, value: "Partly", quote, note: "" }, UNIVERSITY, text).status, "unverified");
+  assert.equal(yesNo("Yes."), "Yes");
+  assert.equal(yesNo("Not stated"), null, "'Not' is not 'No'");
+  assert.match(tableSystem([UNIVERSITY]), /university: University students - are empirical studies with university students \(yes or no: whether the study meets this/);
+});
+
+test("the workbook lists the papers left out, with the sentence of the yes/no column that left one out", () => {
+  const cells: TableCells = { ...VIEW_CELLS, "9:university": { value: "No", quote: "Forty Grade 10 students took part.", note: "secondary school", status: "found" } };
+  const leftOut = [
+    { paperId: "9", runId: "r9", title: "School study", year: "2020", reason: "", columnId: "university" },
+    { paperId: "8", runId: "r8", title: "A review", year: "2018", reason: "Not empirical" },
+  ];
+  const sheets = paperTableSheets([VIEW_ROWS[0]], [SIZE], cells, leftOut, [SIZE, UNIVERSITY]);
+  assert.deepEqual(
+    sheets.map((sheet) => sheet.name),
+    ["Table", "Sources", "Left out"]
+  );
+  assert.deepEqual(sheets[2].rows, [
+    ["Paper", "Year", "Reason", "Sentence in the paper"],
+    ["School study", 2020, "University students: No", "Forty Grade 10 students took part."],
+    ["A review", 2018, "Not empirical", ""],
+  ]);
+  assert.equal(paperTableSheets([VIEW_ROWS[0]], [SIZE], VIEW_CELLS).length, 2, "no papers left out, no third sheet");
+});
+
+test("the rows migration adds the two fields, is folded into schema.sql and recorded in the ledger", () => {
+  const migration = readFileSync(new URL("../cloudsql/20261029_paper_table_rows.sql", import.meta.url), "utf8");
+  const schema = readFileSync(new URL("../cloudsql/schema.sql", import.meta.url), "utf8");
+  assert.match(migration, /INSERT INTO public\.schema_migrations \(name\) VALUES \('20261029_paper_table_rows\.sql'\)/);
+  for (const text of [migration, schema]) {
+    assert.match(text, /ADD COLUMN IF NOT EXISTS left_out JSONB NOT NULL DEFAULT '\{\}'::jsonb/);
+    assert.match(text, /ADD COLUMN IF NOT EXISTS cell_chats JSONB NOT NULL DEFAULT '\{\}'::jsonb/);
+  }
+  assert.doesNotMatch(migration, /UPDATE |DELETE |DROP /, "additive only");
+});
+
+test("a paper left out leaves the table and its fill, is listed with its reason, and comes back when put back", async () => {
+  const { db, request, owner, other } = await repository();
+  const requests = model();
+  const tables = await import("../src/app/api/workspace/tables/route");
+  const one = await import("../src/app/api/workspace/tables/[id]/route");
+  const fillRoute = await import("../src/app/api/workspace/tables/[id]/fill/route");
+  const made = await tables.POST(request("/api/workspace/tables", { headers: owner, body: { projectId: PROJECT, name: "Study details", columns: [PARTICIPANTS] } }));
+  const { table } = await made.json();
+  const patch = (headers: Record<string, string>, body: unknown) =>
+    one.PATCH(request(`/api/workspace/tables/${table.id}`, { headers, method: "PATCH", body }), params({ id: table.id }));
+
+  assert.equal((await patch(other, { leaveOut: [{ paperId: "102", reason: "theirs" }] })).status, 404);
+  assert.equal((await patch(owner, { leaveOut: [{ paperId: "102", reason: "x".repeat(201) }] })).status, 400);
+  assert.equal((await patch(owner, { leaveOut: [{ paperId: "1 OR 1=1", reason: "" }] })).status, 400);
+  const left = await patch(owner, { leaveOut: [{ paperId: "102", reason: "Not about reading" }] });
+  assert.deepEqual((await left.json()).table.leftOut, { "102": { reason: "Not about reading" } });
+
+  const opened = await (await one.GET(request(`/api/workspace/tables/${table.id}`, { headers: owner }), params({ id: table.id }))).json();
+  assert.deepEqual(opened.rows.map((row: { paperId: string }) => row.paperId), ["101"]);
+  assert.deepEqual(
+    opened.leftOutRows.map((row: { paperId: string; title: string; reason: string }) => [row.paperId, row.title, row.reason]),
+    [["102", "Peer feedback in writing", "Not about reading"]]
+  );
+
+  const filled = await fillRoute.POST(request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, method: "POST" }), params({ id: table.id }));
+  const events = (await filled.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events[0].cells, 1, "the paper left out is not read");
+  assert.equal(requests.length, 1);
+  const stored = (await db.query<{ cells: TableCells; left_out: unknown }>(`SELECT cells, left_out FROM paper_tables WHERE id = $1`, [table.id])).rows[0];
+  assert.deepEqual(Object.keys(stored.cells), ["101:participants"]);
+  assert.deepEqual(stored.left_out, { "102": { reason: "Not about reading" } });
+
+  await patch(owner, { putBack: ["102"] });
+  const back = await (await one.GET(request(`/api/workspace/tables/${table.id}`, { headers: owner }), params({ id: table.id }))).json();
+  assert.deepEqual(back.rows.map((row: { paperId: string }) => row.paperId), ["102", "101"], "back in its place, oldest first");
+  assert.deepEqual(back.leftOutRows, []);
+  assert.deepEqual(back.table.chats, {}, "no conversations yet");
+});
+
+test("the page sorts, filters, screens and leaves papers out, and its downloads hold the rows shown", () => {
+  const page = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
+  assert.match(page, /onClick=\{\(\) => sortBy\(column\.id, column\.kind === "number"\)\}/, "a column's name sorts by it, a number from the highest");
+  assert.match(page, /aria-label=\{`Filter by \$\{column\.name\}`\}/);
+  assert.match(page, /aria-label=\{`Leave out \$\{row\.title\}`\}/);
+  assert.match(page, /screening: true/);
+  assert.match(page, /Leave out the \{answered\.no\.toLocaleString\(\)\} that say No/);
+  assert.match(page, /<LeftOutList /);
+  assert.match(page, /paperTableCsv\(table\.name, shownRows,/);
+  assert.match(page, /paperTableSheets\(shownRows, shownColumns, cells, leftOutRows, columns\)/);
+  assert.match(page, /rows: shownRows,/);
+  assert.match(page, /\{shownRows\.map\(\(row\) =>/);
+});
+
+test("a cell's own Read again reads that one cell from the whole paper, whatever it says", async () => {
+  const rows = [
+    { paperId: "101", runId: "r1", title: "A", year: "2024" },
+    { paperId: "102", runId: "r2", title: "B", year: "2021" },
+  ];
+  assert.deepEqual(cellsByKey(rows, [PARTICIPANTS, { ...SIZE, hidden: true }], ["101:participants", "101:sample-size", "999:participants"]), [
+    { paperId: "101", columnId: "participants" },
+  ]);
+
+  const { db, request, owner } = await repository();
+  const requests = model();
+  const tables = await import("../src/app/api/workspace/tables/route");
+  const fillRoute = await import("../src/app/api/workspace/tables/[id]/fill/route");
+  const made = await tables.POST(request("/api/workspace/tables", { headers: owner, body: { projectId: PROJECT, name: "Study details", columns: [PARTICIPANTS] } }));
+  const { table } = await made.json();
+  const old: TableCells = {
+    "101:participants": { value: "29 undergraduates", quote: "Thirty Thai EFL undergraduates", note: "", status: "found" },
+    "102:participants": { value: "", quote: "", note: "", status: "not_stated", readWhole: true },
+  };
+  await db.query(`UPDATE paper_tables SET cells = $1::jsonb WHERE id = $2`, [JSON.stringify(old), table.id]);
+
+  const one = await fillRoute.POST(
+    request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: true, cellKeys: ["101:participants"] } }),
+    params({ id: table.id })
+  );
+  const events = (await one.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events[0].cells, 1);
+  assert.equal(requests.length, 1);
+  const stored = (await db.query<{ cells: TableCells }>(`SELECT cells FROM paper_tables WHERE id = $1`, [table.id])).rows[0].cells;
+  assert.equal(stored["101:participants"].value, "30 Thai EFL undergraduates", "a found value is read again too");
+  assert.equal(stored["101:participants"].readWhole, true);
+  assert.deepEqual(stored["102:participants"], old["102:participants"]);
+
+  const none = await fillRoute.POST(
+    request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: true, cellKeys: ["999:participants"] } }),
+    params({ id: table.id })
+  );
+  assert.deepEqual(await none.json(), { done: true, found: 0, usd: 0 }, "a cell not in the table reads nothing");
+  assert.equal(requests.length, 1);
 });

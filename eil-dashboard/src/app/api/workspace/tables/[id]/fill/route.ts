@@ -5,7 +5,7 @@ import { withAiTokenUsageTracking, type AiTokenUsageTotals } from "@/lib/ai-toke
 import { summarizeSpend } from "@/lib/answer-cost";
 import { runWithCancellation } from "@/lib/chat-cancellation";
 import { PaperTableError, getPaperTable, mergePaperTableCells } from "@/lib/cloudsql/paper-table-repository";
-import { MAX_COLUMNS, doubtfulCells, missingCells, visibleColumns, type TableCells } from "@/lib/paper-table";
+import { MAX_COLUMNS, cellsByKey, doubtfulCells, missingCells, visibleColumns, type TableCells } from "@/lib/paper-table";
 import { readTableCells } from "@/lib/paper-table-reading";
 import { tablePapers } from "@/lib/paper-table-server";
 import { assertAiTokenBudget, assertAndRecordAiUsage, GuardError, persistAiTokenUsage } from "@/lib/security-guards";
@@ -16,10 +16,12 @@ export const maxDuration = 600;
 
 /*
  * Reads a table's empty cells (docs/42): in the columns shown, every cell not
- * read yet and any whose reading failed; a hidden column is not read. With
+ * read yet and any whose reading failed; a hidden column, and a paper the
+ * table leaves out, are not read. With
  * {"again": true} ("Read again") it also reads each "Not stated" and "Not
  * confirmed" cell not yet read from the whole paper, and {"columnIds": [...]}
- * keeps either to those columns. The reply is a stream of JSON lines, one per
+ * keeps either to those columns; with {"cellKeys": [...]} it reads just those
+ * cells from the whole paper, whatever they say (a cell's own "Read again"). The reply is a stream of JSON lines, one per
  * batch of papers as it is read and saved, so the table fills in on the page:
  *   {"type":"start","papers":N,"cells":M}
  *   {"type":"cells","cells":{...},"done":K}
@@ -30,6 +32,7 @@ export const maxDuration = 600;
 const FillSchema = z.object({
   again: z.boolean().optional(),
   columnIds: z.array(z.string().max(40)).max(MAX_COLUMNS).optional(),
+  cellKeys: z.array(z.string().max(130)).max(20).optional(),
 });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,20 +44,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // The body is optional: a plain fill sends none.
   const options = FillSchema.safeParse(await request.json().catch(() => ({})));
   if (!options.success) return NextResponse.json({ error: "That reading could not be started." }, { status: 400 });
-  const { again: readAgain = false, columnIds } = options.data;
+  const { again: readAgain = false, columnIds, cellKeys } = options.data;
 
   let table;
   let loaded;
   try {
     table = await getPaperTable(user.id, id);
-    loaded = await tablePapers(user.id, table.projectId);
+    loaded = await tablePapers(user.id, table.projectId, table.leftOut);
   } catch (error) {
     if (error instanceof PaperTableError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("paper_table_load_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     return NextResponse.json({ error: "The papers could not be read just now. Try again in a moment." }, { status: 503 });
   }
-  const wanted = missingCells(loaded.rows, table.columns, table.cells).filter((cell) => !columnIds || columnIds.includes(cell.columnId));
-  const again = readAgain ? doubtfulCells(loaded.rows, table.columns, table.cells, columnIds) : [];
+  // One cell read again reads nothing else.
+  const wanted = cellKeys ? [] : missingCells(loaded.rows, table.columns, table.cells).filter((cell) => !columnIds || columnIds.includes(cell.columnId));
+  const again = !readAgain ? [] : cellKeys ? cellsByKey(loaded.rows, table.columns, cellKeys) : doubtfulCells(loaded.rows, table.columns, table.cells, columnIds);
   if (visibleColumns(table.columns).length === 0) return NextResponse.json({ error: "Show or add a column first." }, { status: 400 });
   if (wanted.length === 0 && again.length === 0) return NextResponse.json({ done: true, found: 0, usd: 0 });
 

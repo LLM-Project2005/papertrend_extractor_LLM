@@ -3,6 +3,8 @@
  * reader wants from each, and every cell kept only with the sentence it came
  * from. The competitor review ranked it the largest gap (docs/41): Elicit,
  * SciSpace and NotebookLM all lay papers out against the reader's own columns.
+ * The rows can be sorted and filtered, and a paper left out of a table, by hand
+ * or by a yes/no column's No (2026-10-29).
  *
  * This file is what the page and the server share; the reading itself is in
  * paper-table-reading.ts, on the server, and the ready-made columns are in
@@ -17,8 +19,15 @@ export const MAX_COLUMNS = 80;
 /** Rows read for one table; a repository with more is read in its newest this many. */
 export const MAX_TABLE_PAPERS = 120;
 export const MAX_TABLES_PER_REPOSITORY = 30;
+/** Papers a table can leave out, counting any no longer in the repository. */
+export const MAX_LEFT_OUT = 500;
 
-export type ColumnKind = "text" | "number" | "category";
+/**
+ * yesno: a rule each paper meets or not ("empirical studies with university
+ * students"), answered Yes or No with the sentence that decides it; the
+ * papers that say No can then be left out, as a review screens its studies.
+ */
+export type ColumnKind = "text" | "number" | "category" | "yesno";
 
 export interface TableColumn {
   id: string;
@@ -35,7 +44,8 @@ export interface TableColumn {
 /**
  * found: the value and the paper's sentence, both checked.
  * not_stated: the paper, as read, does not say.
- * unverified: an answer whose sentence (or number) is not in the paper; never shown as a value.
+ * unverified: an answer whose sentence (or number) is not in the paper; never shown as a value,
+ *   only in the cell's panel, with a warning, and never downloaded.
  * failed: the call that read it failed; read again with the next fill.
  */
 export type CellStatus = "found" | "not_stated" | "unverified" | "failed";
@@ -62,18 +72,62 @@ export interface TableRow {
   year: string;
 }
 
+/**
+ * Papers the reader left out of a table, by paper id: why, in their words or
+ * from the yes/no column whose No left it out. A paper left out is not shown,
+ * read or downloaded; its cells are kept, so putting it back reads nothing.
+ */
+export type LeftOut = Record<string, { reason: string; columnId?: string }>;
+
+/** A left-out paper as the page lists it. */
+export interface LeftOutRow extends TableRow {
+  reason: string;
+  columnId?: string;
+}
+
 export function cellKey(paperId: string, columnId: string): string {
   return `${paperId}:${columnId}`;
 }
 
+const ColumnIdSchema = z.string().regex(/^[a-z0-9-]{1,40}$/);
+
 const ColumnSchema = z.object({
-  id: z.string().regex(/^[a-z0-9-]{1,40}$/),
+  id: ColumnIdSchema,
   name: z.string().trim().min(1).max(60),
   instruction: z.string().trim().max(300).default(""),
-  kind: z.enum(["text", "number", "category"]).default("text"),
+  kind: z.enum(["text", "number", "category", "yesno"]).default("text"),
   hidden: z.boolean().optional(),
-  preset: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(),
+  preset: ColumnIdSchema.optional(),
 });
+
+const PaperIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,80}$/);
+
+export const LeaveOutSchema = z
+  .array(z.object({ paperId: PaperIdSchema, reason: z.string().trim().max(200).default(""), columnId: ColumnIdSchema.optional() }))
+  .max(MAX_LEFT_OUT);
+export const PutBackSchema = z.array(PaperIdSchema).max(MAX_LEFT_OUT);
+
+/** The papers left out after leaving some out and putting some back; the newest reason stands. */
+export function changeLeftOut(
+  current: LeftOut,
+  leave: Array<{ paperId: string; reason: string; columnId?: string }> = [],
+  putBack: string[] = []
+): LeftOut {
+  const next: LeftOut = { ...current };
+  for (const paperId of putBack) delete next[paperId];
+  for (const { paperId, reason, columnId } of leave) next[paperId] = columnId ? { reason, columnId } : { reason };
+  // The oldest go first past the limit; a table of papers since deleted could otherwise fill it.
+  const keys = Object.keys(next);
+  for (const paperId of keys.slice(0, Math.max(0, keys.length - MAX_LEFT_OUT))) delete next[paperId];
+  return next;
+}
+
+/** A yes/no cell's answer, "Yes" or "No", or null when it is neither. */
+export function yesNo(value: string): "Yes" | "No" | null {
+  const match = String(value ?? "").trim().match(/^(yes|no)\b/i);
+  if (!match) return null;
+  return match[1].toLowerCase() === "yes" ? "Yes" : "No";
+}
 
 export const ColumnsSchema = z
   .array(ColumnSchema)
@@ -200,6 +254,19 @@ export function doubtfulCells(
 }
 
 /**
+ * The cells named by key, in the columns shown and the rows given: one cell's
+ * "Read again", from its panel, whatever the cell says now.
+ */
+export function cellsByKey(rows: TableRow[], columns: TableColumn[], keys: string[]): Array<{ paperId: string; columnId: string }> {
+  const wanted = new Set(keys);
+  return rows.flatMap((row) =>
+    visibleColumns(columns)
+      .filter((column) => wanted.has(cellKey(row.paperId, column.id)))
+      .map((column) => ({ paperId: row.paperId, columnId: column.id }))
+  );
+}
+
+/**
  * A table's studies: past `max`, the newest, since a table of where a field
  * is going needs its latest work; listed oldest first, as a review lists them.
  */
@@ -263,6 +330,268 @@ export function tidyLabels(columns: TableColumn[], cells: TableCells): TableCell
 }
 
 // ---------------------------------------------------------------------------
+// Sorting and filtering the rows (2026-10-29, the user's request): Elicit's
+// table comes after the papers are screened, and a review usually wants a
+// subset, such as the experimental studies, or the studies by sample size.
+// The view is the reader's own and changes no cell.
+
+/** What a cell holds: a value, Not stated, Not confirmed, or nothing read yet. */
+export type CellKind = "found" | "not_stated" | "unverified" | "empty";
+
+export function cellKind(cell: TableCell | undefined): CellKind {
+  if (!cell || cell.status === "failed") return "empty";
+  return cell.status;
+}
+
+export const CELL_KIND_WORDS: Record<CellKind, string> = {
+  found: "Has a value",
+  not_stated: "Not stated",
+  unverified: "Not confirmed",
+  empty: "Not read yet",
+};
+
+export interface ColumnFilter {
+  /** The kinds of cell kept; a value must also pass the tests below. Empty keeps every kind. */
+  show: CellKind[];
+  /** Short-label and yes/no columns: the labels kept, as shown; compared as labelKey compares them. */
+  labels?: string[];
+  /** Words columns: words the value or its note must contain. */
+  text?: string;
+  /** Number columns: the range kept, either end open. */
+  min?: number | null;
+  max?: number | null;
+}
+
+/** Sorting by the paper column: by year, the order the table starts in, or by title. */
+export const SORT_YEAR = ":year";
+export const SORT_TITLE = ":title";
+
+export interface TableView {
+  /** A column's id, SORT_YEAR or SORT_TITLE; none keeps the table's own order (oldest first). */
+  sort?: { by: string; descending: boolean } | null;
+  title?: string;
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  /** Filters by column id. */
+  columns?: Record<string, ColumnFilter>;
+}
+
+const ColumnFilterSchema = z.object({
+  show: z.array(z.enum(["found", "not_stated", "unverified", "empty"])).max(4).default([]),
+  labels: z.array(z.string().max(240)).max(200).optional(),
+  text: z.string().max(120).optional(),
+  min: z.number().nullable().optional(),
+  max: z.number().nullable().optional(),
+});
+
+const TableViewSchema = z.object({
+  sort: z.object({ by: z.string().max(40), descending: z.boolean() }).nullable().optional(),
+  title: z.string().max(120).optional(),
+  yearFrom: z.number().nullable().optional(),
+  yearTo: z.number().nullable().optional(),
+  columns: z.record(z.string(), ColumnFilterSchema).optional(),
+});
+
+/** A view as stored in the browser, or none when what is stored is not one. */
+export function readTableView(value: unknown): TableView {
+  const parsed = TableViewSchema.safeParse(value);
+  return parsed.success ? parsed.data : {};
+}
+
+function labelParts(value: string): string[] {
+  return value
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function filterIsSet(filter: ColumnFilter | undefined): boolean {
+  if (!filter) return false;
+  return filter.show.length > 0 || Boolean(filter.labels?.length || filter.text?.trim() || filter.min != null || filter.max != null);
+}
+
+/** Whether a cell passes its column's filter. */
+export function cellPasses(cell: TableCell | undefined, filter: ColumnFilter): boolean {
+  const kind = cellKind(cell);
+  if (filter.show.length > 0 && !filter.show.includes(kind)) return false;
+  if (kind !== "found" || !cell) return true;
+  if (filter.labels?.length) {
+    const kept = new Set(filter.labels.map(labelKey));
+    if (!labelParts(cell.value).some((part) => kept.has(labelKey(part)))) return false;
+  }
+  const words = filter.text?.trim().toLowerCase();
+  if (words && !`${cell.value} ${cell.note}`.toLowerCase().includes(words)) return false;
+  if (filter.min != null || filter.max != null) {
+    const number = cellNumber(cell.value);
+    if (number === null) return false;
+    if (filter.min != null && number < filter.min) return false;
+    if (filter.max != null && number > filter.max) return false;
+  }
+  return true;
+}
+
+function yearOf(row: TableRow): number | null {
+  return Number(row.year) || null;
+}
+
+/** Whether a row passes the view's filters, on the columns shown. */
+export function rowPasses(row: TableRow, columns: TableColumn[], cells: TableCells, view: TableView): boolean {
+  const title = view.title?.trim().toLowerCase();
+  if (title && !row.title.toLowerCase().includes(title)) return false;
+  if (view.yearFrom != null || view.yearTo != null) {
+    const year = yearOf(row);
+    if (year === null) return false;
+    if (view.yearFrom != null && year < view.yearFrom) return false;
+    if (view.yearTo != null && year > view.yearTo) return false;
+  }
+  for (const column of visibleColumns(columns)) {
+    const filter = view.columns?.[column.id];
+    if (filterIsSet(filter) && !cellPasses(cells[cellKey(row.paperId, column.id)], filter!)) return false;
+  }
+  return true;
+}
+
+const KIND_ORDER: Record<CellKind, number> = { found: 0, not_stated: 1, unverified: 2, empty: 3 };
+
+/**
+ * The rows in the view's order. Values sort by number in a number column and
+ * by their words otherwise; a cell without a value goes last either way, and
+ * ties keep the table's own order.
+ */
+export function sortRows(rows: TableRow[], columns: TableColumn[], cells: TableCells, sort: TableView["sort"]): TableRow[] {
+  if (!sort) return rows;
+  const direction = sort.descending ? -1 : 1;
+  const words = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  const indexed = rows.map((row, index) => ({ row, index }));
+  if (sort.by === SORT_YEAR || sort.by === SORT_TITLE) {
+    indexed.sort((a, b) => {
+      if (sort.by === SORT_TITLE) return words(a.row.title, b.row.title) * direction || a.index - b.index;
+      const ya = yearOf(a.row);
+      const yb = yearOf(b.row);
+      if (ya === null || yb === null) return (ya === null ? 1 : 0) - (yb === null ? 1 : 0) || a.index - b.index;
+      return (ya - yb) * direction || a.index - b.index;
+    });
+    return indexed.map(({ row }) => row);
+  }
+  const column = columns.find((entry) => entry.id === sort.by);
+  if (!column) return rows;
+  const cellOf = (row: TableRow) => cells[cellKey(row.paperId, column.id)];
+  indexed.sort((a, b) => {
+    const ca = cellOf(a.row);
+    const cb = cellOf(b.row);
+    const kinds = KIND_ORDER[cellKind(ca)] - KIND_ORDER[cellKind(cb)];
+    if (kinds !== 0) return kinds;
+    if (cellKind(ca) !== "found") return a.index - b.index;
+    if (column.kind === "number") {
+      const na = cellNumber(ca!.value);
+      const nb = cellNumber(cb!.value);
+      if (na === null || nb === null) return (na === null ? 1 : 0) - (nb === null ? 1 : 0) || a.index - b.index;
+      return (na - nb) * direction || a.index - b.index;
+    }
+    return words(ca!.value, cb!.value) * direction || a.index - b.index;
+  });
+  return indexed.map(({ row }) => row);
+}
+
+/** The rows the view shows, in its order. */
+export function viewRows(rows: TableRow[], columns: TableColumn[], cells: TableCells, view: TableView): TableRow[] {
+  return sortRows(
+    rows.filter((row) => rowPasses(row, columns, cells, view)),
+    columns,
+    cells,
+    view.sort
+  );
+}
+
+/** Whether the view hides any row. */
+export function viewFilters(view: TableView, columns: TableColumn[]): boolean {
+  if (view.title?.trim() || view.yearFrom != null || view.yearTo != null) return true;
+  return visibleColumns(columns).some((column) => filterIsSet(view.columns?.[column.id]));
+}
+
+/** The view without what refers to a column no longer shown, so a stale filter never hides rows unseen. */
+export function cleanView(view: TableView, columns: TableColumn[]): TableView {
+  const shown = new Set(visibleColumns(columns).map((column) => column.id));
+  const kept = Object.fromEntries(Object.entries(view.columns ?? {}).filter(([id, filter]) => shown.has(id) && filterIsSet(filter)));
+  const sort = view.sort && (view.sort.by === SORT_YEAR || view.sort.by === SORT_TITLE || shown.has(view.sort.by)) ? view.sort : null;
+  return { ...view, sort, columns: kept };
+}
+
+function rangeWords(min: number | null | undefined, max: number | null | undefined): string {
+  if (min != null && max != null) return `${min.toLocaleString()}–${max.toLocaleString()}`;
+  return min != null ? `${min.toLocaleString()} or more` : `${(max ?? 0).toLocaleString()} or less`;
+}
+
+/** The view in words, one chip for each thing it does, keyed so each can be cleared alone. */
+export function viewChips(view: TableView, columns: TableColumn[]): Array<{ key: string; label: string }> {
+  const chips: Array<{ key: string; label: string }> = [];
+  const title = view.title?.trim();
+  if (title) chips.push({ key: "title", label: `Title has “${title}”` });
+  if (view.yearFrom != null || view.yearTo != null) {
+    const from = view.yearFrom;
+    const to = view.yearTo;
+    chips.push({ key: "years", label: from != null && to != null ? `Years ${from}–${to}` : from != null ? `From ${from}` : `Up to ${to}` });
+  }
+  for (const column of visibleColumns(columns)) {
+    const filter = view.columns?.[column.id];
+    if (!filter || !filterIsSet(filter)) continue;
+    const valueTest = Boolean(filter.labels?.length || filter.text?.trim() || filter.min != null || filter.max != null);
+    const parts = [
+      ...(filter.labels ?? []),
+      ...(filter.text?.trim() ? [`has “${filter.text.trim()}”`] : []),
+      ...(filter.min != null || filter.max != null ? [rangeWords(filter.min, filter.max)] : []),
+      ...filter.show.filter((kind) => !(valueTest && kind === "found")).map((kind) => CELL_KIND_WORDS[kind]),
+    ];
+    chips.push({ key: column.id, label: `${column.name}: ${parts.join(", ")}` });
+  }
+  const sort = view.sort;
+  if (sort) {
+    const column = columns.find((entry) => entry.id === sort.by);
+    const label =
+      sort.by === SORT_YEAR
+        ? sort.descending
+          ? "Newest first"
+          : "Oldest first"
+        : sort.by === SORT_TITLE
+          ? `Title ${sort.descending ? "Z–A" : "A–Z"}`
+          : column
+            ? `${column.name}, ${column.kind === "number" ? (sort.descending ? "high to low" : "low to high") : sort.descending ? "Z–A" : "A–Z"}`
+            : null;
+    if (label) chips.push({ key: "sort", label: `Sorted: ${label}` });
+  }
+  return chips;
+}
+
+/**
+ * A column's cells as a filter offers them: each label with its count (for a
+ * short-label or yes/no column, labels as shown), and each kind of cell.
+ */
+export function columnCounts(
+  rows: TableRow[],
+  column: TableColumn,
+  cells: TableCells
+): { labels: Array<{ key: string; label: string; count: number }>; kinds: Record<CellKind, number> } {
+  const kinds: Record<CellKind, number> = { found: 0, not_stated: 0, unverified: 0, empty: 0 };
+  const labels = new Map<string, { label: string; count: number }>();
+  for (const row of rows) {
+    const cell = cells[cellKey(row.paperId, column.id)];
+    const kind = cellKind(cell);
+    kinds[kind] += 1;
+    if (kind !== "found" || !cell || (column.kind !== "category" && column.kind !== "yesno")) continue;
+    for (const part of new Set(labelParts(cell.value))) {
+      const key = labelKey(part);
+      const entry = labels.get(key) ?? { label: part, count: 0 };
+      entry.count += 1;
+      labels.set(key, entry);
+    }
+  }
+  return {
+    labels: [...labels].map(([key, entry]) => ({ key, ...entry })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    kinds,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Downloads. Each takes the columns shown.
 
 /** The number a value starts with ("180 students" -> 180, "1,200 texts" -> 1200), or null. */
@@ -308,12 +637,21 @@ export interface Sheet {
 
 const STATUS_WORDS: Record<CellStatus, string> = { found: "Found", not_stated: "Not stated", unverified: "Not confirmed", failed: "Not read yet" };
 
+/** Why a paper was left out, in words: the reader's reason, or the yes/no column that said No. */
+export function leftOutReason(entry: { reason: string; columnId?: string }, columns: TableColumn[]): string {
+  const column = entry.columnId ? columns.find((candidate) => candidate.id === entry.columnId) : undefined;
+  if (entry.reason) return entry.reason;
+  return column ? `${column.name}: No` : "";
+}
+
 /**
  * The table as a workbook: "Table" as it is on screen, a number column as
  * numbers a spreadsheet can add up, and "Sources", one line per cell with
- * its value, note, the paper's sentence and whether it was found.
+ * its value, note, the paper's sentence and whether it was found. With papers
+ * left out, a "Left out" sheet lists each with its reason and, when a yes/no
+ * column left it out, that column's sentence: the screening record.
  */
-export function paperTableSheets(rows: TableRow[], columns: TableColumn[], cells: TableCells): Sheet[] {
+export function paperTableSheets(rows: TableRow[], columns: TableColumn[], cells: TableCells, leftOut: LeftOutRow[] = [], allColumns: TableColumn[] = columns): Sheet[] {
   const table: Sheet = {
     name: "Table",
     rows: [
@@ -351,5 +689,17 @@ export function paperTableSheets(rows: TableRow[], columns: TableColumn[], cells
     ],
     widths: [60, 8, 24, 30, 24, 80, 14],
   };
-  return [table, sources];
+  if (leftOut.length === 0) return [table, sources];
+  const left: Sheet = {
+    name: "Left out",
+    rows: [
+      ["Paper", "Year", "Reason", "Sentence in the paper"],
+      ...leftOut.map((row) => {
+        const cell = row.columnId ? cells[cellKey(row.paperId, row.columnId)] : undefined;
+        return [row.title, cellNumber(row.year) ?? row.year, leftOutReason(row, allColumns), cell?.status === "found" ? cell.quote : ""];
+      }),
+    ],
+    widths: [60, 8, 40, 80],
+  };
+  return [table, sources, left];
 }

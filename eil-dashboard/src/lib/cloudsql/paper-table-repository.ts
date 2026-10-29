@@ -4,15 +4,18 @@ import {
   ColumnsSchema,
   MAX_TABLES_PER_REPOSITORY,
   cellsForColumns,
+  changeLeftOut,
+  type LeftOut,
   type TableCells,
   type TableColumn,
 } from "@/lib/paper-table";
 
 /*
- * Paper tables (cloudsql/20261028_paper_tables.sql, docs/42). Each function's
- * body takes the caller's transaction, so the SQL runs as-is in the PGlite
- * tests; the exported wrappers open the owner's transaction, under which
- * row-level security shows a person only their own tables.
+ * Paper tables (cloudsql/20261028_paper_tables.sql and
+ * 20261029_paper_table_rows.sql, docs/42). Each function's body takes the
+ * caller's transaction, so the SQL runs as-is in the PGlite tests; the
+ * exported wrappers open the owner's transaction, under which row-level
+ * security shows a person only their own tables.
  */
 
 type Client = Pick<PoolClient, "query">;
@@ -25,9 +28,21 @@ export interface PaperTableSummary {
   updatedAt: string;
 }
 
+/** The Chat conversation asked from each cell, by cell key. */
+export type CellChats = Record<string, string>;
+
 export interface PaperTableRecord extends PaperTableSummary {
   columns: TableColumn[];
   cells: TableCells;
+  leftOut: LeftOut;
+  chats: CellChats;
+}
+
+export interface PaperTableChange {
+  name?: string;
+  columns?: TableColumn[];
+  leaveOut?: Array<{ paperId: string; reason: string; columnId?: string }>;
+  putBack?: string[];
 }
 
 interface TableRow {
@@ -36,6 +51,8 @@ interface TableRow {
   name: string;
   columns: unknown;
   cells: unknown;
+  left_out: unknown;
+  cell_chats: unknown;
   updated_at: string | Date;
 }
 
@@ -59,8 +76,25 @@ function columnsOf(value: unknown): TableColumn[] {
   return parsed.success ? parsed.data : [];
 }
 
+function objectOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 function cellsOf(value: unknown): TableCells {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as TableCells) : {};
+  return objectOf(value) as TableCells;
+}
+
+function leftOutOf(value: unknown): LeftOut {
+  const out: LeftOut = {};
+  for (const [paperId, entry] of Object.entries(objectOf(value))) {
+    const { reason, columnId } = objectOf(entry);
+    out[paperId] = { reason: typeof reason === "string" ? reason : "", ...(typeof columnId === "string" ? { columnId } : {}) };
+  }
+  return out;
+}
+
+function chatsOf(value: unknown): CellChats {
+  return Object.fromEntries(Object.entries(objectOf(value)).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 }
 
 function record(row: TableRow): PaperTableRecord {
@@ -73,17 +107,19 @@ function record(row: TableRow): PaperTableRecord {
     updatedAt: iso(row.updated_at),
     columns,
     cells: cellsOf(row.cells),
+    leftOut: leftOutOf(row.left_out),
+    chats: chatsOf(row.cell_chats),
   };
 }
 
 export async function listTablesIn(client: Client, ownerUserId: string, projectId: string): Promise<PaperTableSummary[]> {
   const result = await client.query<TableRow>(
-    `SELECT id, project_id, name, columns, '{}'::jsonb AS cells, updated_at FROM public.paper_tables
-     WHERE owner_user_id = $1 AND project_id = $2 ORDER BY updated_at DESC LIMIT $3`,
+    `SELECT id, project_id, name, columns, '{}'::jsonb AS cells, '{}'::jsonb AS left_out, '{}'::jsonb AS cell_chats, updated_at
+     FROM public.paper_tables WHERE owner_user_id = $1 AND project_id = $2 ORDER BY updated_at DESC LIMIT $3`,
     [ownerUserId, projectId, MAX_TABLES_PER_REPOSITORY]
   );
   return result.rows.map((row) => {
-    const { columns: _columns, cells: _cells, ...summary } = record(row);
+    const { columns: _columns, cells: _cells, leftOut: _leftOut, chats: _chats, ...summary } = record(row);
     return summary;
   });
 }
@@ -107,13 +143,13 @@ export async function createTableIn(
   }
   const result = await client.query<TableRow>(
     `INSERT INTO public.paper_tables (owner_user_id, project_id, name, columns)
-     VALUES ($1, $2, $3, $4::jsonb) RETURNING id, project_id, name, columns, cells, updated_at`,
+     VALUES ($1, $2, $3, $4::jsonb) RETURNING id, project_id, name, columns, cells, left_out, cell_chats, updated_at`,
     [ownerUserId, projectId, name, JSON.stringify(columns)]
   );
   return record(result.rows[0]);
 }
 
-const TABLE_SQL = `SELECT id, project_id, name, columns, cells, updated_at FROM public.paper_tables
+const TABLE_SQL = `SELECT id, project_id, name, columns, cells, left_out, cell_chats, updated_at FROM public.paper_tables
   WHERE id = $1 AND owner_user_id = $2`;
 const TABLE_FOR_UPDATE_SQL = `${TABLE_SQL} FOR UPDATE`;
 
@@ -123,20 +159,20 @@ export async function getTableIn(client: Client, ownerUserId: string, tableId: s
   return record(result.rows[0]);
 }
 
-/** Renames a table or changes its columns; a removed column's cells go, and a changed column's are read again. */
-export async function updateTableIn(
-  client: Client,
-  ownerUserId: string,
-  tableId: string,
-  change: { name?: string; columns?: TableColumn[] }
-): Promise<PaperTableRecord> {
+/**
+ * Renames a table, changes its columns, or leaves papers out and puts them
+ * back. A removed column's cells go, and a changed column's are read again;
+ * a paper left out keeps its cells.
+ */
+export async function updateTableIn(client: Client, ownerUserId: string, tableId: string, change: PaperTableChange): Promise<PaperTableRecord> {
   const table = await getTableIn(client, ownerUserId, tableId, true);
   const columns = change.columns ?? table.columns;
   const cells = change.columns ? cellsForColumns(table.cells, table.columns, change.columns) : table.cells;
+  const leftOut = change.leaveOut || change.putBack ? changeLeftOut(table.leftOut, change.leaveOut, change.putBack) : table.leftOut;
   const result = await client.query<TableRow>(
-    `UPDATE public.paper_tables SET name = $3, columns = $4::jsonb, cells = $5::jsonb, updated_at = now()
-     WHERE id = $1 AND owner_user_id = $2 RETURNING id, project_id, name, columns, cells, updated_at`,
-    [tableId, ownerUserId, change.name ?? table.name, JSON.stringify(columns), JSON.stringify(cells)]
+    `UPDATE public.paper_tables SET name = $3, columns = $4::jsonb, cells = $5::jsonb, left_out = $6::jsonb, updated_at = now()
+     WHERE id = $1 AND owner_user_id = $2 RETURNING id, project_id, name, columns, cells, left_out, cell_chats, updated_at`,
+    [tableId, ownerUserId, change.name ?? table.name, JSON.stringify(columns), JSON.stringify(cells), JSON.stringify(leftOut)]
   );
   return record(result.rows[0]);
 }
@@ -157,6 +193,20 @@ export async function mergeCellsIn(client: Client, ownerUserId: string, tableId:
   );
 }
 
+/**
+ * Records the Chat conversation asked from a cell, so the cell opens it
+ * again. A question asked again from the cell after its conversation was
+ * deleted starts a new one, which takes the old one's place.
+ */
+export async function linkCellChatIn(client: Client, ownerUserId: string, tableId: string, key: string, threadId: string): Promise<boolean> {
+  const result = await client.query(
+    `UPDATE public.paper_tables SET cell_chats = cell_chats || jsonb_build_object($3::text, $4::text)
+     WHERE id = $1 AND owner_user_id = $2`,
+    [tableId, ownerUserId, key, threadId]
+  );
+  return Boolean(result.rowCount);
+}
+
 export async function deleteTableIn(client: Client, ownerUserId: string, tableId: string): Promise<void> {
   const result = await client.query(`DELETE FROM public.paper_tables WHERE id = $1 AND owner_user_id = $2`, [tableId, ownerUserId]);
   if (!result.rowCount) throw new PaperTableError("That table was not found.", 404);
@@ -168,9 +218,11 @@ export const createPaperTable = (ownerUserId: string, projectId: string, name: s
   withCloudSqlOwnerTransaction(ownerUserId, (client) => createTableIn(client, ownerUserId, projectId, name, columns));
 export const getPaperTable = (ownerUserId: string, tableId: string) =>
   withCloudSqlOwnerTransaction(ownerUserId, (client) => getTableIn(client, ownerUserId, tableId));
-export const updatePaperTable = (ownerUserId: string, tableId: string, change: { name?: string; columns?: TableColumn[] }) =>
+export const updatePaperTable = (ownerUserId: string, tableId: string, change: PaperTableChange) =>
   withCloudSqlOwnerTransaction(ownerUserId, (client) => updateTableIn(client, ownerUserId, tableId, change));
 export const mergePaperTableCells = (ownerUserId: string, tableId: string, cells: TableCells) =>
   withCloudSqlOwnerTransaction(ownerUserId, (client) => mergeCellsIn(client, ownerUserId, tableId, cells));
+export const linkPaperTableChat = (ownerUserId: string, tableId: string, key: string, threadId: string) =>
+  withCloudSqlOwnerTransaction(ownerUserId, (client) => linkCellChatIn(client, ownerUserId, tableId, key, threadId));
 export const deletePaperTable = (ownerUserId: string, tableId: string) =>
   withCloudSqlOwnerTransaction(ownerUserId, (client) => deleteTableIn(client, ownerUserId, tableId));

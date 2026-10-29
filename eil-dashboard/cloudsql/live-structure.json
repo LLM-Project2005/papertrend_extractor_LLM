@@ -316,10 +316,12 @@
    "updated_at": "timestamptz not null"
   },
   "paper_tables": {
+   "cell_chats": "jsonb not null",
    "cells": "jsonb not null",
    "columns": "jsonb not null",
    "created_at": "timestamptz not null",
    "id": "uuid not null",
+   "left_out": "jsonb not null",
    "name": "text not null",
    "owner_user_id": "uuid not null",
    "project_id": "uuid not null",

@@ -128,7 +128,7 @@ Asked whether the table was perfect, I read the four tables in the test reposito
   - the empty page lists all three downloads;
   - the help page explains the second look, Read again and tidy labels;
   - the cost paragraph above.
-- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 22rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put. The first try, `− 19rem`, left the frame's foot 8 px below a 950 px screen: the table starts 312 px down.
+- **A table no taller than the screen** (the user's request): the table scrolls inside a frame of `max(20rem, 100dvh − 22rem)`. The sideways scrollbar stays in view without scrolling the page to the table's end, and the header row and paper column stay put. The first try, `− 19rem`, left the frame's foot 8 px below a 950 px screen: the table starts 312 px down. With `− 22rem` (#301, pilot 00297-kfq) the foot is at 910 px; on a phone the frame is 492 px.
 
 **On the pilot** (00296-rm6, `p71-second-look.cjs`, the test repository):
 - **Frame.** The header row and the paper column stayed in place when the frame was scrolled down and sideways. Nothing scrolled the page sideways, on a desktop screen or a phone (390 px).
@@ -146,6 +146,39 @@ Asked whether the table was perfect, I read the four tables in the test reposito
 
   Methodology used one spelling, "Mixed methods", 24 times. The table was deleted after the check.
 - **Left as they were.** Found values from older readings with notes like "Country not stated" stay: Read again reads only Not stated and Not confirmed. Editing a column's instruction reads the whole column again.
+
+### 3.3 Choosing the rows, and asking about a cell (2026-10-29)
+
+Asked what the table still lacked against its competitors, I named two gaps from docs/41's research:
+- **Choosing and ordering the rows.** Elicit's table follows a screening step, where each paper is included or excluded with a reason and a quote; ours listed every study and could not be sorted or filtered.
+- **Questioning a single cell.** Elicit shows each cell's quotes and lets the reader chat from the table; ours hid a Not confirmed answer, could not read one cell again, and had no way to ask about one.
+
+The user asked for both, with AI screening, and approved the database change. For the cell, they wanted a small side chat, linked to Chat, where a question sent appears in Chat's conversation at once.
+
+**Rows** (`paper-table.ts`: `viewRows`, `sortRows`, `rowPasses`, `cellPasses`, `viewChips`, `columnCounts`, `changeLeftOut`; `TableRowControls.tsx`):
+- **Sort:** a column's name sorts by it. A number column sorts by the number its value starts with, from the highest; any other column by its words, from A. A cell without a value goes last either way, and ties keep the table's order. The **Paper** heading sorts newest first, then by title.
+- **Filter:** each column has a funnel:
+  - a short-label or yes/no column lists its labels with their counts, compared as `labelKey` compares them, so "Mixed-methods" is "Mixed methods";
+  - a number column takes a range;
+  - a words column takes words, which the value or its note must contain;
+  - any column can keep the cells that say Not stated, Not confirmed or Not read yet.
+  
+  The papers filter by title and years. Chips above the table say what the view does. The view is kept per table in the browser (`readTableView` checks what it reads back), and a filter on a column hidden since is set aside (`cleanView`).
+- **Leaving a paper out:** by hand, with an optional reason. A paper left out is not shown, read or downloaded; its cells are kept. **Left out**, below the table, lists each with its reason and **Put back**, and **Undo** follows each change. The 120 limit counts only the papers kept.
+- **Screen:** a fourth kind of column, **yes/no** (`checkCell` keeps only "Yes" or "No" and checks its sentence like any other). The heading counts the answers and offers **Leave out the N that say No**, which records the column as the reason.
+- **Downloads** hold the rows shown, in the order shown; the menu says so. Excel adds a **Left out** sheet, giving each paper's reason and, for a yes/no column, its sentence: the screening record.
+- **Storage:** migration `cloudsql/20261029_paper_table_rows.sql` adds `left_out` (paper id to reason) and `cell_chats` (cell key to conversation) to `paper_tables`. It is additive with empty defaults, folded into `schema.sql` and `live-structure.json`. On-demand backup 1793249436216 was taken first.
+
+**Asking about a cell** (`CellPanel.tsx`, `paper-table-chat.ts`, `TableCellQuote.tsx`):
+- **Every cell opens its panel,** whatever it says. A found value shows its sentence and **Show in paper**. A Not confirmed cell shows the reading's answer and the sentence it gave, marked as not in the paper. **Read again** reads that one cell from the whole paper (`{"again": true, "cellKeys": [...]}`, `cellsByKey`), a found value too.
+- **Asking turns the card into a side chat** docked on the right, 420 px wide; on a wide screen the page makes room for it.
+- **The question is an ordinary Chat request,** limited to the paper (`selected_papers` with its run), at Low, Medium or High effort. The chat route then:
+  - names the conversation "<column> · <paper>";
+  - stores the cell with the first question (`tableCell`, shown above it in Chat) and with each later one (`tableCellAbout`, not shown again);
+  - links the conversation to the cell in `cell_chats`.
+- **Every question in such a conversation is answered with the cell in mind.** `cellChatPrompt` puts the table, column, value and sentence before the reader's words, and the conversation keeps only the reader's words. This holds in the panel and in Chat.
+- **Open in Chat** opens `/workspace/chat?thread=…`, and Chat reopens a conversation with its paper attached. It works once the answer is in, because leaving or closing the panel mid-answer stops the answer, as leaving Chat does.
+- **A cell with a conversation is marked,** and opens it again. A conversation deleted in Chat leaves the cell as new.
 
 ## 4. Open items
 
@@ -171,6 +204,21 @@ Asked whether the table was perfect, I read the four tables in the test reposito
     - labels tidied;
     - the newest studies past the limit;
     - the framed table.
-- `tests/schema-authority.test.ts` checks the new table is in `schema.sql`.
+  - from §3.3:
+    - sorting by number, by words, by year and by title, a cell without a value last;
+    - filtering by label (however written), range, words, kind of cell, title and years;
+    - a stale filter set aside, the chips, a stored view read back;
+    - leaving out and putting back, the limit, the reasons;
+    - the yes/no check;
+    - the Left out sheet;
+    - the migration;
+    - a paper left out leaving the table and its fill, and coming back;
+    - one cell read again.
+- `tests/paper-table-chat.test.ts` (§3.3), with the chat route run against PGlite:
+  - the prompt and the title;
+  - the cell found among a conversation's newest questions;
+  - a question from a cell: named, kept with its cell, linked, and its follow-up answered with the cell in mind;
+  - another person's table not linked, and a malformed cell refused.
+- `tests/schema-authority.test.ts` checks the new table and columns are in `schema.sql`.
 - `tests/spend-limits.test.ts` lists `paper-table-reading.ts` among the files that call a model.
 - `tests/test_ingestion_extractor.py`: tables read across, empty cells kept, `<br>` and bold dropped, and the cleaner keeping them.
