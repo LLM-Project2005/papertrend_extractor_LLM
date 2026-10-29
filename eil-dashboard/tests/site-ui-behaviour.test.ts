@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import React, { createElement, type ComponentType, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { chartTheme } from "../src/lib/chart-theme";
@@ -299,11 +299,13 @@ test("the public pages and the Adaptive charts use none of the borrowed template
 test("the public pages show screenshots of the real product, each with its size reserved, in both themes", async () => {
   // The front page used to carry div-built imitations of the product.
   const { SHOT_SIZES } = await import("../src/components/marketing/shot-manifest");
-  const { marketingFeatures } = await import("../src/components/marketing/marketing-content");
+  const { homeFilm, marketingFeatures } = await import("../src/components/marketing/marketing-content");
   const pages = await publicPages();
   const images = pages.flatMap((html) => [...html.matchAll(/<img\b[^>]*>/g)].map((match) => match[0]));
   const shots = new Map<string, Set<string>>();
   for (const image of images) {
+    // A frame of the film, not a screenshot: the film's own test covers it.
+    if (attribute(image, "src") === homeFilm.poster) continue;
     const shot = /^\/marketing\/([a-z-]+)-(light|dark)\.webp$/.exec(attribute(image, "src"));
     assert.ok(shot, `a picture that is not a product screenshot: ${attribute(image, "src")}`);
     const [, name, theme] = shot;
@@ -322,6 +324,26 @@ test("the public pages show screenshots of the real product, each with its size 
     assert.deepEqual([...themes].sort(), ["dark", "light"], `${name} is drawn for both themes`);
     for (const theme of themes) assert.ok(exists(`public/marketing/${name}-${theme}.webp`), `${name}-${theme}.webp is missing`);
   }
+});
+
+test("the front page's film loads nothing from YouTube until it is played, and its poster is this site's", async () => {
+  // The user's request (2026-10-29): the film on the front page, kept off a slow connection's way.
+  const { homeFilm } = await import("../src/components/marketing/marketing-content");
+  assert.match(homeFilm.youtubeId, /^[A-Za-z0-9_-]{11}$/, "a YouTube video's id");
+  assert.ok(exists(`public${homeFilm.poster}`), "the poster is served from this site");
+  for (const theme of ["light", "dark"] as const) {
+    const html = await homePage(theme);
+    assert.doesNotMatch(html, /youtube|<iframe\b/i, "nothing from YouTube before play");
+    const play = [...html.matchAll(/(<button\b[^>]*>)([\s\S]*?)<\/button>/g)].filter((match) => attribute(match[1], "aria-label").startsWith("Play the film (1:19): "));
+    assert.equal(play.length, 1, "one named play button");
+    const poster = /<img\b[^>]*>/.exec(play[0][2])?.[0] ?? "";
+    assert.equal(attribute(poster, "src"), homeFilm.poster);
+    assert.equal(attribute(poster, "width"), "1280", "its box is reserved");
+    assert.equal(attribute(poster, "height"), "720");
+  }
+  const player = readFileSync(new URL("../src/components/marketing/FilmPlayer.tsx", import.meta.url), "utf8");
+  assert.match(player, /FILM_EMBED_ORIGIN = "https:\/\/www\.youtube-nocookie\.com"/, "the privacy-enhanced player");
+  assert.match(player, /\/embed\/\$\{encodeURIComponent\(youtubeId\)\}\?autoplay=1&rel=0&playsinline=1/, "it starts at once, and suggests only the channel's own videos");
 });
 
 test("the product clips are muted inline loops in the page's own theme, with a control beside each", async () => {

@@ -168,7 +168,13 @@ function CellView({
   if (reading && (!cell || cell.status === "failed")) {
     return <span aria-label="Reading" className="block h-3 w-20 rounded bg-subtle motion-safe:animate-pulse" />;
   }
-  const chat = hasChat ? <ChatIcon aria-label="Asked about" className="ml-1 inline h-3.5 w-3.5 align-[-2px] text-mute" /> : null;
+  // The icon is hidden from screen readers, so the words say it.
+  const chat = hasChat ? (
+    <>
+      <ChatIcon className="ml-1 inline h-3.5 w-3.5 align-[-2px] text-mute" />
+      <span className="sr-only">, asked about</span>
+    </>
+  ) : null;
   // Every cell opens its panel: the sentence, Read again, and a box to ask about it.
   const open = "text-left underline-offset-4 hover:underline focus-visible:underline";
   if (cell?.status === "found") {
@@ -562,9 +568,16 @@ export default function PaperTableClient() {
   }, [viewState]);
 
   const view = viewState.view;
-  const setView = useCallback((change: (current: TableView) => TableView) => {
-    setViewState((current) => ({ ...current, view: change(current.view) }));
-  }, []);
+  const undoNotice = undo?.notice;
+  const setView = useCallback(
+    (change: (current: TableView) => TableView) => {
+      setViewState((current) => ({ ...current, view: change(current.view) }));
+      // The line under the table's name then counts the studies shown, rather
+      // than what a fill read (pilot, 2026-10-29); a change with Undo stays.
+      setNotice((current) => (current === undoNotice ? current : null));
+    },
+    [undoNotice]
+  );
 
 
   async function createTable(name: string, columns: TableColumn[]) {

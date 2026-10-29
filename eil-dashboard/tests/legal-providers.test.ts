@@ -67,6 +67,8 @@ const PROVIDERS: Record<string, string> = {
   "apis.google.com": "Google",
   "storage.googleapis.com": "Google Cloud",
   "cloudtasks.googleapis.com": "Google Cloud",
+  // The front page's film, once a reader presses play (FilmPlayer.tsx).
+  "www.youtube-nocookie.com": "YouTube",
 };
 
 /**

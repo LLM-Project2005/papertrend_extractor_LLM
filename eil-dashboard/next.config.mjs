@@ -26,6 +26,7 @@ function originOf(value) {
  *                                         signed storage links (uploads, PDFs)
  *   docs.google.com, drive.google.com     the Drive Picker's frame
  *   storage.googleapis.com (frame)        the PDF viewer's fallback frame
+ *   www.youtube-nocookie.com (frame)      the front page's film, once played
  *   <direct API origin>                   chat streams straight from Cloud Run
  */
 const directApiOrigin = originOf(process.env.NEXT_PUBLIC_DIRECT_API_URL);
@@ -42,7 +43,11 @@ const contentSecurityPolicy = [
   ["connect-src 'self'", directApiOrigin, "https://*.googleapis.com https://accounts.google.com https://apis.google.com"]
     .filter(Boolean)
     .join(" "),
-  ["frame-src 'self'", authDomainOrigin, "https://accounts.google.com https://docs.google.com https://drive.google.com https://storage.googleapis.com"]
+  [
+    "frame-src 'self'",
+    authDomainOrigin,
+    "https://accounts.google.com https://docs.google.com https://drive.google.com https://storage.googleapis.com https://www.youtube-nocookie.com",
+  ]
     .filter(Boolean)
     .join(" "),
   "worker-src 'self' blob:",

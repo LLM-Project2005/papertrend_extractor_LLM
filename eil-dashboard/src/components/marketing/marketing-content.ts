@@ -74,6 +74,18 @@ export const marketingFeatures: MarketingFeature[] = [
   },
 ];
 
+/**
+ * The film under the front page's hero (2026-10-29): the 41-paper EIL
+ * collection, a question, and the page its answer comes from. It plays from
+ * YouTube; the poster is its frame at 0:07, served from this site.
+ */
+export const homeFilm = {
+  youtubeId: "QbjW9ytJqKM",
+  title: "Papertrend: fifteen years of English language research in 79 seconds",
+  length: "1:19",
+  poster: "/marketing/film/poster.webp",
+};
+
 export const faqs: Array<{ question: string; answer: string }> = [
   {
     question: "How do I get an account?",
