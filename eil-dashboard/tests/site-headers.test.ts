@@ -68,6 +68,9 @@ test("every response carries an enforced Content-Security-Policy that names wher
     "https://apis.google.com",
   ]);
   assert.ok(policy.get("frame-src")?.includes("https://research-trend-analysis.firebaseapp.com"), "Firebase's sign-in frame");
+  // The front page's film plays in YouTube's privacy-enhanced player, and only there.
+  assert.ok(policy.get("frame-src")?.includes("https://www.youtube-nocookie.com"));
+  assert.ok(!policy.get("frame-src")?.some((source) => /^https:\/\/(www\.)?youtube\.com$/.test(source)), "not the player that sets cookies on load");
   for (const directive of ["script-src", "connect-src", "frame-src", "style-src"]) {
     for (const source of policy.get(directive) ?? []) {
       assert.ok(!["*", "https:", "http:", "data:"].includes(source), `${directive} must not allow ${source}`);

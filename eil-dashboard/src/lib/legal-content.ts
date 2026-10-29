@@ -7,7 +7,8 @@
  */
 
 export const LEGAL_CONTACT_EMAIL = "p.chantarusorn@gmail.com";
-export const LEGAL_EFFECTIVE_DATE = "2 October 2026";
+// 29 October 2026: the film on the front page, played from YouTube.
+export const LEGAL_EFFECTIVE_DATE = "29 October 2026";
 
 export interface LegalSection {
   id: string;
@@ -97,6 +98,7 @@ export const privacyPolicy: LegalDocument = {
         "OpenRouter and the AI model providers it routes to, such as OpenAI and Google, process paper text and questions, and may do so in other countries, including the United States.",
         "Exa receives web search queries, when chat web search is on or deep research searches the web.",
         "Crossref and OpenAlex receive paper titles or DOIs only.",
+        "YouTube, a Google service, plays the film on the home page. Nothing is loaded from YouTube until you press play; from then, YouTube receives your IP address and browser details, as any site you visit does.",
       ],
       paragraphs: [
         "Using these providers means your data is processed outside Thailand. We use them only to run Papertrend, under their terms of service.",
@@ -141,6 +143,7 @@ export const privacyPolicy: LegalDocument = {
       heading: "Cookies and browser storage",
       paragraphs: [
         "Papertrend does not use advertising or analytics cookies. Your browser stores your sign-in session (through Firebase) and a few preferences, such as your theme and the repository you last opened.",
+        "The film on the home page plays from YouTube in its privacy-enhanced mode. Until you press play, nothing from YouTube is loaded; once the film plays, YouTube may store its own cookies and similar data in your browser, under Google's privacy policy.",
       ],
     },
     {
