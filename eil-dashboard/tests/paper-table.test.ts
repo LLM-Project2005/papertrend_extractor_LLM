@@ -15,6 +15,7 @@ import {
   applyColumnChoice,
   cellKey,
   cellNumber,
+  cellsByKey,
   cellsForColumns,
   changeLeftOut,
   changedColumns,
@@ -917,4 +918,45 @@ test("the page sorts, filters, screens and leaves papers out, and its downloads 
   assert.match(page, /paperTableSheets\(shownRows, shownColumns, cells, leftOutRows, columns\)/);
   assert.match(page, /rows: shownRows,/);
   assert.match(page, /\{shownRows\.map\(\(row\) =>/);
+});
+
+test("a cell's own Read again reads that one cell from the whole paper, whatever it says", async () => {
+  const rows = [
+    { paperId: "101", runId: "r1", title: "A", year: "2024" },
+    { paperId: "102", runId: "r2", title: "B", year: "2021" },
+  ];
+  assert.deepEqual(cellsByKey(rows, [PARTICIPANTS, { ...SIZE, hidden: true }], ["101:participants", "101:sample-size", "999:participants"]), [
+    { paperId: "101", columnId: "participants" },
+  ]);
+
+  const { db, request, owner } = await repository();
+  const requests = model();
+  const tables = await import("../src/app/api/workspace/tables/route");
+  const fillRoute = await import("../src/app/api/workspace/tables/[id]/fill/route");
+  const made = await tables.POST(request("/api/workspace/tables", { headers: owner, body: { projectId: PROJECT, name: "Study details", columns: [PARTICIPANTS] } }));
+  const { table } = await made.json();
+  const old: TableCells = {
+    "101:participants": { value: "29 undergraduates", quote: "Thirty Thai EFL undergraduates", note: "", status: "found" },
+    "102:participants": { value: "", quote: "", note: "", status: "not_stated", readWhole: true },
+  };
+  await db.query(`UPDATE paper_tables SET cells = $1::jsonb WHERE id = $2`, [JSON.stringify(old), table.id]);
+
+  const one = await fillRoute.POST(
+    request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: true, cellKeys: ["101:participants"] } }),
+    params({ id: table.id })
+  );
+  const events = (await one.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events[0].cells, 1);
+  assert.equal(requests.length, 1);
+  const stored = (await db.query<{ cells: TableCells }>(`SELECT cells FROM paper_tables WHERE id = $1`, [table.id])).rows[0].cells;
+  assert.equal(stored["101:participants"].value, "30 Thai EFL undergraduates", "a found value is read again too");
+  assert.equal(stored["101:participants"].readWhole, true);
+  assert.deepEqual(stored["102:participants"], old["102:participants"]);
+
+  const none = await fillRoute.POST(
+    request(`/api/workspace/tables/${table.id}/fill`, { headers: owner, body: { again: true, cellKeys: ["999:participants"] } }),
+    params({ id: table.id })
+  );
+  assert.deepEqual(await none.json(), { done: true, found: 0, usd: 0 }, "a cell not in the table reads nothing");
+  assert.equal(requests.length, 1);
 });

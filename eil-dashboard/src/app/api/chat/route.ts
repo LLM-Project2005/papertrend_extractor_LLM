@@ -33,6 +33,9 @@ import { spendUsd, summarizeSpend } from "@/lib/answer-cost";
 import { adviseOnFailure } from "@/lib/model-failure";
 import { ModelCallError } from "@/lib/openai";
 import { getPublicRequestOrigin } from "@/lib/public-request-origin";
+import { linkPaperTableChat } from "@/lib/cloudsql/paper-table-repository";
+import { cellKey } from "@/lib/paper-table";
+import { TableCellContextSchema, cellChatPrompt, cellChatTitle, threadTableCell, type TableCellContext } from "@/lib/paper-table-chat";
 import type { ChatThreadDetail, WorkspaceMessageRecord } from "@/types/research";
 import type { CitationPassageFields } from "@/lib/answer-citations";
 
@@ -124,6 +127,8 @@ interface ChatRequestBody {
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue" | "cancel";
   sessionId?: string;
+  /** The paper table cell a new conversation is asked from (paper-table-chat.ts). */
+  tableCell?: TableCellContext;
 }
 
 const ChatRequestBodySchema = z
@@ -193,6 +198,7 @@ const ChatRequestBodySchema = z
     chatMode: z.enum(["normal", "deep_research"]).optional(),
     action: z.enum(["message", "plan", "continue", "cancel"]).optional(),
     sessionId: z.string().max(80).optional(),
+    tableCell: TableCellContextSchema.optional(),
   })
   .passthrough();
 
@@ -256,17 +262,28 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
   let thread: ChatThreadDetail["thread"] | null = null;
   let existingThreadDetail: ChatThreadDetail | null = null;
   let persistedUserMessage: WorkspaceMessageRecord | null = null;
+  // A question from a paper table's cell starts a conversation named after the
+  // cell; every later question in it is answered with that cell in mind.
+  const askedFromCell = body.threadId ? null : body.tableCell ?? null;
+  let aboutCell: TableCellContext | null = askedFromCell;
   {
     if (body.threadId) {
       existingThreadDetail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
       thread = existingThreadDetail.thread;
+      aboutCell = threadTableCell(existingThreadDetail.messages);
     } else {
       thread = await chatRepository.createThread({
           ownerUserId,
           mode: "normal",
-          title: buildThreadTitle(currentMessage),
+          title: buildThreadTitle(askedFromCell ? cellChatTitle(askedFromCell) : currentMessage),
           summary: currentMessage.slice(0, 180),
         });
+      if (askedFromCell && getDatabaseProvider() === "cloud-sql") {
+        // So the cell opens this conversation again; the answer does not wait on it.
+        await linkPaperTableChat(ownerUserId, askedFromCell.tableId, cellKey(askedFromCell.paperId, askedFromCell.columnId), thread.id).catch((error) =>
+          console.warn("paper_table_chat_link_failed", { message: error instanceof Error ? error.message : "unknown_error" })
+        );
+      }
     }
 
     const editTarget =
@@ -313,12 +330,21 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
           knowledgeScope,
           scopeSnapshot: preliminaryScopeSnapshot,
           requestId,
+          ...(askedFromCell ? { tableCell: askedFromCell } : aboutCell ? { tableCellAbout: aboutCell } : {}),
         },
       });
     }
   }
 
   const requestedToolMode: ChatToolMode = body.toolMode ?? "auto";
+  // The model reads which cell the question is about; the conversation keeps the reader's words.
+  const prompt = aboutCell ? cellChatPrompt(aboutCell, currentMessage) : currentMessage;
+  const sentHistory = (body.messages ?? []).slice(-12);
+  const lastTurn = sentHistory[sentHistory.length - 1];
+  const history =
+    aboutCell && lastTurn?.role === "user" && lastTurn.content.trim() === currentMessage.trim()
+      ? [...sentHistory.slice(0, -1), { role: "user" as const, content: prompt }]
+      : sentHistory;
 
   if (!thread) throw new Error("The conversation could not be opened.");
   const startedAt = Date.now();
@@ -331,11 +357,11 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
       selectedRunIds: knowledgeScope.runIds,
       knowledgeScope,
       allowWeb: requestedToolMode === "web_search" || Boolean(body.webSearchEnabled),
-      prompt: currentMessage,
+      prompt,
       model: selectedModel,
       forceChart: chartRequested,
       effort: body.effort ?? "medium",
-      history: (body.messages ?? []).slice(-12),
+      history,
       jobCallbackBaseUrl: getPublicRequestOrigin(request),
       sourceMessageId: persistedUserMessage?.id ?? null,
     });

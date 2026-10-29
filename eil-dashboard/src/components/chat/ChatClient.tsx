@@ -111,6 +111,8 @@ const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"
   ),
 });
 import ReportActions from "@/components/chat/ReportActions";
+import TableCellQuote from "@/components/table/TableCellQuote";
+import { tableCellFromMetadata } from "@/lib/paper-table-chat";
 import UsageMeter from "@/components/chat/UsageMeter";
 import MarkdownActions, { downloadMarkdown } from "@/components/chat/MarkdownActions";
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, chatModelDescription, chatModelLabel } from "@/lib/chat-models";
@@ -3440,6 +3442,8 @@ export default function ChatClient() {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
                   const attachments = attachmentsFromMetadata(message.metadata);
+                  // Asked from a paper table's cell: the cell is shown above the question (docs/42).
+                  const tableCell = isUser ? tableCellFromMetadata(message.metadata) : null;
                   const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
                   const groundingMode = groundingModeFromMetadata(message.metadata);
                   const citationPreview = previewConversationSources(numberAnswerSources(message.content, message.citations), 5);
@@ -3503,6 +3507,7 @@ export default function ChatClient() {
                                     <PencilSquareIcon className="h-4 w-4" />
                                   </button>
                                 </div>
+                                {tableCell ? <TableCellQuote cell={tableCell} /> : null}
                                 <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-8 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
                                   {renderRichMessage(message.content, message.id, "user")}
                                 </div>

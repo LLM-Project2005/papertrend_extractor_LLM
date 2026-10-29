@@ -21,19 +21,23 @@
  * be left out of a table: by hand with a reason, or every paper a yes/no
  * column ("Screen") answers No for. The view is kept in this browser, the
  * papers left out with the table; downloads hold the rows as shown.
+ *
+ * Every cell opens its panel (CellPanel.tsx): the sentence, Read again for
+ * that cell, and a box to ask about it that becomes a side chat, saved as a
+ * Chat conversation about that paper.
  */
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { createPortal } from "react-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
+import CellPanel from "@/components/table/CellPanel";
 import ColumnPicker from "@/components/table/ColumnPicker";
 import TableDownloadMenu, { type DownloadFormat } from "@/components/table/TableDownloadMenu";
 import { ColumnFilterDialog, LeaveOutDialog, LeftOutList, PaperFilterDialog, ViewChips } from "@/components/table/TableRowControls";
 import {
+  ChatIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  CloseIcon,
   FilterIcon,
   MinusIcon,
   PencilSquareIcon,
@@ -146,91 +150,47 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
-function CellView({ cell, reading, again, onOpen }: { cell: TableCell | undefined; reading: boolean; again: boolean; onOpen: () => void }) {
+function CellView({
+  cell,
+  reading,
+  again,
+  hasChat,
+  onOpen,
+}: {
+  cell: TableCell | undefined;
+  reading: boolean;
+  again: boolean;
+  /** A conversation was asked from this cell. */
+  hasChat: boolean;
+  onOpen: () => void;
+}) {
   if (again) return <span aria-label="Reading again" className="block h-3 w-20 rounded bg-subtle motion-safe:animate-pulse" />;
-  if (!cell || (reading && cell.status === "failed")) {
-    return reading ? (
-      <span aria-label="Reading" className="block h-3 w-20 rounded bg-subtle motion-safe:animate-pulse" />
-    ) : (
-      <span className="text-mute">–</span>
-    );
+  if (reading && (!cell || cell.status === "failed")) {
+    return <span aria-label="Reading" className="block h-3 w-20 rounded bg-subtle motion-safe:animate-pulse" />;
   }
-  if (cell.status === "found") {
+  const chat = hasChat ? <ChatIcon aria-label="Asked about" className="ml-1 inline h-3.5 w-3.5 align-[-2px] text-mute" /> : null;
+  // Every cell opens its panel: the sentence, Read again, and a box to ask about it.
+  const open = "text-left underline-offset-4 hover:underline focus-visible:underline";
+  if (cell?.status === "found") {
     return (
-      <button
-        type="button"
-        onClick={onOpen}
-        className="line-clamp-4 text-left leading-6 text-ink decoration-hairline-strong decoration-dotted underline-offset-4 hover:underline focus-visible:underline"
-      >
+      <button type="button" onClick={onOpen} className={`line-clamp-4 leading-6 text-ink decoration-hairline-strong decoration-dotted ${open}`}>
         {cell.value}
         {cell.note ? <span className="text-mute"> ({cell.note})</span> : null}
+        {chat}
       </button>
     );
   }
-  if (cell.status === "not_stated") return <span className="text-[13px] text-mute">Not stated</span>;
-  if (cell.status === "unverified") {
-    return (
-      <span className="text-[13px] text-mute" title="An answer was given, but its sentence is not in the paper, so it is not shown.">
-        Not confirmed
-      </span>
-    );
-  }
-  return <span className="text-[13px] text-mute">Not read yet</span>;
-}
-
-function QuotePanel({
-  row,
-  column,
-  cell,
-  onClose,
-}: {
-  row: TableRow;
-  column: TableColumn;
-  cell: TableCell;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  // In a portal: inside the workspace's page, `fixed` placed the panel at the
-  // foot of the page rather than of the screen, out of sight (pilot, 2026-10-28).
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <aside
-      aria-label={`${column.name}: where it comes from`}
-      className="fixed inset-x-3 bottom-3 z-40 rounded-xl border border-hairline bg-surface p-4 shadow-overlay sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[440px]"
+  const words = !cell ? "–" : cell.status === "not_stated" ? "Not stated" : cell.status === "unverified" ? "Not confirmed" : "Not read yet";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={cell?.status === "unverified" ? "An answer was given, but its sentence is not in the paper; select to see it" : undefined}
+      className={`text-[13px] text-mute ${open}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-mute">{column.name}</p>
-          <p className="mt-1 text-sm font-semibold leading-6 text-ink">
-            {cell.value}
-            {cell.note ? <span className="font-normal text-mute"> ({cell.note})</span> : null}
-          </p>
-        </div>
-        <button type="button" onClick={onClose} aria-label="Close" className={iconButtonClass("sm")}>
-          <CloseIcon className="h-4 w-4" />
-        </button>
-      </div>
-      <blockquote className="mt-3 max-h-48 overflow-auto border-l-2 border-hairline-strong pl-3 text-sm leading-6 text-body">
-        {cell.quote}
-      </blockquote>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-[13px] text-mute">
-          {row.title}
-          {row.year && row.year !== "Unknown" ? ` · ${row.year}` : ""}
-        </p>
-        {/* As a chat citation does: the paper opens on its PDF with this sentence marked. */}
-        <PaperLink paper={{ paperId: row.paperId, tab: "preview", quote: cell.quote }} className={buttonClass("secondary", "sm")}>
-          Show in paper
-        </PaperLink>
-      </div>
-    </aside>,
-    document.body
+      {words}
+      {chat}
+    </button>
   );
 }
 
@@ -438,6 +398,8 @@ export default function PaperTableClient() {
   // Cells being read again; each shows as reading until its new answer comes.
   const [rereading, setRereading] = useState<ReadonlySet<string>>(() => new Set());
   const [selected, setSelected] = useState<{ paperId: string; columnId: string } | null>(null);
+  // The cell's panel is a side chat: on a wide screen the page makes room for it.
+  const [panelDocked, setPanelDocked] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const fillRef = useRef<AbortController | null>(null);
   const fillingTableRef = useRef<string | null>(null);
@@ -458,8 +420,8 @@ export default function PaperTableClient() {
   );
 
   const fill = useCallback(
-    /** `again`: "Read again", with the cells it reads (keys) and the columns it keeps to. */
-    async (id: string, again?: { keys: string[]; columnIds?: string[] }) => {
+    /** `again`: "Read again", with the cells it reads (keys) and the columns, or the one cell, it keeps to. */
+    async (id: string, again?: { keys: string[]; columnIds?: string[]; cellKeys?: string[] }) => {
       if (!token) return;
       fillRef.current?.abort();
       const controller = new AbortController();
@@ -475,7 +437,9 @@ export default function PaperTableClient() {
         const response = await fetch(`/api/workspace/tables/${id}/fill`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify(again ? { again: true, ...(again.columnIds ? { columnIds: again.columnIds } : {}) } : {}),
+          body: JSON.stringify(
+            again ? { again: true, ...(again.columnIds ? { columnIds: again.columnIds } : {}), ...(again.cellKeys ? { cellKeys: again.cellKeys } : {}) } : {}
+          ),
           signal: controller.signal,
         });
         if (!response.ok || !response.body || !(response.headers.get("content-type") ?? "").includes("ndjson")) {
@@ -855,12 +819,13 @@ export default function PaperTableClient() {
     const keys = (columnIds ? doubtful.filter((cell) => columnIds.includes(cell.columnId)) : doubtful).map((cell) => cellKey(cell.paperId, cell.columnId));
     void fill(table.id, { keys, columnIds });
   }
+  const closePanel = useCallback(() => setSelected(null), []);
   const selectedRow = selected ? rows.find((row) => row.paperId === selected.paperId) : undefined;
   const selectedColumn = selected ? columns.find((column) => column.id === selected.columnId) : undefined;
   const selectedCell = selected ? cells[cellKey(selected.paperId, selected.columnId)] : undefined;
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6 pb-24 pt-2 sm:pt-4">
+    <div className={`mx-auto max-w-[1400px] space-y-6 pb-24 pt-2 sm:pt-4 ${panelDocked ? "xl:pr-[436px]" : ""}`}>
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 max-w-3xl">
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Table</h1>
@@ -1174,6 +1139,7 @@ export default function PaperTableClient() {
                               cell={cells[key]}
                               reading={Boolean(filling)}
                               again={rereading.has(key)}
+                              hasChat={Boolean(table.chats?.[key])}
                               onOpen={() => setSelected({ paperId: row.paperId, columnId: column.id })}
                             />
                           </td>
@@ -1189,8 +1155,28 @@ export default function PaperTableClient() {
         </section>
       ) : null}
 
-      {selectedRow && selectedColumn && selectedCell?.status === "found" ? (
-        <QuotePanel row={selectedRow} column={selectedColumn} cell={selectedCell} onClose={() => setSelected(null)} />
+      {table && projectId && selectedRow && selectedColumn ? (
+        <CellPanel
+          key={cellKey(selectedRow.paperId, selectedColumn.id)}
+          table={table}
+          projectId={projectId}
+          row={selectedRow}
+          column={selectedColumn}
+          cell={selectedCell}
+          threadId={table.chats?.[cellKey(selectedRow.paperId, selectedColumn.id)] ?? null}
+          token={token}
+          reading={Boolean(filling)}
+          onReadAgain={() => {
+            const key = cellKey(selectedRow.paperId, selectedColumn.id);
+            void fill(table.id, { keys: [key], cellKeys: [key] });
+          }}
+          onLinked={(threadId) => {
+            const key = cellKey(selectedRow.paperId, selectedColumn.id);
+            setTable((current) => (current ? { ...current, chats: { ...current.chats, [key]: threadId } } : current));
+          }}
+          onDocked={setPanelDocked}
+          onClose={closePanel}
+        />
       ) : null}
 
       {dialog?.kind === "new" ? (

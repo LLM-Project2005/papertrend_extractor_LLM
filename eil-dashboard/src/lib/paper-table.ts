@@ -44,7 +44,8 @@ export interface TableColumn {
 /**
  * found: the value and the paper's sentence, both checked.
  * not_stated: the paper, as read, does not say.
- * unverified: an answer whose sentence (or number) is not in the paper; never shown as a value.
+ * unverified: an answer whose sentence (or number) is not in the paper; never shown as a value,
+ *   only in the cell's panel, with a warning, and never downloaded.
  * failed: the call that read it failed; read again with the next fill.
  */
 export type CellStatus = "found" | "not_stated" | "unverified" | "failed";
@@ -248,6 +249,19 @@ export function doubtfulCells(
         const cell = cells[cellKey(row.paperId, column.id)];
         return Boolean(cell && (cell.status === "not_stated" || cell.status === "unverified") && !cell.readWhole);
       })
+      .map((column) => ({ paperId: row.paperId, columnId: column.id }))
+  );
+}
+
+/**
+ * The cells named by key, in the columns shown and the rows given: one cell's
+ * "Read again", from its panel, whatever the cell says now.
+ */
+export function cellsByKey(rows: TableRow[], columns: TableColumn[], keys: string[]): Array<{ paperId: string; columnId: string }> {
+  const wanted = new Set(keys);
+  return rows.flatMap((row) =>
+    visibleColumns(columns)
+      .filter((column) => wanted.has(cellKey(row.paperId, column.id)))
       .map((column) => ({ paperId: row.paperId, columnId: column.id }))
   );
 }

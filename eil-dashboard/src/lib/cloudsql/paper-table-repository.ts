@@ -193,6 +193,20 @@ export async function mergeCellsIn(client: Client, ownerUserId: string, tableId:
   );
 }
 
+/**
+ * Records the Chat conversation asked from a cell, so the cell opens it
+ * again. A question asked again from the cell after its conversation was
+ * deleted starts a new one, which takes the old one's place.
+ */
+export async function linkCellChatIn(client: Client, ownerUserId: string, tableId: string, key: string, threadId: string): Promise<boolean> {
+  const result = await client.query(
+    `UPDATE public.paper_tables SET cell_chats = cell_chats || jsonb_build_object($3::text, $4::text)
+     WHERE id = $1 AND owner_user_id = $2`,
+    [tableId, ownerUserId, key, threadId]
+  );
+  return Boolean(result.rowCount);
+}
+
 export async function deleteTableIn(client: Client, ownerUserId: string, tableId: string): Promise<void> {
   const result = await client.query(`DELETE FROM public.paper_tables WHERE id = $1 AND owner_user_id = $2`, [tableId, ownerUserId]);
   if (!result.rowCount) throw new PaperTableError("That table was not found.", 404);
@@ -208,5 +222,7 @@ export const updatePaperTable = (ownerUserId: string, tableId: string, change: P
   withCloudSqlOwnerTransaction(ownerUserId, (client) => updateTableIn(client, ownerUserId, tableId, change));
 export const mergePaperTableCells = (ownerUserId: string, tableId: string, cells: TableCells) =>
   withCloudSqlOwnerTransaction(ownerUserId, (client) => mergeCellsIn(client, ownerUserId, tableId, cells));
+export const linkPaperTableChat = (ownerUserId: string, tableId: string, key: string, threadId: string) =>
+  withCloudSqlOwnerTransaction(ownerUserId, (client) => linkCellChatIn(client, ownerUserId, tableId, key, threadId));
 export const deletePaperTable = (ownerUserId: string, tableId: string) =>
   withCloudSqlOwnerTransaction(ownerUserId, (client) => deleteTableIn(client, ownerUserId, tableId));
