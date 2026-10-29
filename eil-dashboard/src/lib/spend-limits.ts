@@ -33,6 +33,7 @@ export type SpendSource =
   | "deep-research"
   | "insights"
   | "insights-ask"
+  | "paper-table"
   | "topic-themes"
   | "topic-cache"
   | "reclassification"

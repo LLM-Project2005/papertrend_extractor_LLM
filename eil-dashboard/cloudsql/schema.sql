@@ -1710,6 +1710,40 @@ ALTER TABLE public.repository_semantic_edges
 CREATE INDEX IF NOT EXISTS idx_repository_semantic_edges_map_distance
   ON public.repository_semantic_edges(owner_user_id, map_id, euclidean_distance);
 
+-- ----------------------------------------------------- from 20261028_paper_tables.sql
+
+-- The paper table (docs/42): a person's table of a repository's papers against
+-- their own columns, each cell with the paper's sentence. Cells are keyed
+-- "<paper id>:<column id>"; the rows are the repository's papers.
+
+CREATE TABLE IF NOT EXISTS public.paper_tables (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id  UUID NOT NULL,
+  project_id     UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
+  columns        JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(columns) = 'array'),
+  cells          JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(cells) = 'object'),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- From 20261029_paper_table_rows.sql: the papers left out of a table, with
+-- their reasons, and the Chat conversation asked from each cell.
+ALTER TABLE public.paper_tables
+  ADD COLUMN IF NOT EXISTS left_out JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(left_out) = 'object');
+ALTER TABLE public.paper_tables
+  ADD COLUMN IF NOT EXISTS cell_chats JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(cell_chats) = 'object');
+
+CREATE INDEX IF NOT EXISTS idx_paper_tables_owner_project
+  ON public.paper_tables(owner_user_id, project_id, updated_at DESC);
+
+ALTER TABLE public.paper_tables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.paper_tables FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS papertrend_owner_access ON public.paper_tables;
+CREATE POLICY papertrend_owner_access ON public.paper_tables
+  FOR ALL USING (owner_user_id = public.papertrend_current_user_id())
+  WITH CHECK (owner_user_id = public.papertrend_current_user_id());
+
 -- ----------------------------------------------------- set on the live database
 -- outside any migration file; recorded here so a fresh database matches it.
 

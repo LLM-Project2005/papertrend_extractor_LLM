@@ -16,6 +16,7 @@ import {
   LogoMarkIcon,
   MenuIcon,
   SettingsIcon,
+  TableIcon,
   UserIcon,
 } from "@/components/ui/Icons";
 import type { IconProps } from "@/components/ui/Icons";
@@ -63,6 +64,8 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     label: "Repository",
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
+      // The paper table (docs/42): the papers against the reader's own columns.
+      { href: "/workspace/table", label: "Table", icon: TableIcon },
       // The file browser. Every other screen already called it the Library;
       // only this entry said "Repositories", the name of the picker at
       // /workspaces, so one word named two different pages.
@@ -117,6 +120,15 @@ const SEARCH_PAGE_ITEMS = [
       "assistant", "conversation", "qa", "ai chat", "deep research", "deep agent", "research agent", "research plan", "report",
       "chart mode", "chart", "graph", "visualize", "visualise", "plot", "กราฟ", "แผนภูมิ", "web search",
     ],
+    featured: true,
+  },
+  {
+    id: "table",
+    label: "Table",
+    description: "Lay the papers out against your own columns, each cell with its sentence",
+    href: "/workspace/table",
+    icon: TableIcon,
+    keywords: ["table", "extract", "extraction", "data extraction", "columns", "compare papers", "matrix", "spreadsheet", "literature table", "ตาราง"],
     featured: true,
   },
   {

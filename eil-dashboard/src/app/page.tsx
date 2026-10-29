@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { MarketingShell } from "@/components/marketing/MarketingLayout";
+import FilmPlayer from "@/components/marketing/FilmPlayer";
 import ProductShot from "@/components/marketing/ProductShot";
-import { faqs, marketingFeatures, type MarketingFeature } from "@/components/marketing/marketing-content";
+import { faqs, homeFilm, marketingFeatures, type MarketingFeature } from "@/components/marketing/marketing-content";
 import { arrowLinkClass, displayClass, leadClass, secondaryPillClass, sectionTitleClass } from "@/components/marketing/styles";
 import { ArrowRightIcon, PlusIcon } from "@/components/ui/Icons";
 import Mascot from "@/components/ui/Mascot";
@@ -42,7 +43,8 @@ function feature(slug: MarketingFeature["slug"]) {
 
 /*
  * The front page is kept to about four screens (2026-10-09 review: "a bit too
- * much at max 3-4 scrolls"): what Papertrend is, its three parts with a door to
+ * much at max 3-4 scrolls"): what Papertrend is, a 79-second film of it at work
+ * (added 2026-10-29 at the user's request), its three parts with a door to
  * each, the questions people ask first, and a way in. The detail lives on the
  * feature pages and How it works.
  */
@@ -98,6 +100,21 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ------------------------------------------------------------ film */}
+      {homeFilm.youtubeId ? (
+        <section aria-labelledby="film-title" className="px-4 pb-16 pt-12 sm:px-6 sm:pb-20 sm:pt-16">
+          <div className="reveal mx-auto max-w-5xl">
+            <h2 id="film-title" className={sectionTitleClass}>
+              See it in 79 seconds.
+            </h2>
+            <p className={`mt-4 max-w-2xl ${leadClass}`}>Forty-one papers, fifteen years of English language research, and one question: what changed?</p>
+            <div className="mt-10">
+              <FilmPlayer youtubeId={homeFilm.youtubeId} title={homeFilm.title} length={homeFilm.length} poster={homeFilm.poster} />
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {/* ------------------------------------------------------- the parts */}
       <section className="px-4 pb-24 pt-8 sm:px-6 sm:pb-28">

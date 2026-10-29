@@ -57,7 +57,7 @@ test("schema.sql alone builds the live database's tables, columns, indexes and v
 
 test("every migration's tables are in schema.sql, and the ledger's newest migrations are folded in", () => {
   const schema = read("cloudsql/schema.sql");
-  for (const file of ["20261002_access_requests.sql", "20261002_schema_migrations.sql", "phase8_chat_v2.sql", "20260909_repository_semantic_map.sql"]) {
+  for (const file of ["20261002_access_requests.sql", "20261002_schema_migrations.sql", "phase8_chat_v2.sql", "20260909_repository_semantic_map.sql", "20261028_paper_tables.sql"]) {
     for (const [, table] of read(`cloudsql/${file}`).matchAll(/CREATE TABLE IF NOT EXISTS (?:public\.)?([a-z_]+)/g)) {
       assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS (?:public\\.)?${table}\\b`), `${file}: ${table}`);
     }
