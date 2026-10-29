@@ -918,6 +918,9 @@ test("the page sorts, filters, screens and leaves papers out, and its downloads 
   assert.match(page, /paperTableSheets\(shownRows, shownColumns, cells, leftOutRows, columns\)/);
   assert.match(page, /rows: shownRows,/);
   assert.match(page, /\{shownRows\.map\(\(row\) =>/);
+  // Pilot, 2026-10-29: a filter left "Read 36 cells: …" where "18 of 36 studies shown" belongs.
+  assert.match(page, /setNotice\(\(current\) => \(current === undoNotice \? current : null\)\)/, "a new view clears a fill's message, not an Undo");
+  assert.match(page, /<span className="sr-only">, asked about<\/span>/, "the conversation's mark is read out, as its icon is hidden");
 });
 
 test("a cell's own Read again reads that one cell from the whole paper, whatever it says", async () => {

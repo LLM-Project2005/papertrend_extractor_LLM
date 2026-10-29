@@ -167,7 +167,7 @@ The user asked for both, with AI screening, and approved the database change. Fo
 - **Leaving a paper out:** by hand, with an optional reason. A paper left out is not shown, read or downloaded; its cells are kept. **Left out**, below the table, lists each with its reason and **Put back**, and **Undo** follows each change. The 120 limit counts only the papers kept.
 - **Screen:** a fourth kind of column, **yes/no** (`checkCell` keeps only "Yes" or "No" and checks its sentence like any other). The heading counts the answers and offers **Leave out the N that say No**, which records the column as the reason.
 - **Downloads** hold the rows shown, in the order shown; the menu says so. Excel adds a **Left out** sheet, giving each paper's reason and, for a yes/no column, its sentence: the screening record.
-- **Storage:** migration `cloudsql/20261029_paper_table_rows.sql` adds `left_out` (paper id to reason) and `cell_chats` (cell key to conversation) to `paper_tables`. It is additive with empty defaults, folded into `schema.sql` and `live-structure.json`. On-demand backup 1793249436216 was taken first.
+- **Storage:** migration `cloudsql/20261029_paper_table_rows.sql` adds `left_out` (paper id to reason) and `cell_chats` (cell key to conversation) to `paper_tables`. It is additive with empty defaults, folded into `schema.sql` and `live-structure.json`. On-demand backup 1793249436216 was taken first. The user applied it on 2026-10-29 at 09:41 UTC (the safety check stopped me from applying it to the shared database); the live columns and checks match `live-structure.json`.
 
 **Asking about a cell** (`CellPanel.tsx`, `paper-table-chat.ts`, `TableCellQuote.tsx`):
 - **Every cell opens its panel,** whatever it says. A found value shows its sentence and **Show in paper**. A Not confirmed cell shows the reading's answer and the sentence it gave, marked as not in the paper. **Read again** reads that one cell from the whole paper (`{"again": true, "cellKeys": [...]}`, `cellsByKey`), a found value too.
@@ -180,9 +180,20 @@ The user asked for both, with AI screening, and approved the database change. Fo
 - **Open in Chat** opens `/workspace/chat?thread=…`, and Chat reopens a conversation with its paper attached. It works once the answer is in, because leaving or closing the panel mid-answer stops the answer, as leaving Chat does.
 - **A cell with a conversation is marked,** and opens it again. A conversation deleted in Chat leaves the cell as new.
 
+**On the pilot** (#302, pilot 00298-9g4, `scratchpad/pw/p72-rows.cjs` with the test account). A new table "Rows check" in testtest, deleted afterwards with its conversation:
+- **Fill:** Sample size from the picker read 36 cells in 21 s. **Screen** "University students" ("are empirical studies whose participants are university students") read 36 in 15 s: Yes 18 · No 18, each with its reason, such as "No (Participants were teachers)".
+- **Sort:** Sample size from the highest (602, 484, 232, …) and then the lowest (5, 10, 10, …), all 36 in order. The Paper heading went newest first, A–Z, then back to the table's order, with a chip while sorted.
+- **Filter:** Yes on the screen column showed the 18 that say Yes, with the chip "University students: Yes"; clearing the chip showed all 36.
+- **Leave out:** one paper with a reason, then Undo, put it back in its place. "Leave out the 18 that say No" left 18 out; Left out listed each with "University students: No" and its sentence. Put all back returned them.
+- **Cell chat:** a found Sample size cell opened its card with the sentence. A question sent with Enter docked the panel beside the table without covering it (panel from x = 1008, table to x = 972 at 1440 px). The answer at Low came in 12 s with citations. Open in Chat showed the conversation "Sample size · <paper>", its paper attached, and the cell above the question. The cell was marked, and opened the conversation again.
+- **Fixed after the check:**
+  - A filter left the fill's message ("Read 36 cells: …") where the count of studies shown belongs. A new view now clears that message, but not one with Undo.
+  - The conversation mark was an icon only, hidden from screen readers. It now carries hidden words.
+- **Cost:** $0.032. The fills were $0.0138 and $0.0171 and the question $0.0011. No page errors.
+
 ## 4. Open items
 
-- **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.51 after the table's pilot checks.
+- **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.51 after the table's pilot checks, and $0.13 on 2026-10-29 after the rows check.
 - **Semantic index after the backfill**: the 14 updated papers keep their earlier embeddings until they are re-indexed.
 - From docs/41 §4, still to do: chart PNG and answer DOCX/PDF export, saved notes and sharing, a gap matrix, an agreement view, column suggestions written by the model.
 
