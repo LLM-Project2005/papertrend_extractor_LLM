@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { checkable, numberInQuote, numbersIn, quoteInText, toNumber, wordsOf, type CheckableText } from "@/lib/chart-reading";
 import { createChatCompletionResult } from "@/lib/openai";
-import { cellKey, type TableCell, type TableCells, type TableColumn } from "@/lib/paper-table";
+import { cellKey, yesNo, type TableCell, type TableCells, type TableColumn } from "@/lib/paper-table";
 import { paperParts, readPapers, type ReadablePaper } from "@/lib/paper-reading";
 
 type Complete = typeof createChatCompletionResult;
@@ -34,6 +34,8 @@ const KIND_HINTS: Record<TableColumn["kind"], string> = {
     " (a number: the value starts with it in digits, then its unit, e.g. '30 students'; where the paper gives only parts, the value is their total and the note the parts)",
   category:
     " (a short label: one to four words, worded the same way for the same thing in every paper, e.g. 'Quasi-experimental'; two labels only when the paper has both, separated by '; ')",
+  yesno:
+    " (yes or no: whether the study meets this; the value is 'Yes' or 'No', the quote the sentence that decides it, and the note why in a few words; reported is false only when the text gives no way to decide)",
 };
 
 // Lenient for the reasons given in chart-reading.ts: a strict schema threw
@@ -85,10 +87,16 @@ function paperText(paper: ReadablePaper): string {
 /** Checks one cell against its paper; only a value whose sentence is in the paper is kept. */
 export function checkCell(raw: RawCell | undefined, column: TableColumn, text: CheckableText): TableCell {
   if (!raw || !raw.reported) return { value: "", quote: "", note: "", status: "not_stated" };
-  const value = clean(raw.value, 240);
+  let value = clean(raw.value, 240);
   const quote = clean(raw.quote, 400);
   const note = clean(raw.note, 120);
   if (!value) return { value: "", quote: "", note: "", status: "not_stated" };
+  if (column.kind === "yesno") {
+    // Always "Yes" or "No", so a filter or a count reads them alike; anything else is not an answer.
+    const answer = yesNo(value);
+    if (!answer) return { value, quote, note, status: "unverified" };
+    value = answer;
+  }
   if (!quote || !quoteInText(quote, text)) return { value, quote, note, status: "unverified" };
   if (column.kind === "number") {
     const number = toNumber(value);

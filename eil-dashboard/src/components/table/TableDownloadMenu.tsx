@@ -2,12 +2,13 @@
 
 /*
  * The paper table's Download button (docs/42): one button and a short menu of
- * formats. Each file holds the columns shown.
+ * formats. Each file holds the columns and rows shown, in the order shown; the
+ * caption says so when the rows are filtered or sorted.
  */
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronDownIcon, DownloadIcon } from "@/components/ui/Icons";
-import { buttonClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
+import { buttonClass, menuItemClass, menuLabelClass, menuPanelClass } from "@/components/ui/controls";
 
 export type DownloadFormat = "csv" | "xlsx" | "png";
 
@@ -17,7 +18,16 @@ const FORMATS: Array<{ format: DownloadFormat; label: string }> = [
   { format: "png", label: "Image (.png)" },
 ];
 
-export default function TableDownloadMenu({ disabled, onDownload }: { disabled: boolean; onDownload: (format: DownloadFormat) => Promise<void> | void }) {
+export default function TableDownloadMenu({
+  disabled,
+  caption,
+  onDownload,
+}: {
+  disabled: boolean;
+  /** Which rows the files hold, when not every row in the table's own order. */
+  caption?: string;
+  onDownload: (format: DownloadFormat) => Promise<void> | void;
+}) {
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState<DownloadFormat | null>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -58,7 +68,7 @@ export default function TableDownloadMenu({ disabled, onDownload }: { disabled: 
         <div
           role="menu"
           aria-label="Download as"
-          className={`${menuPanelClass} absolute right-0 top-full z-30 mt-1.5 w-40`}
+          className={`${menuPanelClass} absolute right-0 top-full z-30 mt-1.5 ${caption ? "w-52" : "w-40"}`}
           onKeyDown={(event) => {
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             event.preventDefault();
@@ -67,6 +77,7 @@ export default function TableDownloadMenu({ disabled, onDownload }: { disabled: 
             items.current[(index + step + FORMATS.length) % FORMATS.length]?.focus();
           }}
         >
+          {caption ? <p className={menuLabelClass}>{caption}</p> : null}
           {FORMATS.map((entry, index) => (
             <button
               key={entry.format}

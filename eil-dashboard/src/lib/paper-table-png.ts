@@ -58,7 +58,7 @@ export function wrapLines(text: string, width: number, measure: Measure, maxLine
 }
 
 export function columnWidth(column: TableColumn): number {
-  return column.kind === "number" ? 160 : column.kind === "category" ? 180 : 260;
+  return column.kind === "yesno" ? 130 : column.kind === "number" ? 160 : column.kind === "category" ? 180 : 260;
 }
 
 export interface TableImageCell {

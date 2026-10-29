@@ -14,7 +14,7 @@ import { buttonClass, fieldClass } from "@/components/ui/controls";
 import { MAX_COLUMNS, columnChoiceKey, type TableColumn } from "@/lib/paper-table";
 import { COLUMN_PRESET_GROUPS, type ColumnPreset } from "@/lib/paper-table-presets";
 
-const KIND_LABEL: Record<TableColumn["kind"], string> = { text: "Words", number: "Number", category: "Label" };
+const KIND_LABEL: Record<TableColumn["kind"], string> = { text: "Words", number: "Number", category: "Label", yesno: "Yes or no" };
 
 function Choice({
   checked,

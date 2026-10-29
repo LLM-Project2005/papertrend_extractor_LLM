@@ -1727,6 +1727,13 @@ CREATE TABLE IF NOT EXISTS public.paper_tables (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- From 20261029_paper_table_rows.sql: the papers left out of a table, with
+-- their reasons, and the Chat conversation asked from each cell.
+ALTER TABLE public.paper_tables
+  ADD COLUMN IF NOT EXISTS left_out JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(left_out) = 'object');
+ALTER TABLE public.paper_tables
+  ADD COLUMN IF NOT EXISTS cell_chats JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(cell_chats) = 'object');
+
 CREATE INDEX IF NOT EXISTS idx_paper_tables_owner_project
   ON public.paper_tables(owner_user_id, project_id, updated_at DESC);
 

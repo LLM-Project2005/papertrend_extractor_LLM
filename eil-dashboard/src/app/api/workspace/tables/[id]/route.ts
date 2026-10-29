@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { PaperTableError, deletePaperTable, getPaperTable, updatePaperTable } from "@/lib/cloudsql/paper-table-repository";
-import { ColumnsSchema, TableNameSchema } from "@/lib/paper-table";
+import { ColumnsSchema, LeaveOutSchema, PutBackSchema, TableNameSchema } from "@/lib/paper-table";
 import { tablePapers } from "@/lib/paper-table-server";
 import { getDatabaseProvider } from "@/lib/server-env";
 
@@ -11,13 +11,14 @@ export const maxDuration = 60;
 
 /*
  * One paper table (docs/42): GET opens it with its rows (the repository's
- * papers now), PATCH renames it or changes its columns, DELETE removes it.
+ * papers now) and the papers it leaves out; PATCH renames it, changes its
+ * columns, or leaves papers out and puts them back; DELETE removes it.
  */
 
 const IdSchema = z.string().uuid();
 const UpdateSchema = z
-  .object({ name: TableNameSchema.optional(), columns: ColumnsSchema.optional() })
-  .refine((change) => change.name !== undefined || change.columns !== undefined, "Nothing to change.");
+  .object({ name: TableNameSchema.optional(), columns: ColumnsSchema.optional(), leaveOut: LeaveOutSchema.optional(), putBack: PutBackSchema.optional() })
+  .refine((change) => Object.values(change).some((value) => value !== undefined), "Nothing to change.");
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,8 +43,8 @@ export async function GET(request: Request, { params }: Params): Promise<Respons
   if ("error" in checked) return checked.error;
   try {
     const table = await getPaperTable(checked.user.id, checked.id);
-    const { rows, more } = await tablePapers(checked.user.id, table.projectId);
-    return NextResponse.json({ table, rows, more }, { headers: { "Cache-Control": "no-store" } });
+    const { rows, more, leftOutRows } = await tablePapers(checked.user.id, table.projectId, table.leftOut);
+    return NextResponse.json({ table, rows, more, leftOutRows }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return failure(error);
   }
@@ -53,7 +54,9 @@ export async function PATCH(request: Request, { params }: Params): Promise<Respo
   const checked = await guard(request, params);
   if ("error" in checked) return checked.error;
   const parsed = UpdateSchema.safeParse(await request.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: "A name of up to 120 characters, and at most 80 columns." }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "A name of up to 120 characters, at most 80 columns, and a reason of up to 200 characters." }, { status: 400 });
+  }
   try {
     return NextResponse.json({ table: await updatePaperTable(checked.user.id, checked.id, parsed.data) });
   } catch (error) {

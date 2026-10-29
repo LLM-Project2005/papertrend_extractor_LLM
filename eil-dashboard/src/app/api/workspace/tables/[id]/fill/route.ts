@@ -16,7 +16,8 @@ export const maxDuration = 600;
 
 /*
  * Reads a table's empty cells (docs/42): in the columns shown, every cell not
- * read yet and any whose reading failed; a hidden column is not read. With
+ * read yet and any whose reading failed; a hidden column, and a paper the
+ * table leaves out, are not read. With
  * {"again": true} ("Read again") it also reads each "Not stated" and "Not
  * confirmed" cell not yet read from the whole paper, and {"columnIds": [...]}
  * keeps either to those columns. The reply is a stream of JSON lines, one per
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let loaded;
   try {
     table = await getPaperTable(user.id, id);
-    loaded = await tablePapers(user.id, table.projectId);
+    loaded = await tablePapers(user.id, table.projectId, table.leftOut);
   } catch (error) {
     if (error instanceof PaperTableError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("paper_table_load_failed", { message: error instanceof Error ? error.message : "unknown_error" });
