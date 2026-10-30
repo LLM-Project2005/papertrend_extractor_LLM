@@ -75,13 +75,14 @@ export const marketingFeatures: MarketingFeature[] = [
 ];
 
 /**
- * The film under the front page's hero (2026-10-29): the 41-paper EIL
- * collection, a question, and the page its answer comes from. It plays from
- * YouTube; the poster is its frame at 0:07, served from this site.
+ * The film under the front page's hero (2026-10-29; the 99-paper cut since
+ * 2026-10-31): the EIL papers, a question, and the page its answer comes
+ * from. It plays from YouTube; the poster is its frame at 0:09, served from
+ * this site.
  */
 export const homeFilm = {
-  youtubeId: "QbjW9ytJqKM",
-  title: "Papertrend: fifteen years of English language research in 79 seconds",
+  youtubeId: "FsquHUMrtTE",
+  title: "Papertrend: nineteen years of English language research in 79 seconds",
   length: "1:19",
   poster: "/marketing/film/poster.webp",
 };
