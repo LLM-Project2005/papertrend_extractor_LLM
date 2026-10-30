@@ -39,7 +39,7 @@ export const chatPage: DocsPageBase = {
       id: "scope",
       title: "Scope: which papers an answer can use",
       body: [
-        "A chat opened inside a repository searches that repository. The line above the text box says what the next message will use, for example `Searching 38 analysed papers in testtest`. Only papers whose analysis succeeded are searched.",
+        "A chat opened inside a repository searches that repository. The line above the text box says what the next message will use, for example `Searching 99 analysed papers in EIL`. Only papers whose analysis succeeded are searched.",
       ],
       steps: [
         "Open the **+** menu under the text box and choose **Repository scope**.",
@@ -76,7 +76,7 @@ export const chatPage: DocsPageBase = {
       bullets: [
         "**Citations** are small numbers after a claim. Hover or focus a number to see the paper's title and year.",
         "**Source cards** under the answer list up to five papers or web pages; **N more** opens the full list. A paper card opens that paper's analysis in the Library.",
-        "**The coverage line** says how many papers the answer drew on, for example `Covered all 38 papers in testtest.` or `Based on 6 of 38 papers in testtest.` A focused answer reports the relevant evidence, not a reading of every paper.",
+        "**The coverage line** says how many papers the answer drew on, for example `Covered all 99 papers in EIL.` or `Based on 6 of 99 papers in EIL.` A focused answer reports the relevant evidence, not a reading of every paper.",
         "**Limitation lines** say when an answer may be incomplete, or could not be checked against the evidence. Read them before relying on the answer.",
         "Answers past about 2,400 characters are folded: **Show more** reveals the rest.",
         "Answers follow the language of the conversation, Thai or English, unless you ask for the other.",
