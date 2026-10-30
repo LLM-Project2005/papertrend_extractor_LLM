@@ -193,7 +193,9 @@ The user asked for both, with AI screening, and approved the database change. Fo
 
 ## 4. Open items
 
-- **NotebookLM comparison** and the **OpenRouter top-up**: left with the user. Credit was $0.51 after the table's pilot checks, and $0.13 on 2026-10-29 after the rows check.
+- **NotebookLM comparison**: left with the user.
+- **OpenRouter top-up**: done on 2026-10-29 with a new key, which all four services now read. Credit was $0.51 after the table's pilot checks, and $0.13 after the rows check.
+- **Released to production on 2026-10-29** with the user's go-ahead, after their professor approved it: the whole Table page, from #294 to #303, via release #304. Production web is 00105-yac; rollback is 00103-siw. A filter showing "19 of 36 studies shown" was checked on production.
 - **Semantic index after the backfill**: the 14 updated papers keep their earlier embeddings until they are re-indexed.
 - From docs/41 §4, still to do: chart PNG and answer DOCX/PDF export, saved notes and sharing, a gap matrix, an agreement view, column suggestions written by the model.
 
