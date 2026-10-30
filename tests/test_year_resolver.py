@@ -286,3 +286,68 @@ class UserMarkedUnknownTests(unittest.TestCase):
         self.assertEqual(resolution["year"], "Unknown")
         self.assertEqual(resolution["year_source"], "user")
         self.assertFalse(resolution["needs_review"])
+
+
+class YearsFromTheEilPapersTests(unittest.TestCase):
+    """Cases from the 99 EIL papers (2026-10-30) where a year came from the text
+    around the paper rather than its publication."""
+
+    def test_a_citation_with_a_page_number_is_not_the_publication_year(self) -> None:
+        text = (
+            "The Use of Lexical Cohesion in Expository Writing by Chinese Students\nAbstract\n"
+            "Kitao (1995: 129) views lexical cohesion as part of a writer's ability. As for Hoey (1991: 10), "
+            "lexical cohesion forms multiple relationships, and Brown’s (2004) concepts apply."
+        )
+        for llm_year in ("1991", "1995", "2004"):
+            with self.subTest(llm_year=llm_year):
+                self.assertEqual(resolve_publication_year(raw_text=text, llm_year=llm_year)["year"], "Unknown")
+
+    def test_a_year_in_running_prose_is_not_confirmed(self) -> None:
+        text = (
+            "The Effects of a Collaborative Task-based Approach\nAbstract\n"
+            "This course is part of the Business English program at the university. In 2007, the course "
+            "was still conducted based on a description written in 1993. WebQuests were first introduced "
+            "in 1995. Since the mid-1980s, learners have been studied."
+        )
+        for llm_year in ("2007", "1995", "1980"):
+            with self.subTest(llm_year=llm_year):
+                self.assertEqual(resolve_publication_year(raw_text=text, llm_year=llm_year)["year"], "Unknown")
+
+    def test_a_year_of_study_is_not_a_thai_volume(self) -> None:
+        # "ชั้นปีที่ 1" (first-year students) and the academic year 2562 made a
+        # second "issue" year that tied with the real one.
+        text = (
+            "Vol 15 NO 1 January - April 2020\nบทคัดย่อ\n"
+            "กลุ่มตัวอย่างคือนักศึกษาชั้นปีที่ 1 "
+            "ในภาคการศึกษาที่ 1 ปีการศึกษา 2562"
+        )
+        for llm_year in ("2020", "Unknown"):
+            with self.subTest(llm_year=llm_year):
+                self.assertEqual(resolve_publication_year(raw_text=text, llm_year=llm_year)["year"], "2020")
+
+    def test_an_issue_date_beats_the_journal_copyright_line(self) -> None:
+        text = (
+            "Available online at https://www.rsu.ac.th/rjas \n"
+            "Rangsit Journal of Arts and Sciences, January-June 2016 \n \n"
+            "                                 RJAS Vol. 6 No. 1, pp. 49-65\n"
+            "Copyright © 2011, Rangsit University\n"
+            "Effects of a Research-based Learning Approach"
+        )
+        for llm_year in ("2016", "2011", "Unknown"):
+            with self.subTest(llm_year=llm_year):
+                resolution = resolve_publication_year(raw_text=text, llm_year=llm_year)
+                self.assertEqual(resolution["year"], "2016")
+                self.assertIn("explicit_publication:issue", resolution["year_source"])
+
+    def test_a_thai_issue_date_in_parentheses_is_not_a_citation(self) -> None:
+        text = (
+            "ภาษาปริทัศน์ ฉบับที่ 38 "
+            "(มิถุนายน – ธันวาคม 2566)   | 163\n"
+            "The Effects of Speaking Portfolios on Interactional Competence\nAbstract\n"
+            "Interactional competence has been studied (Abe & Roever, 2019; Hall et al., 2011; Lam, 2015; "
+            "May et al., 2019; Plough et al., 2018)."
+        )
+        for llm_year in ("2023", "Unknown"):
+            with self.subTest(llm_year=llm_year):
+                self.assertEqual(resolve_publication_year(raw_text=text, llm_year=llm_year)["year"], "2023")
+        self.assertEqual(resolve_publication_year(raw_text=text, llm_year="2018")["year"], "2023")

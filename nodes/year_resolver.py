@@ -21,8 +21,25 @@ _EXPLICIT_PUBLICATION_RE = re.compile(
 )
 # A journal issue line ("Vol 28, No 2, May - August 2021", "Volume 45, Issue 2,
 # July-December 2023", "\u0e1b\u0e35\u0e17\u0e35\u0e48 45 \u0e09\u0e1a\u0e31\u0e1a\u0e17\u0e35\u0e48 2/2566") dates the publication.
+# "\u0e0a\u0e31\u0e49\u0e19\u0e1b\u0e35\u0e17\u0e35\u0e48 1" is a student's year of study, not a volume.
 _ISSUE_LINE_RE = re.compile(
-    r"(?:\bvol(?:ume)?\.?\s*:?\s*\d+|\bissue\s*:?\s*\d+|\bno\.?\s*:?\s*\d+|\u0e1b\u0e35\u0e17\u0e35\u0e48\s*\d+|\u0e09\u0e1a\u0e31\u0e1a\u0e17\u0e35\u0e48\s*\d+)",
+    r"(?:\bvol(?:ume)?\.?\s*:?\s*\d+|\bissue\s*:?\s*\d+|\bno\.?\s*:?\s*\d+|(?<!\u0e0a\u0e31\u0e49\u0e19)\u0e1b\u0e35\u0e17\u0e35\u0e48\s*\d+|\u0e09\u0e1a\u0e31\u0e1a\u0e17\u0e35\u0e48\s*\d+)",
+    re.IGNORECASE,
+)
+_MONTH_RE = re.compile(
+    r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|"
+    r"sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|autumn|fall|winter)\b\.?|"
+    r"\u0e21\u0e01\u0e23\u0e32\u0e04\u0e21|\u0e01\u0e38\u0e21\u0e20\u0e32\u0e1e\u0e31\u0e19\u0e18\u0e4c|\u0e21\u0e35\u0e19\u0e32\u0e04\u0e21|"
+    r"\u0e40\u0e21\u0e29\u0e32\u0e22\u0e19|\u0e1e\u0e24\u0e29\u0e20\u0e32\u0e04\u0e21|\u0e21\u0e34\u0e16\u0e38\u0e19\u0e32\u0e22\u0e19|"
+    r"\u0e01\u0e23\u0e01\u0e0e\u0e32\u0e04\u0e21|\u0e2a\u0e34\u0e07\u0e2b\u0e32\u0e04\u0e21|\u0e01\u0e31\u0e19\u0e22\u0e32\u0e22\u0e19|"
+    r"\u0e15\u0e38\u0e25\u0e32\u0e04\u0e21|\u0e1e\u0e24\u0e28\u0e08\u0e34\u0e01\u0e32\u0e22\u0e19|\u0e18\u0e31\u0e19\u0e27\u0e32\u0e04\u0e21",
+    re.IGNORECASE,
+)
+# A year that dates an event in the text rather than the paper: "In 2007, the
+# course...", "introduced in 1995", "the 1980s", "\u0e1b\u0e35\u0e01\u0e32\u0e23\u0e28\u0e36\u0e01\u0e29\u0e32 2562" (academic year).
+_EVENT_YEAR_BEFORE_RE = re.compile(
+    r"(?:\b(?:in|since|from|until|till|during|before|after|between|around|by|to)\s*|"
+    r"(?:\u0e1b\u0e35\u0e01\u0e32\u0e23\u0e28\u0e36\u0e01\u0e29\u0e32|\u0e20\u0e32\u0e04\u0e01\u0e32\u0e23\u0e28\u0e36\u0e01\u0e29\u0e32|\u0e20\u0e32\u0e04\u0e40\u0e23\u0e35\u0e22\u0e19)(?:\u0e17\u0e35\u0e48\s*\d+)?\s*)$",
     re.IGNORECASE,
 )
 _THESIS_RE = re.compile(r"\b(?:thesis|dissertation)\b|\u0e27\u0e34\u0e17\u0e22\u0e32\u0e19\u0e34\u0e1e\u0e19\u0e18\u0e4c|\u0e2a\u0e32\u0e23\u0e19\u0e34\u0e1e\u0e19\u0e18\u0e4c", re.IGNORECASE)
@@ -474,6 +491,8 @@ def _add_text_candidates(
             confidence -= 0.20
         if publication_kind != "thesis_year" and _WEAK_CONTEXT_RE.search(near):
             confidence -= 0.22
+        if publication_kind is None and _dates_an_event(text, start, end):
+            confidence -= 0.20
         if _is_citation_mention(text, start, end):
             confidence -= 0.30
         if source == "body_text":
@@ -554,13 +573,26 @@ def _is_citation_mention(text: str, start: int, end: int) -> bool:
     open_index = before.rfind("(")
     if open_index != -1 and ")" not in before[open_index:]:
         inside = before[open_index + 1 :]
-        if re.search(r"[^\W\d_]{2,}", inside) and not re.search(r"\b(?:vol|no|issue|pp)\b", inside, re.IGNORECASE):
+        # "(June – December 2566)" is an issue date, not a citation.
+        is_date = not _MONTH_RE.sub("", inside).strip(" \t-–—/,.")
+        if (
+            not is_date
+            and re.search(r"[^\W\d_]{2,}", inside)
+            and not re.search(r"\b(?:vol|no|issue|pp)\b", inside, re.IGNORECASE)
+        ):
             return True
-    if re.search(r"[^\W\d_][\w'\-]+(?:\s+et\s+al\.?)?\s*\($", before) and after[:1] in {")", ",", ";", "a", "b"}:
+    # "Smith (2010)", "Brown’s (2004)", and with a page: "Hoey (1991: 10)".
+    if re.search(r"[^\W\d_][\w'’\-]+(?:\s+et\s+al\.?)?\s*\($", before) and after[:1] in {")", ",", ";", ":", "a", "b"}:
         return True
-    if re.search(r"\b[A-Z]\.\s*\($", before):
+    if re.search(r"\b[A-Z]\.\s*\($", before) or re.search(r"\bet\s+al\.?,?\s*$", before):
         return True
     return bool(re.search(r"[^\W\d_]{2,},\s*$", before[-30:]) and not _ISSUE_LINE_RE.search(before))
+
+
+def _dates_an_event(text: str, start: int, end: int) -> bool:
+    """Whether this year dates something the paper describes, not the paper."""
+
+    return bool(_EVENT_YEAR_BEFORE_RE.search(text[max(0, start - 24) : start])) or text[end : end + 1] == "s"
 
 
 def _year_or_unknown(raw_year: str) -> str:
@@ -748,6 +780,10 @@ def _front_matter_kind(text: str, year_start: int, is_thesis: bool) -> Optional[
     line_start = text.rfind("\n", 0, year_start) + 1
     before = text[max(line_start, year_start - 80) : year_start]
     if _ISSUE_LINE_RE.search(before):
+        return "issue"
+    # The volume can follow the date: "January-June 2016\nRJAS Vol. 6 No. 1".
+    following = normalize_whitespace(text[year_start + 4 : year_start + 160])[:40]
+    if _MONTH_RE.search(before[-24:]) and _ISSUE_LINE_RE.search(following):
         return "issue"
     if is_thesis and (
         _THAI_ACADEMIC_YEAR_RE.search(before) or re.search(r"academic\s+year\s*$", before, re.IGNORECASE)
