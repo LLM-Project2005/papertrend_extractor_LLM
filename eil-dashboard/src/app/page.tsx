@@ -108,7 +108,7 @@ export default function LandingPage() {
             <h2 id="film-title" className={sectionTitleClass}>
               See it in 79 seconds.
             </h2>
-            <p className={`mt-4 max-w-2xl ${leadClass}`}>Forty-one papers, fifteen years of English language research, and one question: what changed?</p>
+            <p className={`mt-4 max-w-2xl ${leadClass}`}>Ninety-nine papers, nineteen years of English language research, and one question: what changed?</p>
             <div className="mt-10">
               <FilmPlayer youtubeId={homeFilm.youtubeId} title={homeFilm.title} length={homeFilm.length} poster={homeFilm.poster} />
             </div>
