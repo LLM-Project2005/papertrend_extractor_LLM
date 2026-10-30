@@ -39,3 +39,5 @@ The user chose YouTube, with the film in a new section under the hero.
   - `site-headers`: the frame-src.
   - `legal-providers`: YouTube is named in the privacy policy.
 - **Local production build:** at 1440 px and 390 px, in light and dark, no YouTube request was made before play, and the player loaded after play with nothing blocked.
+- **Pilot (00299-kx2) and production (00105-yac, release #304, 2026-10-29):** `scratchpad/pw/p73-film.cjs` was run in Chrome on both, with the same results. No YouTube request was made before play. Nine seconds after pressing play, the film was 7.5 s in, with nothing blocked. Both https://research-trend-analysis.web.app and https://papertrend.web.app serve the section.
+- **Captions:** the player showed YouTube's automatic English captions. Uploading `pt-papertrail.srt` in YouTube Studio replaces them with the script's own wording.
