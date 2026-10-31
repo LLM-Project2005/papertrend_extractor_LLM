@@ -47,23 +47,23 @@ export default function CreateEntityModal({
     <Modal onClose={onClose}>
       <form
         onSubmit={onSubmit}
-        className={`max-h-[92vh] w-full overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)] ${wide ? "max-w-3xl" : "max-w-lg"}`}
+        className={`max-h-[92vh] w-full overflow-y-auto rounded-lg border border-hairline bg-surface text-ink shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)] ${wide ? "max-w-3xl" : "max-w-lg"}`}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
+        <div className="flex items-start justify-between gap-4 border-b border-hairline px-6 py-5 sm:px-7">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+            <p className="text-xs font-semibold uppercase tracking-normal text-mute">
               Create
             </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-900 dark:text-white">
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-ink">
               {title}
             </h2>
-            <p className="mt-2 text-sm leading-7 text-slate-500 dark:text-[#9b9b9b]">{description}</p>
+            <p className="mt-2 text-sm leading-7 text-mute">{description}</p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#c8c8c8] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-hairline bg-surface text-mute transition-colors hover:bg-subtle hover:text-ink"
             aria-label={`Close ${title}`}
           >
             <CloseIcon className="h-4 w-4" />
@@ -72,13 +72,13 @@ export default function CreateEntityModal({
 
         <div className="space-y-5 px-6 py-6 sm:px-7">
           <label className="grid gap-3">
-            <span className="text-sm font-medium text-slate-700 dark:text-white">{fieldLabel}</span>
+            <span className="text-sm font-medium text-ink">{fieldLabel}</span>
             <input
               value={value}
               onChange={(event) => onValueChange(event.target.value)}
               placeholder={fieldPlaceholder}
               autoFocus
-              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-500 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-white"
+              className="rounded-xl border border-hairline bg-surface px-4 py-3 text-sm text-ink outline-none transition-colors placeholder:text-mute focus:border-slate-900 dark:focus:border-white"
             />
           </label>
 
@@ -91,18 +91,18 @@ export default function CreateEntityModal({
           ) : null}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
+        <div className="flex items-center justify-between gap-3 border-t border-hairline px-6 py-5 sm:px-7">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+            className="rounded-xl border border-hairline bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+            className="rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-canvas transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-[#e5e5e5]"
           >
             {busy ? busyLabel : submitLabel}
           </button>

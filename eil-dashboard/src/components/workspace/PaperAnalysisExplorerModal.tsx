@@ -468,12 +468,12 @@ function SectionSummaryCard({
   const fullText = cleanDisplayText(value);
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+    <article className="rounded-xl border border-hairline bg-canvas px-5 py-5">
+      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
         {label}
       </p>
       {bullets.length > 0 ? (
-        <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-[#d0d0d0]">
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-ink">
           {bullets.map((bullet, index) => (
             <li key={`${label}-${index}`} className="flex gap-2">
               <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-[#8e8e8e]" />
@@ -482,17 +482,17 @@ function SectionSummaryCard({
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+        <p className="mt-3 text-sm leading-6 text-mute">
           No extracted text was available for this section.
         </p>
       )}
 
       {fullText ? (
-        <details className="mt-4 border-t border-slate-200 pt-4 dark:border-[#242424]">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+        <details className="mt-4 border-t border-hairline pt-4">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-normal text-mute">
             View full extracted text
           </summary>
-          <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-[#cfcfcf]">
+          <p className="mt-3 text-sm leading-7 text-body">
             {fullText}
           </p>
         </details>
@@ -519,10 +519,10 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
   const yearSource = extracted.year ? describeYearSource(extracted.year.source) : "";
   const hasYear = Boolean(year && year !== "Unknown");
   return (
-    <section className="grid gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505] lg:grid-cols-2">
+    <section className="grid gap-4 rounded-lg border border-hairline bg-surface px-4 py-4 lg:grid-cols-2">
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Publication year</p>
-        <p className="mt-2 text-sm text-slate-800 dark:text-[#e5e5e5]">
+        <p className="text-xs font-semibold uppercase text-mute">Publication year</p>
+        <p className="mt-2 text-sm text-ink">
           {hasYear ? (
             <>
               <span className="font-semibold">{year}</span>
@@ -533,40 +533,40 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
           )}
         </p>
         {hasYear && extracted.year?.evidence ? (
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#999]">&ldquo;{extracted.year.evidence}&rdquo;</p>
+          <p className="mt-1 text-xs leading-5 text-mute">&ldquo;{extracted.year.evidence}&rdquo;</p>
         ) : null}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Research type</p>
+        <p className="text-xs font-semibold uppercase text-mute">Research type</p>
         {extracted.typology ? (
           <>
-            <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-[#e5e5e5]">
+            <p className="mt-2 text-sm font-semibold text-ink">
               {extracted.typology.primary}
               {extracted.typology.secondary ? <span className="font-normal"> (also {extracted.typology.secondary})</span> : null}
             </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#999]">{extracted.typology.verdict}</p>
+            <p className="mt-1 text-xs leading-5 text-mute">{extracted.typology.verdict}</p>
           </>
         ) : (
-          <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">Not classified.</p>
+          <p className="mt-2 text-sm text-mute">Not classified.</p>
         )}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">The paper&rsquo;s own keywords</p>
+        <p className="text-xs font-semibold uppercase text-mute">The paper&rsquo;s own keywords</p>
         {extracted.authorKeywords.length ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {extracted.authorKeywords.map((keyword) => (
-              <span key={keyword} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 dark:bg-[#111] dark:text-[#d0d0d0]">
+              <span key={keyword} className="rounded-full bg-subtle px-2.5 py-1 text-xs text-ink">
                 {keyword}
               </span>
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">The paper prints no keyword list.</p>
+          <p className="mt-2 text-sm text-mute">The paper prints no keyword list.</p>
         )}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Methods found</p>
-        <p className="mt-2 text-sm text-slate-800 dark:text-[#e5e5e5]">
+        <p className="text-xs font-semibold uppercase text-mute">Methods found</p>
+        <p className="mt-2 text-sm text-ink">
           {extracted.methodTopics.length ? extracted.methodTopics.join(", ") : "None identified as separate topics."}
         </p>
       </div>
@@ -578,8 +578,8 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
       ) : null}
       {extracted.analysisNotes.length ? (
         <div className="lg:col-span-2">
-          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Analysis notes</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5 text-slate-600 dark:text-[#bbb]">
+          <p className="text-xs font-semibold uppercase text-mute">Analysis notes</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5 text-body">
             {extracted.analysisNotes.map((note) => (
               <li key={note}>{note}</li>
             ))}
@@ -833,7 +833,7 @@ export function PaperExplorerPanel({
                     void saveCorrection();
                   }}
                 >
-                  <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                  <label className="text-xs text-mute">
                     Title
                     <input
                       autoFocus
@@ -842,10 +842,10 @@ export function PaperExplorerPanel({
                       value={titleDraft}
                       onChange={(event) => setTitleDraft(event.target.value)}
                       aria-describedby={correctionError ? "correction-error" : undefined}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white sm:text-sm"
+                      className="mt-1 w-full rounded-lg border border-hairline-strong bg-surface px-3 py-2 text-base text-ink sm:text-sm"
                     />
                   </label>
-                  <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                  <label className="text-xs text-mute">
                     Year
                     <input
                       name="year"
@@ -856,26 +856,26 @@ export function PaperExplorerPanel({
                       placeholder="Unknown"
                       inputMode="numeric"
                       maxLength={4}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white sm:text-sm"
+                      className="mt-1 w-full rounded-lg border border-hairline-strong bg-surface px-3 py-2 text-base text-ink sm:text-sm"
                     />
                   </label>
                   <div className="flex items-end gap-2">
                     <button
                       type="submit"
                       disabled={correctionSaving}
-                      className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+                      className="rounded-lg bg-ink px-3 py-2 text-sm font-medium text-canvas disabled:opacity-60"
                     >
                       {correctionSaving ? "Saving…" : "Save"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setCorrecting(false)}
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                      className="rounded-lg border border-hairline px-3 py-2 text-sm text-body"
                     >
                       Cancel
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-[#8e8e8e] sm:col-span-3">
+                  <p className="text-xs text-mute sm:col-span-3">
                     Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
                   </p>
                   {correctionError ? (
@@ -1115,11 +1115,11 @@ export function PaperExplorerPanel({
           ) : null}
 
           {!loading && !error && !detail?.available ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
-              <p className="text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
+            <div className="rounded-xl border border-hairline bg-canvas px-5 py-8">
+              <p className="text-base font-medium text-ink">
                 Pipeline analysis is not ready yet for this file.
               </p>
-              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+              <p className="mt-2 text-sm leading-6 text-mute">
                 The PDF is still available, but the extracted node outputs have not been written
                 back for this run yet.
               </p>
@@ -1147,25 +1147,25 @@ export function PaperExplorerPanel({
               {activeTab === "overview" ? (
                 <div className="space-y-5">
                   {detail.classification ? (
-                    <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505]">
+                    <section className="rounded-lg border border-hairline bg-surface px-4 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">{detail.classification.taxonomyName}</p>
-                          <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{detail.classification.primaryCategory}</p>
+                          <p className="text-xs font-semibold uppercase text-mute">{detail.classification.taxonomyName}</p>
+                          <p className="mt-2 text-lg font-semibold text-ink">{detail.classification.primaryCategory}</p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${detail.classification.status === "current" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>
                           {detail.classification.status === "current" ? "Current profile" : "Needs reclassification"}
                         </span>
                       </div>
-                      {detail.classification.additionalCategories.length ? <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">Also: {detail.classification.additionalCategories.join(", ")}</p> : null}
-                      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#bbb]">{detail.classification.rationale}</p>
-                      <p className="mt-3 text-xs text-slate-500 dark:text-[#8f8f8f]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
+                      {detail.classification.additionalCategories.length ? <p className="mt-2 text-sm text-mute">Also: {detail.classification.additionalCategories.join(", ")}</p> : null}
+                      <p className="mt-3 text-sm leading-6 text-body">{detail.classification.rationale}</p>
+                      <p className="mt-3 text-xs text-mute">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
                     </section>
                   ) : null}
                   {detail.extracted ? <ExtractedDetails extracted={detail.extracted} year={detail.year} /> : null}
                   <section className="grid gap-4 lg:grid-cols-3">
-                    <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+                    <article className="rounded-xl border border-hairline bg-canvas px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
                         Topical coverage
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1173,22 +1173,22 @@ export function PaperExplorerPanel({
                           detail.topics.slice(0, 8).map((topic) => (
                             <span
                               key={topic}
-                              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-xs font-medium text-ink"
                             >
                               {themes ? <ThemeDot color={themes.get(topicKey(topic))?.color ?? OTHER_THEME_COLOR} /> : null}
                               {topic}
                             </span>
                           ))
                         ) : (
-                          <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                          <span className="text-sm text-mute">
                             No topic labels were stored.
                           </span>
                         )}
                       </div>
                     </article>
 
-                    <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+                    <article className="rounded-xl border border-hairline bg-canvas px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
                         Grounded keywords
                       </p>
                       <div className="mt-3 space-y-2">
@@ -1196,46 +1196,46 @@ export function PaperExplorerPanel({
                           detail.keywords.slice(0, 5).map((keyword, index) => (
                             <div
                               key={`${keyword.keyword}-${index}`}
-                              className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                              className="flex items-start justify-between gap-3 rounded-lg border border-hairline bg-surface px-3 py-3"
                             >
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                                <p className="text-sm font-medium text-ink">
                                   {keyword.keyword}
                                 </p>
-                                <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#8e8e8e]">
+                                <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-mute">
                                   {themes ? <ThemeDot color={themes.get(topicKey(keyword.topic || ""))?.color ?? OTHER_THEME_COLOR} /> : null}
                                   {keyword.topic || "Unclassified topic"}
                                 </p>
                               </div>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+                              <span className="rounded-full bg-subtle px-2.5 py-1 text-[11px] font-semibold text-body">
                                 {keyword.frequency}
                               </span>
                             </div>
                           ))
                         ) : (
-                          <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                          <p className="text-sm text-mute">
                             No grounded keyword rows were available.
                           </p>
                         )}
                       </div>
                     </article>
 
-                    <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+                    <article className="rounded-xl border border-hairline bg-canvas px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
                         Facet highlights
                       </p>
                       <div className="mt-3 space-y-3">
                         {facetGroups.length > 0 ? (
                           facetGroups.map((group) => (
                             <div key={group.label}>
-                              <p className="text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
+                              <p className="text-xs uppercase tracking-normal text-mute">
                                 {group.label}
                               </p>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {group.items.map((item) => (
                                   <span
                                     key={`${group.label}-${item}`}
-                                    className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
+                                    className="rounded-full bg-surface px-3 py-1.5 text-xs font-medium text-ink"
                                   >
                                     {item}
                                   </span>
@@ -1244,7 +1244,7 @@ export function PaperExplorerPanel({
                             </div>
                           ))
                         ) : (
-                          <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                          <p className="text-sm text-mute">
                             No analytical facet labels were stored.
                           </p>
                         )}
@@ -1302,14 +1302,14 @@ export function PaperExplorerPanel({
                     <button
                       type="button"
                       onClick={() => setPreviewAttempt((attempt) => attempt + 1)}
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                      className="rounded-lg border border-hairline px-3 py-2 text-sm font-medium text-ink"
                     >
                       Refresh preview
                     </button>
                     <button
                       type="button"
                       onClick={() => void onOpenInNewTab()}
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                      className="rounded-lg border border-hairline px-3 py-2 text-sm font-medium text-ink"
                     >
                       Open in new tab
                     </button>

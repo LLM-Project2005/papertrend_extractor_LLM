@@ -280,7 +280,7 @@ export default function TrackAnalysis({
     return (
       <div className="space-y-6">
         <section className="app-surface px-5 py-5">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Research areas</h2>
+          <h2 className="text-xl font-semibold text-ink">Research areas</h2>
           <Takeaway>Nothing to show: this repository does not sort papers into research areas.</Takeaway>
         </section>
         <CategoriesOffNotice />
@@ -301,7 +301,7 @@ export default function TrackAnalysis({
   return (
     <div className="space-y-6">
       <section className="app-surface px-5 py-5">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+        <h2 className="text-xl font-semibold text-ink">
           Research areas
         </h2>
         {lead && classifiedPapers > 0 ? (
@@ -318,7 +318,7 @@ export default function TrackAnalysis({
 
       {orderedCharts.includes("track_year_stacked") && stackedData.length > 0 && (
         <section className="app-surface px-5 py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+          <h3 className="text-base font-semibold text-ink">
             Papers per research area per year
           </h3>
           <div className="mt-4 h-[340px]">
@@ -376,10 +376,10 @@ export default function TrackAnalysis({
 
       {orderedCharts.includes("track_cooccurrence") && coMatrix.length > 0 && (
         <section className="app-surface px-5 py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+          <h3 className="text-base font-semibold text-ink">
             Research area co-occurrence
           </h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-mute">
             How often research areas appear together on the same paper. The diagonal counts each area&apos;s own papers.
           </p>
           <div className="mt-4">
@@ -407,16 +407,16 @@ export default function TrackAnalysis({
       {orderedCharts.includes("topics_per_track") &&
       Object.keys(topicsPerTrack).length > 0 ? (
         <section className="app-surface px-5 py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+          <h3 className="text-base font-semibold text-ink">
             Top themes per research area
           </h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-mute">
             The themes most papers in each research area take up, in each theme&apos;s colour.
           </p>
           {/* A research area with no paper in the filters took a quarter of the
               card to say so (2026-10-24 review); it is named in one line instead. */}
           {Object.entries(topicsPerTrack).some(([, data]) => data.length === 0) ? (
-            <p className="mt-2 text-xs text-slate-600 dark:text-[#a3a3a3]">
+            <p className="mt-2 text-xs text-body">
               No papers in the current filters for{" "}
               {Object.entries(topicsPerTrack)
                 .filter(([, data]) => data.length === 0)
@@ -443,10 +443,10 @@ export default function TrackAnalysis({
                 <div key={track} className="min-w-0">
                   {/* No research-area colour here: the bars are themes, and
                       one card means one thing by its colours. */}
-                  <p className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">
+                  <p className="mb-3 text-sm font-semibold text-ink">
                     <span>{category.label}</span>
                     {category.description ? (
-                      <span className="ml-2 font-normal text-slate-500 dark:text-slate-400">
+                      <span className="ml-2 font-normal text-mute">
                         {category.description}
                       </span>
                     ) : null}
@@ -504,7 +504,7 @@ export default function TrackAnalysis({
                       />
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No papers in this research area match the current filters.</p>
+                    <p className="text-sm text-mute">No papers in this research area match the current filters.</p>
                   )}
                 </div>
               );

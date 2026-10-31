@@ -728,7 +728,8 @@ test("the dashboard's loading fallback is the workspace's own, and no dashboard 
 
   const { default: Heatmap } = await import("../src/components/Heatmap");
   const heatmap = draw(Heatmap, { rows: ["Reading", "Writing"], cols: ["2020", "2021"], values: [[1, 0], [2, 3]], title: "Themes by year" });
-  const darkText = (open: string) => classesOf(open).some((name) => name.startsWith("dark:text-"));
+  // A colour for dark mode: a dark: twin, or a theme token that has its own dark value (2026-10-31).
+  const darkText = (open: string) => classesOf(open).some((name) => name.startsWith("dark:text-") || /^text-(ink|body|mute)$/.test(name));
   assert.ok(darkText(/<h4\b[^>]*>/.exec(heatmap)?.[0] ?? ""), "the title has a dark colour");
   assert.ok(darkText(/<th\b[^>]*>2020<\/th>/.exec(heatmap)?.[0] ?? ""), "the column headers have a dark colour");
   assert.ok(darkText(/<td\b[^>]*title="Reading"[^>]*>/.exec(heatmap)?.[0] ?? ""), "the row labels have a dark colour");

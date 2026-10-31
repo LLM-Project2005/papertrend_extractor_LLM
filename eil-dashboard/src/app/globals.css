@@ -35,6 +35,11 @@
   --accent-ink: 29 78 216;
   --focus: 37 99 235;
 
+  /* Evidence, the one yellow: the highlighter and its edge. Not themed: a
+     highlighter is the same yellow on white paper and on black. */
+  --highlight: 250 204 21;
+  --evidence: 234 179 8;
+
   /* Stacked, offset shadows - a near layer and a far one - that sit under a
      1px hairline border rather than replacing it. */
   --shadow-raise: 0 1px 1px rgb(0 0 0 / 0.02), 0 1px 3px rgb(0 0 0 / 0.04);
@@ -171,6 +176,12 @@ dd {
 input,
 textarea {
   caret-color: rgb(var(--accent));
+}
+
+/* Checkboxes and radios in ink, as the Library's are, rather than the
+   browser's own blue (2026-10-31, UI audit). */
+:where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: rgb(var(--ink));
 }
 
 /* Scrollbars: thin, on a clear track, in the theme's hairline colour. */
@@ -399,7 +410,7 @@ html:focus-within {
 
 /* Text a model read a value from: the PDF viewer's warm marker, as a sweep. */
 .evidence-mark {
-  background-image: linear-gradient(rgb(250 204 21 / 0.42), rgb(250 204 21 / 0.42));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.42), rgb(var(--highlight) / 0.42));
   background-repeat: no-repeat;
   background-size: 0% 100%;
   border-radius: 3px;
@@ -413,7 +424,7 @@ html:focus-within {
 }
 
 .dark .evidence-mark {
-  background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.28), rgb(var(--highlight) / 0.28));
 }
 
 /*
@@ -465,15 +476,19 @@ html:focus-within {
   position: relative;
 }
 
+/* Each dot's box runs the length of the line with the dot drawn at its start,
+   so it travels by transform alone: translate's percentages are the box's own
+   length, which is the line's (Hallmark 10a: never animate top or left). */
 .flow-line > i {
+  --dot: rgb(var(--accent));
   position: absolute;
   top: -3px;
   left: 0;
-  width: 7px;
+  width: 100%;
   height: 7px;
-  border-radius: 9999px;
-  background: rgb(var(--accent));
+  background: radial-gradient(circle 3.5px at 3.5px 50%, var(--dot) 96%, transparent 100%);
   opacity: 0;
+  pointer-events: none;
 }
 
 .flow-line[data-on="true"] > i {
@@ -485,14 +500,17 @@ html:focus-within {
 }
 
 .flow-line > i:nth-child(3) {
+  --dot: rgb(var(--evidence));
   animation-delay: 1.6s;
-  background: rgb(234 179 8);
 }
 
 @media (max-width: 1023.98px) {
   .flow-line > i {
     top: 0;
     left: -3px;
+    width: 7px;
+    height: 100%;
+    background: radial-gradient(circle 3.5px at 50% 3.5px, var(--dot) 96%, transparent 100%);
   }
   .flow-line[data-on="true"] > i {
     animation-name: flow-y;
@@ -501,7 +519,7 @@ html:focus-within {
 
 @keyframes flow-x {
   0% {
-    left: 0;
+    transform: translateX(0);
     opacity: 0;
   }
   12%,
@@ -509,14 +527,14 @@ html:focus-within {
     opacity: 1;
   }
   100% {
-    left: calc(100% - 7px);
+    transform: translateX(calc(100% - 7px));
     opacity: 0;
   }
 }
 
 @keyframes flow-y {
   0% {
-    top: 0;
+    transform: translateY(0);
     opacity: 0;
   }
   12%,
@@ -524,7 +542,7 @@ html:focus-within {
     opacity: 1;
   }
   100% {
-    top: calc(100% - 7px);
+    transform: translateY(calc(100% - 7px));
     opacity: 0;
   }
 }
@@ -550,7 +568,7 @@ html:focus-within {
       from var(--sweep),
       transparent 0deg,
       rgb(var(--accent) / var(--arc)) 60deg,
-      rgb(234 179 8 / calc(var(--arc) * 0.8)) 110deg,
+      rgb(var(--evidence) / calc(var(--arc) * 0.8)) 110deg,
       transparent 170deg,
       transparent 360deg
     ),
@@ -596,7 +614,7 @@ html:focus-within {
 .mark-sweep {
   padding: 0 2px;
   border-radius: 3px;
-  background-image: linear-gradient(rgb(250 204 21 / 0.42), rgb(250 204 21 / 0.42));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.42), rgb(var(--highlight) / 0.42));
   background-repeat: no-repeat;
   background-size: 0% 100%;
   box-decoration-break: clone;
@@ -605,7 +623,7 @@ html:focus-within {
 }
 
 .dark .mark-sweep {
-  background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.28), rgb(var(--highlight) / 0.28));
 }
 
 @keyframes mark-sweep {
@@ -752,15 +770,15 @@ html:focus-within {
  * readable through it, arriving with one short pulse.
  */
 .pdf-evidence-mark {
-  background: rgb(250 204 21 / 0.42);
+  background: rgb(var(--highlight) / 0.42);
   mix-blend-mode: multiply;
-  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.35);
+  box-shadow: 0 0 0 1px rgb(var(--evidence) / 0.35);
   animation: pdf-evidence-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* The Evidence tab's other passages: marked, lighter than the one in focus. */
 .pdf-evidence-mark-soft {
-  background: rgb(250 204 21 / 0.14);
+  background: rgb(var(--highlight) / 0.14);
   mix-blend-mode: multiply;
 }
 
@@ -772,7 +790,7 @@ html:focus-within {
   }
   60% {
     opacity: 1;
-    box-shadow: 0 0 0 4px rgb(234 179 8 / 0.25);
+    box-shadow: 0 0 0 4px rgb(var(--evidence) / 0.25);
   }
   100% {
     opacity: 1;
@@ -786,22 +804,22 @@ html:focus-within {
  * dark page.
  */
 .text-evidence-mark {
-  background: rgb(250 204 21 / 0.5);
+  background: rgb(var(--highlight) / 0.5);
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.45);
+  box-shadow: 0 0 0 1px rgb(var(--evidence) / 0.45);
 }
 
 .text-evidence-mark-soft {
-  background: rgb(250 204 21 / 0.18);
+  background: rgb(var(--highlight) / 0.18);
   border-radius: 2px;
 }
 
 .dark .text-evidence-mark {
-  background: rgb(250 204 21 / 0.32);
+  background: rgb(var(--highlight) / 0.32);
 }
 
 .dark .text-evidence-mark-soft {
-  background: rgb(250 204 21 / 0.12);
+  background: rgb(var(--highlight) / 0.12);
 }
 
 /*

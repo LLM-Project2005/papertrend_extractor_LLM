@@ -71,6 +71,26 @@ export function menuItemClass(active = false, extra = ""): string {
   }${extra ? ` ${extra}` : ""}`;
 }
 
+/**
+ * The one look for "this is where you are": a soft fill and an ink bar at the
+ * start edge, as in menus. The ink fill is the primary button's alone; a
+ * selected rail item, tab or toggle never wears it (2026-10-31, UI audit #22).
+ * The bar carries the state in dark mode, where the fill is a small step.
+ */
+export const selectedClass = "bg-subtle text-ink shadow-[inset_3px_0_0_rgb(var(--ink))]";
+
+/**
+ * A segmented control (List | Grid, Fixed | Free, chart modes): one track and
+ * its segments. The chosen segment is lighter than its track in both themes.
+ */
+export const segmentedClass = "inline-flex items-center gap-0.5 rounded-lg bg-subtle p-0.5";
+
+export function segmentClass(active = false, extra = ""): string {
+  return `inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors duration-150 ${
+    active ? "bg-surface text-ink shadow-raise dark:bg-hairline-strong" : "text-mute hover:text-ink"
+  }${extra ? ` ${extra}` : ""}`;
+}
+
 /** A small heading over a group of menu items. */
 export const menuLabelClass = "px-2.5 pb-1 pt-2 text-xs font-medium text-mute";
 

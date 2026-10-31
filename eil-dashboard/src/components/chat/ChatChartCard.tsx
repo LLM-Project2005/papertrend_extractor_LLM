@@ -66,28 +66,28 @@ function tableValue(value: string | number | undefined): string {
  */
 function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sources"]> }) {
   return (
-    <details className="border-t border-slate-200 dark:border-[#1f1f1f]">
-      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-700 hover:text-slate-950 dark:text-[#d4d4d4] dark:hover:text-white">
+    <details className="border-t border-hairline">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink hover:text-ink">
         Where each value comes from ({sources.length})
       </summary>
       <ul data-paper-list="" className="max-h-[420px] space-y-3 overflow-auto px-4 pb-4">
         {sources.map((source, index) => (
           <li key={`${source.paperId}-${index}`} className="text-sm leading-6">
-            <p className="text-slate-900 dark:text-white">
+            <p className="text-ink">
               <span className="font-semibold">{source.value}</span>
-              {source.note ? <span className="text-slate-600 dark:text-[#a3a3a3]"> ({source.note})</span> : null}
-              <span className="text-slate-500 dark:text-[#8f8f8f]"> · </span>
+              {source.note ? <span className="text-body"> ({source.note})</span> : null}
+              <span className="text-mute"> · </span>
               {/* With its sentence, the paper opens on its PDF with that sentence marked, as a citation does. */}
               <PaperLink
                 paper={source.quote ? { paperId: source.paperId, tab: "preview", quote: source.quote } : { paperId: source.paperId }}
-                className="text-slate-700 underline-offset-2 hover:underline dark:text-[#d8d8d8]"
+                className="text-ink underline-offset-2 hover:underline"
               >
                 {source.title}
               </PaperLink>
-              {source.year && source.year !== "Unknown" ? <span className="text-slate-500 dark:text-[#8f8f8f]"> · {source.year}</span> : null}
+              {source.year && source.year !== "Unknown" ? <span className="text-mute"> · {source.year}</span> : null}
             </p>
             {source.quote ? (
-              <blockquote className="mt-1 border-l-2 border-slate-300 pl-3 text-slate-600 dark:border-[#3a3a3a] dark:text-[#b4b4b4]">
+              <blockquote className="mt-1 border-l-2 border-slate-300 pl-3 text-body dark:border-[#3a3a3a]">
                 {source.quote}
               </blockquote>
             ) : null}
@@ -179,11 +179,11 @@ function Plot({ chart }: { chart: ChatChartPayload }) {
 
 export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]" data-chat-chart={chart.metric}>
-      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
+    <div className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-sm" data-chat-chart={chart.metric}>
+      <div className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Chart · {chart.scopeLabel}</p>
-          <h3 className="mt-1 text-base font-semibold leading-6 text-slate-900 dark:text-white">{chart.title}</h3>
+          <p className="text-xs font-semibold text-body">Chart · {chart.scopeLabel}</p>
+          <h3 className="mt-1 text-base font-semibold leading-6 text-ink">{chart.title}</h3>
         </div>
         <ChartCsvButton csv={chatChartCsv({ ...chart, data: chart.data ?? [] })} />
       </div>

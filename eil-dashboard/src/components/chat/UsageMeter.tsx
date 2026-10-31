@@ -62,21 +62,21 @@ export function UsagePanel({ usage, resets }: { usage: Usage; resets: string }) 
   return (
     <>
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-semibold text-slate-900 dark:text-white">Today’s AI allowance</p>
+        <p className="text-sm font-semibold text-ink">Today’s AI allowance</p>
         {usage.exempt ? null : (
-          <span className={`text-xs font-medium tabular-nums ${warn ? "text-amber-700 dark:text-amber-300" : "text-slate-900 dark:text-white"}`}>
+          <span className={`text-xs font-medium tabular-nums ${warn ? "text-amber-700 dark:text-amber-300" : "text-ink"}`}>
             {percentLeft(usage.tokens)}% left
           </span>
         )}
       </div>
       {usage.exempt ? (
-        <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-[#b4b4b4]">This account has no daily limit.</p>
+        <p className="mt-1 text-xs leading-5 text-body">This account has no daily limit.</p>
       ) : (
         <>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1f1f1f]" aria-hidden="true">
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-subtle" aria-hidden="true">
             <div className={`h-full rounded-full ${warn ? "bg-amber-500" : "bg-slate-700 dark:bg-[#d4d4d4]"}`} style={{ width: `${(1 - share) * 100}%` }} />
           </div>
-          <p className="mt-2 text-[11px] leading-4 text-slate-600 dark:text-[#a3a3a3]">Starts again at {resets}.</p>
+          <p className="mt-2 text-[11px] leading-4 text-body">Starts again at {resets}.</p>
         </>
       )}
     </>
@@ -139,8 +139,8 @@ export default function UsageMeter({ requestHeaders, refreshKey }: { requestHead
         aria-expanded={open}
         aria-controls={`${id}-usage`}
         onClick={() => setOpen((value) => !value)}
-        className={`inline-flex h-9 items-center gap-1.5 rounded-full px-2 text-xs font-medium transition-colors hover:bg-slate-100 dark:hover:bg-[#1a1a1a] ${
-          !usage.exempt && share >= 0.9 ? "text-amber-700 dark:text-amber-300" : "text-slate-600 dark:text-[#b4b4b4]"
+        className={`inline-flex h-9 items-center gap-1.5 rounded-full px-2 text-xs font-medium transition-colors hover:bg-subtle ${
+          !usage.exempt && share >= 0.9 ? "text-amber-700 dark:text-amber-300" : "text-body"
         }`}
         title="Today's AI allowance"
       >
@@ -153,7 +153,7 @@ export default function UsageMeter({ requestHeaders, refreshKey }: { requestHead
           id={`${id}-usage`}
           role="region"
           aria-label="Today's AI allowance"
-          className="absolute bottom-11 right-0 z-30 w-64 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-lg dark:border-[#2a2a2a] dark:bg-[#0f0f0f]"
+          className="absolute bottom-11 right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-lg"
         >
           <UsagePanel usage={usage} resets={resets} />
         </div>

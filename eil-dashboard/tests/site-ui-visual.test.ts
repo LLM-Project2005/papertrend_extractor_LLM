@@ -231,7 +231,7 @@ test("a loading indicator still means something without motion", () => {
   // The bar shows only after a navigation link is clicked.
   const shell = readCode("src/components/workspace/WorkspaceShell.tsx");
   assert.match(shell, /role="status"\s*\n\s*aria-label="Loading page"/);
-  assert.match(shell, /w-full bg-slate-950 motion-safe:w-1\/2 motion-safe:animate-pulse/);
+  assert.match(shell, /w-full bg-ink motion-safe:w-1\/2 motion-safe:animate-pulse/);
 });
 
 test("both tab states carry the same bottom border, so neither is larger", () => {

@@ -109,7 +109,7 @@ function Dot({ color }: { color: string }) {
 function SeriesLegend({ items }: { items: Array<{ label: string; color: string; dashed?: boolean }> }) {
   if (items.length === 0) return null;
   return (
-    <ul data-series-legend="" className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-700 dark:text-[#d4d4d4]">
+    <ul data-series-legend="" className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-ink">
       {items.map((item) => (
         <li key={item.label} className="inline-flex min-w-0 items-center gap-1.5">
           {item.dashed ? (
@@ -233,7 +233,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
   if (trends.length === 0) {
     return (
       <div className="app-surface px-5 py-5">
-        <p className="text-sm text-slate-500 dark:text-slate-400">No papers match the current filters.</p>
+        <p className="text-sm text-mute">No papers match the current filters.</p>
       </div>
     );
   }
@@ -284,7 +284,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
     if (rows.length === 0 || !periods) return null;
     return (
       <div className="min-w-0">
-        <p className="mb-3 text-sm font-medium text-slate-800 dark:text-[#e5e5e5]">{title}</p>
+        <p className="mb-3 text-sm font-medium text-ink">{title}</p>
         <div style={{ height: rows.length * 56 + 36 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={rows} layout="vertical" margin={{ left: 8, right: 24 }} barGap={2}>
@@ -361,11 +361,11 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
   return (
     <div className="space-y-6">
       <section className="app-surface px-5 py-5">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Themes</h2>
+        <h2 className="text-xl font-semibold text-ink">Themes</h2>
         <Takeaway>{takeaway}</Takeaway>
         {key.length > 0 ? (
-          <div className="mt-4 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]" data-theme-key="">
-            <p className="text-xs text-slate-600 dark:text-[#a3a3a3]">
+          <div className="mt-4 border-t border-hairline pt-3" data-theme-key="">
+            <p className="text-xs text-body">
               {key.length === 1 ? "The largest theme keeps" : `Each of the ${key.length} largest themes keeps`} its colour in every chart and in each paper&apos;s window. Other themes are grey.
             </p>
             <SeriesLegend items={[...key.map((item) => ({ label: item.theme, color: item.color })), { label: "Other themes", color: NEUTRAL_MARK }]} />
@@ -375,8 +375,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
 
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Theme sizes</h3>
-          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+          <h3 className="text-base font-semibold text-ink">Theme sizes</h3>
+          <label className="flex items-center gap-2 text-xs text-body">
             Themes shown: {Math.min(treeN, themes.length)}
             <input
               type="range"
@@ -388,7 +388,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
             />
           </label>
         </div>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Each rectangle is a theme, sized by its number of papers. Select one to see its papers.</p>
+        <p className="mt-1 text-sm text-mute">Each rectangle is a theme, sized by its number of papers. Select one to see its papers.</p>
         {treeData.length > 0 ? (
           <div className="mt-4 h-[380px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -417,8 +417,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
       {orderedCharts.includes("topic_area") ? (
         <section className="app-surface px-5 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Themes over time</h3>
-            <div role="group" aria-label="Show as" className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-[#111]">
+            <h3 className="text-base font-semibold text-ink">Themes over time</h3>
+            <div role="group" aria-label="Show as" className="inline-flex rounded-lg bg-subtle p-0.5">
               {TIME_VIEWS.map((option) => (
                 <button
                   key={option.value}
@@ -427,8 +427,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                   onClick={() => setView(option.value)}
                   className={`h-8 rounded-md px-3 text-xs font-semibold transition-colors ${
                     view === option.value
-                      ? "bg-white text-slate-950 shadow-sm dark:bg-[#292929] dark:text-white"
-                      : "text-slate-600 hover:text-slate-900 dark:text-[#a3a3a3] dark:hover:text-white"
+                      ? "bg-white text-ink shadow-sm dark:bg-[#292929]"
+                      : "text-body hover:text-ink"
                   }`}
                 >
                   {option.label}
@@ -436,7 +436,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
               ))}
             </div>
           </div>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-mute">
             Papers per year in the themes you pick, up to {MAX_STACKED_SERIES}. The {DEFAULT_PICKED} largest shared themes are shown until you choose. Every year in the range has a slot, so a year with no papers shows as a gap.
           </p>
           {shared.length > 0 ? (
@@ -453,8 +453,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                     disabled={!on && shown.length >= MAX_STACKED_SERIES}
                     className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       on
-                        ? "border-slate-900 font-medium text-slate-950 dark:border-white dark:text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a]"
+                        ? "border-slate-900 font-medium text-ink dark:border-white"
+                        : "border-hairline bg-surface text-ink hover:border-slate-300 dark:hover:border-[#3a3a3a]"
                     }`}
                     style={on ? { backgroundColor: tint(color, isDark ? 0.22 : 0.12) } : undefined}
                   >
@@ -464,14 +464,14 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                 );
               })}
               {picked ? (
-                <button type="button" onClick={() => setPicked(null)} className="min-h-9 px-2 text-xs font-medium text-slate-600 underline-offset-4 hover:underline dark:text-[#a3a3a3]">
+                <button type="button" onClick={() => setPicked(null)} className="min-h-9 px-2 text-xs font-medium text-body underline-offset-4 hover:underline">
                   Back to the {DEFAULT_PICKED} largest
                 </button>
               ) : null}
             </div>
           ) : null}
           {shown.length === 0 || axis.years.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">
+            <p className="mt-4 text-sm text-body">
               {shared.length === 0
                 ? "No theme is shared by two or more papers in the current filters, so there is no trend to draw."
                 : "Pick a theme to draw it."}
@@ -487,7 +487,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                 hideZeros
               />
               {gridRows.length < shown.length ? (
-                <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
+                <p className="mt-2 text-xs leading-5 text-body">
                   {plural(shown.length - gridRows.length, "picked theme")} {shown.length - gridRows.length === 1 ? "has" : "have"} papers only without a readable year, so {shown.length - gridRows.length === 1 ? "it is" : "they are"} not drawn.
                 </p>
               ) : null}
@@ -560,7 +560,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
             )}
           />
           {axis.empty.length > 0 || undated > 0 ? (
-            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
+            <p className="mt-2 text-xs leading-5 text-body">
               {axis.empty.length > 0 ? `No papers from ${listOf(axis.empty)}. ` : ""}
               {undated > 0 ? `${plural(undated, "paper")} without a readable year ${undated === 1 ? "is" : "are"} not drawn.` : ""}
             </p>
@@ -570,14 +570,14 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
 
       {orderedCharts.includes("emerging_topics") || orderedCharts.includes("declining_topics") ? (
         <section className="app-surface px-5 py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Gaining and losing ground</h3>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+          <h3 className="text-base font-semibold text-ink">Gaining and losing ground</h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-mute">
             {periods
               ? `The collection split where its dated papers halve: ${periods.earlyLabel} (${periods.earlyPapers} papers) and ${periods.lateLabel} (${periods.latePapers}). A theme is shown when it has at least ${SHIFT_MIN_PAPERS} papers, has at least one paper more (or fewer) in the later period than the two period sizes alone predict, and would still lean the same way if any one of its papers were removed. Bars show each theme's share of each period's papers.`
               : "Needs papers from at least two different years."}
           </p>
           {periods && shifts.emerging.length + shifts.declining.length > 0 ? (
-            <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-700 dark:text-[#d4d4d4]" data-period-legend="">
+            <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-ink" data-period-legend="">
               <li className="inline-flex items-center gap-1.5">
                 <span aria-hidden="true" className="inline-block h-2.5 w-4 rounded-sm" style={{ backgroundColor: NEUTRAL_MARK }} />
                 {periods.earlyLabel} ({plural(periods.earlyPapers, "paper")})
@@ -598,7 +598,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
               {orderedCharts.includes("declining_topics") ? renderShiftChart("Losing ground", shifts.declining) : null}
             </div>
           ) : (
-            <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">
+            <p className="mt-4 text-sm text-body">
               {periods
                 ? shifts.judged === 0
                   ? `No theme has the ${SHIFT_MIN_PAPERS} or more papers needed to judge a shift.`
@@ -612,8 +612,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Themes and what they gather</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <h3 className="text-base font-semibold text-ink">Themes and what they gather</h3>
+            <p className="mt-1 text-sm text-mute">
               Each theme, the topic labels its papers were given, and the keywords most of its papers use.
             </p>
           </div>
@@ -626,9 +626,9 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
             className="h-9 w-full rounded-lg border border-hairline-strong bg-surface px-3 text-base text-ink placeholder:text-mute focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 sm:w-56 sm:text-sm"
           />
         </div>
-        <div className="mt-4 max-h-[460px] overflow-auto rounded-xl border border-slate-200 dark:border-[#1f1f1f]">
+        <div className="mt-4 max-h-[460px] overflow-auto rounded-xl border border-hairline">
           <table className="min-w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-[#030303]">
+            <thead className="sticky top-0 z-10 bg-canvas">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold">Theme</th>
                 <th className="px-3 py-2 text-right font-semibold">Papers</th>
@@ -640,8 +640,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
               {visibleThemes.map((row) => {
                 const color = themeColor(themeColors, row.topic, isDark);
                 return (
-                  <tr key={row.topic} className="border-t border-slate-200 align-top hover:bg-slate-50 dark:border-[#1f1f1f] dark:hover:bg-[#0a0a0a]">
-                    <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
+                  <tr key={row.topic} className="border-t border-hairline align-top hover:bg-subtle">
+                    <td className="px-3 py-2 font-medium text-ink">
                       <span className="flex items-start gap-2">
                         <span className="mt-1">
                           <Dot color={color} />
@@ -649,7 +649,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                         <button
                           type="button"
                           onClick={() => onDrilldown?.({ topic: row.topic, paperIds: row.paperIds })}
-                          className="-my-1 py-1 text-left font-semibold text-slate-900 underline-offset-4 transition-colors hover:text-slate-600 hover:underline disabled:cursor-default disabled:no-underline dark:text-white dark:hover:text-slate-300"
+                          className="-my-1 py-1 text-left font-semibold text-ink underline-offset-4 transition-colors hover:text-body hover:underline disabled:cursor-default disabled:no-underline"
                           disabled={!onDrilldown}
                           title="Open the papers in this theme"
                         >
@@ -658,10 +658,10 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.papers}</td>
-                    <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-600 dark:text-slate-400">
+                    <td className="whitespace-nowrap px-3 py-2 tabular-nums text-body">
                       {row.years.length === 0 ? "No dated papers" : row.years.length === 1 ? row.years[0] : `${row.years[0]}–${row.years[row.years.length - 1]}`}
                     </td>
-                    <td className="max-w-md px-3 py-2 text-slate-600 dark:text-slate-400">
+                    <td className="max-w-md px-3 py-2 text-body">
                       <div className="space-y-2">
                         {row.aliases.length > 1 || row.aliases[0] !== row.topic ? <p className="text-xs leading-5">{row.aliases.join("; ")}</p> : null}
                         {row.keywords.length > 0 ? (
@@ -671,7 +671,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                                 key={`${row.topic}-${keyword}`}
                                 type="button"
                                 onClick={() => onDrilldown?.({ keyword, paperIds: [...(paperIdsByKeyword.get(keywordKey(keyword)) ?? [])] })}
-                                className="rounded-full border px-2.5 py-1 text-[11px] font-medium text-slate-800 transition-colors hover:text-slate-950 disabled:cursor-default dark:text-[#e5e5e5] dark:hover:text-white"
+                                className="rounded-full border px-2.5 py-1 text-[11px] font-medium text-ink transition-colors hover:text-ink disabled:cursor-default"
                                 style={{ backgroundColor: tint(color, isDark ? 0.18 : 0.1), borderColor: tint(color, isDark ? 0.5 : 0.35) }}
                                 disabled={!onDrilldown}
                                 title="Open papers for this keyword"

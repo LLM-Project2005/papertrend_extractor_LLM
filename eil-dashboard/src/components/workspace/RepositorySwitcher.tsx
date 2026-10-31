@@ -154,7 +154,7 @@ export function RepositoryMenu({ projects, organizations = [], currentId, curren
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-label={currentName ? `Repository: ${currentName}. Switch repository` : "Select a repository"}
-        className="-my-1 flex min-w-0 max-w-[13rem] items-center gap-1 rounded-md px-1.5 py-1 text-slate-700 transition-colors hover:bg-subtle hover:text-ink sm:max-w-[22rem] dark:text-[#d9d9d9] dark:hover:text-white"
+        className="-my-1 flex min-w-0 max-w-[13rem] items-center gap-1 rounded-md px-1.5 py-1 text-ink transition-colors hover:bg-subtle hover:text-ink sm:max-w-[22rem] dark:hover:text-white"
       >
         <span className="min-w-0 truncate font-medium">{currentName || "Select repository"}</span>
         <ChevronDownIcon className={`h-3.5 w-3.5 flex-none text-mute transition-transform duration-150 ${open ? "rotate-180" : ""}`} />

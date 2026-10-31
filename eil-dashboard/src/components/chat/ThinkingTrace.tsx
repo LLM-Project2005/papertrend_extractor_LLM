@@ -47,7 +47,7 @@ function visibleSteps(steps: DeepResearchStepRecord[] | undefined): DeepResearch
 
 export function ThinkingSteps({ steps }: { steps: DeepResearchStepRecord[] }) {
   return (
-    <ol className="mt-3 space-y-2.5 border-l border-slate-200 pl-4 dark:border-[#262626]">
+    <ol className="mt-3 space-y-2.5 border-l border-hairline pl-4">
       {steps.map((step) => {
         const done = step.status === "completed";
         const working = step.status === "processing";
@@ -59,7 +59,7 @@ export function ThinkingSteps({ steps }: { steps: DeepResearchStepRecord[] }) {
               aria-hidden="true"
               className={`absolute -left-[21px] top-2 h-2 w-2 rounded-full ${
                 done
-                  ? "bg-slate-900 dark:bg-white"
+                  ? "bg-ink"
                   : working
                     ? "animate-pulse bg-slate-500 dark:bg-[#a3a3a3]"
                     : failed
@@ -67,11 +67,11 @@ export function ThinkingSteps({ steps }: { steps: DeepResearchStepRecord[] }) {
                       : "border border-slate-400 bg-transparent dark:border-[#666]"
               }`}
             />
-            <p className="text-[13px] font-medium leading-6 text-slate-800 dark:text-[#e5e5e5]">
+            <p className="text-[13px] font-medium leading-6 text-ink">
               {step.title}
               <span className="sr-only">{done ? " (done)" : working ? " (in progress)" : failed ? " (failed)" : " (to do)"}</span>
             </p>
-            {summary ? <p className="line-clamp-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">{summary}</p> : null}
+            {summary ? <p className="line-clamp-2 text-xs leading-5 text-body">{summary}</p> : null}
           </li>
         );
       })}
@@ -115,23 +115,23 @@ export function ThinkingLive({
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
           {running ? (
             <>
-              <span className="thinking-shimmer font-medium text-slate-800 dark:text-[#e5e5e5]">Thinking</span>
-              <span className="text-slate-600 dark:text-[#a3a3a3]" aria-live="polite">
+              <span className="thinking-shimmer font-medium text-ink">Thinking</span>
+              <span className="text-body" aria-live="polite">
                 {thinkingNow(session)}
               </span>
               {Number.isFinite(started) ? (
-                <span className="text-xs tabular-nums text-slate-600 dark:text-[#a3a3a3]">{thinkingDuration(now - started)}</span>
+                <span className="text-xs tabular-nums text-body">{thinkingDuration(now - started)}</span>
               ) : null}
             </>
           ) : (
-            <span className="font-medium text-slate-800 dark:text-[#e5e5e5]">{failed ? "The thinking stopped before an answer" : "Stopped before an answer"}</span>
+            <span className="font-medium text-ink">{failed ? "The thinking stopped before an answer" : "Stopped before an answer"}</span>
           )}
           {steps.length > 0 ? (
             <button
               type="button"
               aria-expanded={open}
               onClick={() => setOpen((current) => !current)}
-              className="inline-flex items-center gap-1 rounded-md text-xs font-medium text-slate-600 transition-colors hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 dark:text-[#a3a3a3] dark:hover:text-white"
+              className="inline-flex items-center gap-1 rounded-md text-xs font-medium text-body transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70"
             >
               <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
               {open ? "Hide steps" : `Show steps (${steps.length})`}
@@ -141,7 +141,7 @@ export function ThinkingLive({
             <button
               type="button"
               onClick={onStop}
-              className="rounded-md text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:decoration-[#444] dark:hover:text-white"
+              className="rounded-md text-xs font-medium text-body underline decoration-slate-300 underline-offset-2 transition-colors hover:text-ink dark:decoration-[#444]"
             >
               Stop
             </button>
@@ -151,7 +151,7 @@ export function ThinkingLive({
               type="button"
               onClick={onRetry}
               disabled={busy}
-              className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-[#111111] dark:hover:bg-[#e8e8e8]"
+              className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-canvas transition-colors hover:bg-slate-800 disabled:opacity-60 dark:hover:bg-[#e8e8e8]"
             >
               {failed ? "Try again" : "Resume"}
             </button>
@@ -160,7 +160,7 @@ export function ThinkingLive({
             <button
               type="button"
               onClick={onEdit}
-              className="rounded-md text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:decoration-[#444] dark:hover:text-white"
+              className="rounded-md text-xs font-medium text-body underline decoration-slate-300 underline-offset-2 transition-colors hover:text-ink dark:decoration-[#444]"
             >
               Edit the question
             </button>
@@ -204,7 +204,7 @@ export function ThoughtSummary({ metadata, steps }: { metadata: ThoughtMetadata 
   const shown = visibleSteps(steps);
   const line = thoughtLine(metadata);
   if (shown.length === 0) {
-    return <p className="text-xs font-medium text-slate-600 dark:text-[#a3a3a3]">{line}</p>;
+    return <p className="text-xs font-medium text-body">{line}</p>;
   }
   return (
     <div>
@@ -212,7 +212,7 @@ export function ThoughtSummary({ metadata, steps }: { metadata: ThoughtMetadata 
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-slate-600 transition-colors hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 dark:text-[#a3a3a3] dark:hover:text-white"
+        className="inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-body transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70"
       >
         <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
         {line}

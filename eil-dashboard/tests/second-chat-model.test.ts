@@ -186,7 +186,7 @@ test("the meter is one bar: what is left today and when it starts again, with no
   assert.match(html, /Today’s AI allowance/);
   assert.match(html, />73% left</);
   assert.match(html, /Starts again at 7:00\./);
-  assert.equal(html.match(/rounded-full bg-slate-100/g)?.length, 1, "one bar");
+  assert.equal(html.match(/rounded-full bg-subtle/g)?.length, 1, "one bar");
   for (const gone of ["Enough for about", "answers at Medium", "Counted in GPT-6 Luna tokens", "Questions", "Max effort answers", "Web searches", "Analysing papers"]) {
     assert.ok(!html.includes(gone), gone);
   }

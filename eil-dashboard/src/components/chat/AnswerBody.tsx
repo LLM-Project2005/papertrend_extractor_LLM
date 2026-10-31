@@ -111,7 +111,7 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
         role={pinned ? "group" : "tooltip"}
         aria-label={pinned ? "Cited papers" : undefined}
         // A quote needs a wider card to read as prose; pinned, a long one scrolls.
-        className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-1/2 z-30 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4] ${
+        className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-1/2 z-30 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-hairline bg-white p-3 text-left ${ANSWER_META_CLASS} text-ink shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] ${
           pinned ? "block max-h-[60vh] overflow-y-auto" : "pointer-events-none hidden group-focus-within:block group-hover:block"
         }`}
       >
@@ -121,8 +121,8 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
           const inPaper = passage ? passageTarget(source.href, passage) : null;
           return (
           <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
-            <span className="block font-semibold text-slate-900 dark:text-white">{source.title}</span>
-            <span className="block text-slate-600 dark:text-[#8e8e8e]">
+            <span className="block font-semibold text-ink">{source.title}</span>
+            <span className="block text-body">
               {webPage ? `Web page · ${webHost(source.href)}` : source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
             </span>
             {passage ? <PassageQuote passage={passage} clamp={!pinned} /> : null}
@@ -169,9 +169,9 @@ const CARD_ROOM_PX = 340;
 function PassageQuote({ passage, clamp }: { passage: CitationPassage; clamp: boolean }) {
   return (
     <span className="mt-2 block border-l-2 border-sky-300 pl-2.5 dark:border-sky-700">
-      <q className={`block text-slate-800 dark:text-[#e5e5e5] ${clamp ? "line-clamp-5" : ""}`}>{passage.quote}</q>
+      <q className={`block text-ink ${clamp ? "line-clamp-5" : ""}`}>{passage.quote}</q>
       {passage.section ? (
-        <span className="mt-0.5 block text-slate-600 dark:text-[#8e8e8e]">{passage.section}</span>
+        <span className="mt-0.5 block text-body">{passage.section}</span>
       ) : null}
     </span>
   );
@@ -254,7 +254,7 @@ export function renderInlineMarkdown(
       );
     } else if (token.startsWith("**") && token.endsWith("**")) {
       nodes.push(
-        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-slate-900 dark:text-white">
+        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-ink">
           {token.slice(2, -2)}
         </strong>
       );
@@ -279,7 +279,7 @@ export function renderInlineMarkdown(
       nodes.push(
         <code
           key={`${keyPrefix}-code-${match.index}`}
-          className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.95em] text-slate-800 dark:bg-white/10 dark:text-[#f3f3f3]"
+          className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.95em] text-ink dark:bg-white/10"
         >
           {token.slice(1, -1)}
         </code>
@@ -447,12 +447,12 @@ export function renderRichMessage(
 
   const headingClass =
     tone === "assistant"
-      ? "text-lg font-semibold text-slate-900 dark:text-white"
-      : "text-base font-semibold text-slate-900 dark:text-[#f3f3f3]";
+      ? "text-lg font-semibold text-ink"
+      : "text-base font-semibold text-ink";
   const paragraphClass =
     tone === "assistant"
-      ? `${ANSWER_BODY_CLASS} ${ANSWER_MEASURE_CLASS} text-slate-700 dark:text-[#ececec]`
-      : `${ANSWER_BODY_CLASS} ${ANSWER_MEASURE_CLASS} text-slate-800 dark:text-[#f3f3f3]`;
+      ? `${ANSWER_BODY_CLASS} ${ANSWER_MEASURE_CLASS} text-ink`
+      : `${ANSWER_BODY_CLASS} ${ANSWER_MEASURE_CLASS} text-ink`;
 
   return (
     <div className="space-y-4">
@@ -472,12 +472,12 @@ export function renderRichMessage(
           return (
             <div
               key={`${keyPrefix}-codeblock-${blockIndex}`}
-              className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505]"
+              className="overflow-hidden rounded-xl border border-hairline bg-subtle"
             >
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-normal text-slate-600 dark:border-[#1f1f1f] dark:text-[#8e8e8e]">
+              <div className="flex items-center justify-between border-b border-hairline px-4 py-2 text-xs uppercase tracking-normal text-body">
                 <span>{language || "Code"}</span>
               </div>
-              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#e6e6e6]">
+              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-ink">
                 <code>{code}</code>
               </pre>
             </div>
@@ -493,15 +493,15 @@ export function renderRichMessage(
                 return (
                   <div
                     key={`${keyPrefix}-table-${blockIndex}-${groupIndex}`}
-                    className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#0a0a0a]"
+                    className="overflow-x-auto rounded-xl border border-hairline bg-surface"
                   >
-                    <table className="min-w-full border-collapse text-left text-sm text-slate-700 dark:text-[#ececec]">
+                    <table className="min-w-full border-collapse text-left text-sm text-ink">
                       <thead className="bg-slate-100 dark:bg-white/5">
                         <tr>
                           {header.map((cell, cellIndex) => (
                             <th
                               key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
-                              className={`border-b border-slate-200 px-4 py-3 font-semibold ${ANSWER_CELL_CLASS} dark:border-[#1f1f1f]`}
+                              className={`border-b border-hairline px-4 py-3 font-semibold ${ANSWER_CELL_CLASS} dark:border-[#1f1f1f]`}
                             >
                               {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`, sources)}
                             </th>
@@ -510,11 +510,11 @@ export function renderRichMessage(
                       </thead>
                       <tbody>
                         {rows.map((row, rowIndex) => (
-                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-slate-200 dark:border-[#1f1f1f]">
+                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-hairline">
                             {row.map((cell, cellIndex) => (
                               <td
                                 key={`${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`}
-                                className="px-4 py-3 align-top text-slate-600 dark:text-[#d8d8d8]"
+                                className="px-4 py-3 align-top text-body"
                               >
                                 {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`, sources)}
                               </td>
@@ -553,7 +553,7 @@ export function renderRichMessage(
                   >
                     {numberedLines.map((line, lineIndex) => (
                       <li key={`${keyPrefix}-ordered-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-white/75">
+                        <span className="min-w-[1.5rem] flex-none font-semibold text-body">
                           {line.match(/^(\d+)\./)?.[1]}.
                         </span>
                         <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`, sources)}</span>
@@ -568,7 +568,7 @@ export function renderRichMessage(
                 return (
                   <blockquote
                     key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
-                    className={`rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 ${ANSWER_BODY_CLASS} text-slate-800 dark:border-[#2a2a2a] dark:bg-[#0a0a0a] dark:text-[#d4d4d4]`}
+                    className={`rounded-lg border border-hairline bg-canvas px-4 py-3 ${ANSWER_BODY_CLASS} text-ink dark:border-[#2a2a2a] dark:bg-[#0a0a0a]`}
                   >
                     <div className="space-y-2">
                       {quoteLines.map((line, lineIndex) => (
@@ -601,7 +601,7 @@ export function renderRichMessage(
                   return <h4 key={headingKey} className={`${headingClass} text-base`}>{headingContent}</h4>;
                 }
                 return (
-                  <h5 key={headingKey} className="text-sm font-semibold text-slate-800 dark:text-[#ececec]">
+                  <h5 key={headingKey} className="text-sm font-semibold text-ink">
                     {headingContent}
                   </h5>
                 );
@@ -675,7 +675,7 @@ export function AssistantAnswer({
           type="button"
           onClick={() => setExpanded((previous) => !previous)}
           aria-expanded={expanded}
-          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#b4b4b4] dark:hover:bg-[#121212] dark:hover:text-white"
+          className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-3 py-1.5 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink"
         >
           {expanded
             ? "Show less"

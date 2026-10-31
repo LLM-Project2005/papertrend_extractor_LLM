@@ -182,13 +182,13 @@ function WorkspaceBreadcrumb({
           Below sm the parent collapses to a back arrow rather than disappearing:
           this link is the only route back to the repository picker, since the
           drawer's "Library" entry points at /workspace/library instead. */}
-      <div className="flex min-w-0 items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
+      <div className="flex min-w-0 items-center gap-2 text-sm text-mute">
         <Link
           href="/workspaces"
           onClick={() => onNavigate?.("/workspaces")}
           prefetch={false}
           aria-label="All repositories"
-          className="-my-2 flex flex-none items-center rounded px-2 py-2 font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
+          className="-my-2 flex flex-none items-center rounded px-2 py-2 font-medium text-ink transition-colors hover:text-ink"
         >
           <ArrowRightIcon className="h-4 w-4 rotate-180 sm:hidden" />
           <span className="hidden sm:inline">Repositories</span>
@@ -279,7 +279,7 @@ function MobileSidebar({
       <div className="sticky top-0 border-b border-hairline bg-surface px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
-            <span className="flex h-10 w-10 items-center justify-center text-slate-950 dark:text-white">
+            <span className="flex h-10 w-10 items-center justify-center text-ink">
               <LogoMarkIcon className="h-7 w-7" />
             </span>
             <WorkspaceBreadcrumb
@@ -557,7 +557,7 @@ export default function WorkspaceShell({
               href="/"
               prefetch={false}
               onClick={() => handleNavigate("/")}
-              className="flex h-10 w-10 items-center justify-center text-slate-950 transition-transform hover:scale-[1.04] dark:text-white"
+              className="flex h-10 w-10 items-center justify-center text-ink transition-transform hover:scale-[1.04]"
               aria-label="Papertrend front page"
             >
               <LogoMarkIcon className="h-7 w-7" />
@@ -594,9 +594,9 @@ export default function WorkspaceShell({
           <div
             role="status"
             aria-label="Loading page"
-            className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-slate-950/10 dark:bg-white/10"
+            className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-ink/10"
           >
-            <div className="h-full w-full bg-slate-950 motion-safe:w-1/2 motion-safe:animate-pulse dark:bg-white" />
+            <div className="h-full w-full bg-ink motion-safe:w-1/2 motion-safe:animate-pulse" />
           </div>
         ) : null}
       </header>

@@ -101,13 +101,13 @@ import { useComposerOffset } from "@/lib/composer-offset";
 const ChatChartCard = dynamic(() => import("@/components/chat/ChatChartCard"), {
   ssr: false,
   loading: () => (
-    <div aria-hidden="true" className="h-[402px] rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]" />
+    <div aria-hidden="true" className="h-[402px] rounded-xl border border-hairline bg-surface" />
   ),
 });
 const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"), {
   ssr: false,
   loading: () => (
-    <div aria-hidden="true" className="h-[320px] rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]" />
+    <div aria-hidden="true" className="h-[320px] rounded-xl border border-hairline bg-surface" />
   ),
 });
 import ReportActions from "@/components/chat/ReportActions";
@@ -453,33 +453,33 @@ function CitationLink({ citation, compact = false, number }: { citation: Citatio
   return (
     <SourceLink
       href={inPaper ? libraryPaperHref(inPaper) : safeCitationHref(citation.href)}
-      className={`flex items-start gap-2.5 border border-slate-200 bg-white text-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a] ${
+      className={`flex items-start gap-2.5 border border-hairline bg-surface text-sm transition-colors hover:bg-subtle ${
         compact ? "rounded-lg px-3 py-2" : "rounded-xl px-3.5 py-3"
       }`}
     >
       {citation.sourceType === "web" ? (
-        <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-600 dark:text-[#8e8e8e]" />
+        <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-body" />
       ) : (
-        <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-600 dark:text-[#8e8e8e]" />
+        <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-body" />
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-slate-900 dark:text-[#ececec]">
-          {number ? <span className="mr-1.5 tabular-nums text-slate-600 dark:text-[#a3a3a3]">[{number}]</span> : null}
+        <span className="block truncate font-medium text-ink">
+          {number ? <span className="mr-1.5 tabular-nums text-body">[{number}]</span> : null}
           {citation.title}
         </span>
-        <span className="mt-0.5 block text-xs text-slate-600 dark:text-[#8e8e8e]">
+        <span className="mt-0.5 block text-xs text-body">
           {citation.sourceType === "web" ? "Web source" : citation.year || "Paper"}
         </span>
         {!compact && citation.reason ? (
-          <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>
+          <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-body`}>
             {citation.reason}
           </span>
         ) : null}
         {quoted ? (
           <span className="mt-1.5 block border-l-2 border-slate-300 pl-2.5 dark:border-[#3a3a3a]">
-            <q className={`line-clamp-4 ${ANSWER_META_CLASS} text-slate-700 dark:text-[#d4d4d4]`}>{quoted.quote}</q>
+            <q className={`line-clamp-4 ${ANSWER_META_CLASS} text-ink`}>{quoted.quote}</q>
             {quoted.section ? (
-              <span className={`block ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>{quoted.section}</span>
+              <span className={`block ${ANSWER_META_CLASS} text-body`}>{quoted.section}</span>
             ) : null}
           </span>
         ) : null}
@@ -716,7 +716,7 @@ function runGlyphTone(run: IngestionRunRow) {
   if (ext === "doc" || ext === "docx") {
     return "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300";
   }
-  return "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-[#d4d4d4]";
+  return "bg-slate-100 text-body dark:bg-white/10";
 }
 
 function attachmentExtension(attachment: ChatAttachmentPayload) {
@@ -769,7 +769,7 @@ function attachmentTone(attachment: ChatAttachmentPayload) {
   if (ext === "doc" || ext === "docx") {
     return "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-300/30 dark:bg-blue-500/10 dark:text-blue-100";
   }
-  return "border-slate-200 bg-white text-slate-700 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#ececec]";
+  return "border-hairline bg-white text-ink dark:bg-white/5";
 }
 
 function AttachmentGlyph({ attachment }: { attachment: ChatAttachmentPayload }) {
@@ -890,7 +890,7 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
   if (!hasCoverage && limitations.length === 0 && !cached && !effortNote) return null;
 
   return (
-    <div className="max-w-[720px] space-y-1 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-600 dark:border-[#242424] dark:text-[#8e8e8e]">
+    <div className="max-w-[720px] space-y-1 border-l-2 border-hairline pl-3 text-xs leading-5 text-body">
       {hasCoverage ? (
         <p>
           {coverage!.complete
@@ -956,22 +956,22 @@ const REPORT_BLOCK_SEPARATOR = String.fromCharCode(10, 10);
 function ResearchSources({ sources }: { sources: CitationSource[] }) {
   if (sources.length === 0) return null;
   return (
-    <section className="mt-10 border-t border-slate-200 pt-6 dark:border-[#1f1f1f]">
-      <h2 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">Sources</h2>
-      <ol data-paper-list="" className="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
+    <section className="mt-10 border-t border-hairline pt-6">
+      <h2 className="text-base font-semibold text-ink">Sources</h2>
+      <ol data-paper-list="" className="mt-3 space-y-2 text-sm leading-6 text-ink">
         {sources.map((source) => (
           <li key={source.paperId} className="flex gap-3">
-            <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-[#8e8e8e]">{source.number}.</span>
+            <span className="min-w-[1.5rem] flex-none font-semibold text-body">{source.number}.</span>
             <span className="min-w-0">
               {source.href ? (
-                <SourceLink href={safeCitationHref(source.href)} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:decoration-[#444] dark:hover:text-white">
+                <SourceLink href={safeCitationHref(source.href)} className="underline decoration-slate-300 underline-offset-2 hover:text-ink dark:decoration-[#444]">
                   {source.title}
                 </SourceLink>
               ) : (
                 source.title
               )}
               {source.year && source.year !== "Unknown" ? (
-                <span className="text-slate-600 dark:text-[#8e8e8e]"> ({source.year})</span>
+                <span className="text-body"> ({source.year})</span>
               ) : null}
             </span>
           </li>
@@ -1212,14 +1212,14 @@ function ResearchEvidenceSummary({
   if (!hasVisibleSignal) return null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]">
+    <div className="rounded-xl border border-hairline bg-canvas/80 px-4 py-4">
       <div className="grid gap-3 sm:grid-cols-4">
         {metrics.map(([label, value]) => (
           <div key={label}>
-            <p className="text-[11px] font-medium uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-body">
               {label}
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-[#ececec]">
+            <p className="mt-1 text-sm font-semibold text-ink">
               {value}
             </p>
           </div>
@@ -1238,7 +1238,7 @@ function ResearchEvidenceSummary({
           {visibleUnresolved.map((section) => (
             <span
               key={`unresolved-${section}`}
-              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]"
+              className="rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-body"
             >
               Missing: {section}
             </span>
@@ -3096,7 +3096,7 @@ export default function ChatClient() {
   return (
     <>
       <div
-        className={`flex min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-black dark:text-[#ececec] ${
+        className={`flex min-h-0 w-full overflow-hidden bg-subtle text-ink ${
           fullscreenEnabled
             ? "fixed inset-0 z-50 h-screen supports-[height:100dvh]:h-dvh"
             : "h-[calc(100vh-5rem)] supports-[height:100dvh]:h-[calc(100dvh-5rem)]"
@@ -3114,8 +3114,8 @@ export default function ChatClient() {
           {...(chatListDrawer ? { role: "dialog", "aria-modal": true, "aria-label": "Your chats" } : {})}
           className={
             chatListDrawer
-              ? "fixed inset-y-0 left-0 z-50 flex h-full w-[min(320px,86vw)] flex-col overscroll-contain border-r border-slate-200 bg-white p-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-overlay dark:border-[#1f1f1f] dark:bg-[#050505]"
-              : `hidden h-full min-h-0 flex-none border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] lg:flex lg:flex-col ${
+              ? "fixed inset-y-0 left-0 z-50 flex h-full w-[min(320px,86vw)] flex-col overscroll-contain border-r border-hairline bg-surface p-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-overlay"
+              : `hidden h-full min-h-0 flex-none border-r border-hairline bg-surface lg:flex lg:flex-col ${
                   sidebarCompact ? "w-[60px] p-2" : "w-[288px] p-3"
                 }`
           }
@@ -3125,7 +3125,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setSidebarCollapsed(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-body transition-colors hover:bg-subtle hover:text-ink"
                 aria-label="Open chat sidebar"
               >
                 <SidebarIcon className="h-5 w-5" />
@@ -3133,7 +3133,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-ink transition-colors hover:bg-subtle hover:text-ink"
                 aria-label="New chat"
               >
                 <PencilSquareIcon className="h-5 w-5" />
@@ -3144,7 +3144,7 @@ export default function ChatClient() {
                   setSearchModalOpen(true);
                   setChatSearchQuery("");
                 }}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-ink transition-colors hover:bg-subtle hover:text-ink"
                 aria-label="Search chats"
               >
                 <SearchIcon className="h-5 w-5" />
@@ -3156,7 +3156,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
-                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-ink transition-colors hover:bg-subtle"
               >
                 <PencilSquareIcon className="h-5 w-5" />
                 <span>New chat</span>
@@ -3168,7 +3168,7 @@ export default function ChatClient() {
                   setSearchModalOpen(true);
                   setChatSearchQuery("");
                 }}
-                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-ink transition-colors hover:bg-subtle"
               >
                 <SearchIcon className="h-5 w-5" />
                 <span>Search chats</span>
@@ -3177,7 +3177,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => (chatListDrawer ? setChatListOpen(false) : setSidebarCollapsed(true))}
-                className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-body transition-colors hover:bg-subtle hover:text-ink"
                 aria-label={chatListDrawer ? "Close your chats" : "Close chat sidebar"}
               >
                 <SidebarIcon className="h-5 w-5" />
@@ -3188,19 +3188,19 @@ export default function ChatClient() {
           {!sidebarCompact ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
-              <p className="truncate text-sm font-medium text-slate-800 dark:text-[#ececec]">
+              <p className="truncate text-sm font-medium text-ink">
                 Your chats
               </p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {threadsLoading ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-body">
                   Loading...
                 </div>
               ) : null}
 
               {!threadsLoading && sortedThreads.length === 0 ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-body">
                   {canPersist ? "No chats yet." : "Sign in to save chats."}
                 </div>
               ) : null}
@@ -3214,8 +3214,8 @@ export default function ChatClient() {
                     ref={threadMenuId === thread.id ? threadMenuRef : undefined}
                     className={`group relative rounded-xl px-2 ${
                       active
-                        ? "bg-slate-200 dark:bg-[#050505]"
-                        : "hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
+                        ? "bg-hairline"
+                        : "hover:bg-subtle"
                     }`}
                   >
                     <button
@@ -3235,9 +3235,9 @@ export default function ChatClient() {
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
-                          <PinIcon className="h-3.5 w-3.5 flex-none text-slate-600 dark:text-[#8e8e8e]" />
+                          <PinIcon className="h-3.5 w-3.5 flex-none text-body" />
                         ) : null}
-                        <span className="truncate text-[13px] font-medium text-slate-800 dark:text-[#ececec]">
+                        <span className="truncate text-[13px] font-medium text-ink">
                           {thread.title}
                         </span>
                       </div>
@@ -3253,7 +3253,7 @@ export default function ChatClient() {
                       aria-label={`Options for ${thread.title || "this chat"}`}
                       aria-haspopup="menu"
                       aria-expanded={threadMenuId === thread.id}
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-body opacity-0 transition-opacity hover:bg-hairline hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
@@ -3313,7 +3313,7 @@ export default function ChatClient() {
           ) : null}
         </aside>
 
-        <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-100 dark:bg-black">
+        <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-subtle">
           {/* Here, not in the transcript: positioned against this section, from
               inside the transcript it stood out below it, and on a phone the
               page scrolled its header away to follow it. */}
@@ -3327,7 +3327,7 @@ export default function ChatClient() {
                 onClick={() => resetChat("normal")}
                 aria-label="Start a new chat"
                 title="New chat"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-hairline text-ink lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
               </button>
@@ -3340,18 +3340,18 @@ export default function ChatClient() {
                 aria-expanded={chatListDrawer}
                 aria-label="Open your chats"
                 title="Your chats"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-hairline text-ink lg:hidden"
               >
                 <ListViewIcon className="h-4 w-4" />
               </button>
-              <p className="truncate text-lg font-semibold text-slate-900 dark:text-[#ececec]">
+              <p className="truncate text-lg font-semibold text-ink">
                 {pageTitle}
               </p>
             </div>
 
             <div className="relative flex items-center gap-2" ref={conversationMenuRef}>
               {deepSession && !researchV2 ? (
-                <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                <span className="inline-flex h-9 items-center rounded-full border border-hairline bg-surface px-3 text-sm text-body">
                   {sessionLabel(deepSession) ?? "Saved"}
                 </span>
               ) : null}
@@ -3359,7 +3359,7 @@ export default function ChatClient() {
                 type="button"
                 onClick={() => setFullscreenEnabled((current) => !current)}
                 title={fullscreenEnabled ? "Exit fullscreen" : "Fullscreen"}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-hairline text-ink transition-colors hover:bg-subtle hover:text-ink"
                 aria-label={fullscreenEnabled ? "Exit fullscreen" : "Enter fullscreen"}
               >
                 {fullscreenEnabled ? (
@@ -3372,7 +3372,7 @@ export default function ChatClient() {
                 type="button"
                 onClick={() => setConversationMenuOpen((current) => !current)}
                 title="Conversation menu"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-hairline text-ink transition-colors hover:bg-subtle hover:text-ink"
                 aria-label="Open conversation menu"
                 aria-expanded={conversationMenuOpen}
               >
@@ -3390,7 +3390,7 @@ export default function ChatClient() {
                   >
                     <PaperIcon className="h-4 w-4" />
                     <span className="min-w-0 flex-1">Sources</span>
-                    <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length}</span>
+                    <span className="text-xs text-body">{conversationSources.length}</span>
                   </button>
                   <button
                     type="button"
@@ -3453,7 +3453,7 @@ export default function ChatClient() {
                         <div className="flex justify-end">
                           <div className="group/message relative max-w-[78%] space-y-2">
                             {editingMessageId === message.id ? (
-                              <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+                              <div className="rounded-xl border border-hairline bg-surface px-5 py-4 text-left shadow-sm">
                                 <MessageAttachmentList attachments={attachments} />
                                 <textarea
                                   ref={editComposerRef}
@@ -3461,13 +3461,13 @@ export default function ChatClient() {
                                   onChange={(event) => setEditingDraft(event.target.value)}
                                   aria-label="Edit message"
                                   rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-base leading-8 sm:text-[15px] text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-base leading-8 sm:text-[15px] text-ink outline-none placeholder:text-body"
                                 />
                                 <div className="mt-4 flex justify-end gap-2">
                                   <button
                                     type="button"
                                     onClick={cancelEditingUserMessage}
-                                    className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:bg-[#0a0a0a]"
+                                    className="inline-flex h-10 items-center rounded-full border border-hairline bg-surface px-4 text-sm font-semibold text-ink transition-colors hover:bg-subtle"
                                   >
                                     Cancel
                                   </button>
@@ -3475,7 +3475,7 @@ export default function ChatClient() {
                                     type="button"
                                     onClick={() => void submitEditedUserMessage(message)}
                                     disabled={!editingDraft.trim() || loading}
-                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f1f1f1]"
+                                    className="inline-flex h-10 items-center rounded-full bg-ink px-5 text-sm font-semibold text-canvas transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#f1f1f1]"
                                   >
                                     Send
                                   </button>
@@ -3487,7 +3487,7 @@ export default function ChatClient() {
                                   <button
                                     type="button"
                                     onClick={() => void copyMessageContent(message)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface text-ink shadow-sm ring-1 ring-hairline transition-colors hover:bg-subtle hover:text-ink"
                                     aria-label="Copy message"
                                     title="Copy"
                                   >
@@ -3500,7 +3500,7 @@ export default function ChatClient() {
                                   <button
                                     type="button"
                                     onClick={() => startEditingUserMessage(message)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface text-ink shadow-sm ring-1 ring-hairline transition-colors hover:bg-subtle hover:text-ink"
                                     aria-label="Edit message"
                                     title="Edit"
                                   >
@@ -3508,7 +3508,7 @@ export default function ChatClient() {
                                   </button>
                                 </div>
                                 {tableCell ? <TableCellQuote cell={tableCell} /> : null}
-                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-8 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
+                                <div className="rounded-[18px] border border-hairline bg-surface px-5 py-3 text-[15px] leading-8 text-ink shadow-sm">
                                   {renderRichMessage(message.content, message.id, "user")}
                                 </div>
                                 <MessageAttachmentList attachments={attachments} />
@@ -3522,7 +3522,7 @@ export default function ChatClient() {
                                     title={scopeSnapshot.eligiblePaperCount > 0
                                       ? `${scopeSnapshot.eligiblePaperCount} analyzed paper${scopeSnapshot.eligiblePaperCount === 1 ? "" : "s"} in this message scope`
                                       : "Knowledge scope used for this message"}
-                                    className="ml-auto inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                    className="ml-auto inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-hairline bg-canvas px-3 text-xs text-body transition-colors hover:bg-subtle hover:text-ink"
                                   >
                                     <FolderIcon className="h-3.5 w-3.5 flex-none" />
                                     <span className="truncate">{scopeSnapshot.label}</span>
@@ -3543,7 +3543,7 @@ export default function ChatClient() {
                                 steps={deepSession && message.metadata?.sessionId === deepSession.id ? deepSession.steps : undefined}
                               />
                             ) : (
-                              <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
+                              <p className="text-xs font-semibold text-body">Deep research report</p>
                             )
                           ) : null}
                           <div data-testid="assistant-message">
@@ -3562,7 +3562,7 @@ export default function ChatClient() {
                             />
                           ) : null}
                           {groundingMode === "general" ? (
-                            <div className="text-xs text-slate-600 dark:text-[#8e8e8e]">
+                            <div className="text-xs text-body">
                               Repository context not used
                             </div>
                           ) : null}
@@ -3627,7 +3627,7 @@ export default function ChatClient() {
                                 <button
                                   type="button"
                                   onClick={() => setSourcesPanelOpen(true)}
-                                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-xs font-semibold text-ink transition-colors hover:bg-subtle hover:text-ink"
                                 >
                                   <PaperIcon className="h-3.5 w-3.5" />
                                   {citationPreview.remaining} more
@@ -3656,7 +3656,7 @@ export default function ChatClient() {
                             : orbStateForStage(progress?.stage)
                       }
                     />
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                    <div className="rounded-xl border border-hairline bg-surface px-4 py-3 text-sm text-body">
                       <span className="flex flex-wrap items-baseline gap-x-2">
                         <span aria-live="polite">
                           {/* Keyed on the words, so each new step slides in
@@ -3672,7 +3672,7 @@ export default function ChatClient() {
                           </span>
                         </span>
                         {progress?.detail ? (
-                          <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">
+                          <span className="text-xs text-body">
                             {progress.detail}
                           </span>
                         ) : null}
@@ -3707,10 +3707,10 @@ export default function ChatClient() {
               <section className="mx-auto mt-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600 dark:text-[#b4b4b4]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-body">
                       <div className="flex flex-wrap items-center gap-2">
                         <span>Research completed</span>
-                        <span className="text-slate-600 dark:text-[#8e8e8e]">·</span>
+                        <span className="text-body">·</span>
                         <span>
                           {researchProgress.completedSteps}/{Math.max(
                             researchProgress.totalSteps,
@@ -3720,7 +3720,7 @@ export default function ChatClient() {
                         </span>
                         {deepSession.folder_id ? (
                           <>
-                            <span className="text-slate-600 dark:text-[#8e8e8e]">·</span>
+                            <span className="text-body">·</span>
                             <span>{buildFolderLabel(deepSession.folder_id, folders)}</span>
                           </>
                         ) : null}
@@ -3730,7 +3730,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setReportFullViewOpen(true)}
-                          className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                          className="inline-flex h-10 items-center rounded-full border border-hairline bg-surface px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
                         >
                           Full view
                         </button>
@@ -3739,17 +3739,17 @@ export default function ChatClient() {
 
                     <ResearchEvidenceSummary summary={researchEvidenceSummary} />
 
-                    <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#030303] dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
-                      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
+                    <div className="overflow-hidden rounded-[26px] border border-hairline bg-surface shadow-[0_18px_60px_rgba(15,23,42,0.12)] dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
+                      <div className="flex items-center justify-between border-b border-hairline px-5 py-4">
                         <div className="flex items-center gap-3">
                           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#1d4ed8] text-white">
                             <SparkIcon className="h-4 w-4" />
                           </span>
                           <div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">
+                            <p className="text-sm font-semibold text-ink">
                               {researchTitle}
                             </p>
-                            <p className="text-xs text-slate-600 dark:text-[#8e8e8e]">
+                            <p className="text-xs text-body">
                               Deep research report
                             </p>
                           </div>
@@ -3757,14 +3757,14 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setReportFullViewOpen(true)}
-                          className="inline-flex h-9 items-center rounded-full border border-slate-200 px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                          className="inline-flex h-9 items-center rounded-full border border-hairline px-3 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink"
                         >
                           Expand
                         </button>
                       </div>
 
                       <article className="space-y-5 px-6 py-7 sm:px-10 sm:py-10">
-                        <h2 className="text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.6rem]">
+                        <h2 className="text-[2rem] font-semibold tracking-normal text-ink sm:text-[2.6rem]">
                           {researchTitle}
                         </h2>
                         {renderRichMessage(
@@ -3774,7 +3774,7 @@ export default function ChatClient() {
                           researchMarked.sources
                         )}
                         {researchBlocks.length > 6 ? (
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                          <div className="rounded-xl border border-hairline bg-canvas px-4 py-3 text-sm text-body">
                             Continue in full view to read the rest of the report.
                           </div>
                         ) : null}
@@ -3782,7 +3782,7 @@ export default function ChatClient() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_12px_40px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+                  <div className="rounded-xl border border-hairline bg-surface p-6 shadow-[0_12px_40px_rgba(15,23,42,0.12)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -3790,15 +3790,15 @@ export default function ChatClient() {
                             <SparkIcon className="h-4 w-4" />
                           </span>
                           {researchV2 ? (
-                            <span className="text-xs font-medium uppercase tracking-[0.04em] text-slate-600 dark:text-[#a3a3a3]">
+                            <span className="text-xs font-medium uppercase tracking-[0.04em] text-body">
                               {deepSession.status === "completed" ? "Thought it through" : deepSession.status === "processing" || deepSession.status === "planned" ? "Thinking" : "Deep thinking"}
                             </span>
                           ) : null}
-                          <p className="text-[1.35rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
+                          <p className="text-[1.35rem] font-semibold tracking-normal text-ink">
                             {researchTitle}
                           </p>
                           {deepSession.folder_id ? (
-                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                            <span className="rounded-full border border-hairline bg-canvas px-3 py-1 text-xs font-medium text-body">
                               {buildFolderLabel(deepSession.folder_id, folders)}
                             </span>
                           ) : null}
@@ -3808,7 +3808,7 @@ export default function ChatClient() {
                         ) : (
                           <>
                             {deepSession.plan_summary ? (
-                              <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
+                              <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-body`}>
                                 {deepSession.plan_summary}
                               </p>
                             ) : null}
@@ -3822,13 +3822,13 @@ export default function ChatClient() {
                           // Planned before deep research v2: it ran on a worker that is gone
                           // (docs/32, long-term health), so it is planned again instead.
                           <>
-                            <p className={`max-w-xs ${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
+                            <p className={`max-w-xs ${ANSWER_META_SM_CLASS} text-body`}>
                               Planned by an earlier version of Papertrend, so it can no longer be run.
                             </p>
                             <button
                               type="button"
                               onClick={handleEditResearchPlan}
-                              className="inline-flex h-11 flex-none items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                              className="inline-flex h-11 flex-none items-center rounded-full bg-ink px-5 text-sm font-semibold text-canvas transition-colors hover:bg-slate-800 dark:hover:bg-[#f1f1f1]"
                             >
                               Plan again
                             </button>
@@ -3838,14 +3838,14 @@ export default function ChatClient() {
                             <button
                               type="button"
                               onClick={handleEditResearchPlan}
-                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                              className="inline-flex h-11 items-center rounded-full border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => (researchV2 ? void handleCancelResearch() : resetChat("deep_research"))}
-                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                              className="inline-flex h-11 items-center rounded-full border border-hairline px-4 text-sm font-medium text-body transition-colors hover:bg-subtle hover:text-ink"
                             >
                               Cancel
                             </button>
@@ -3853,7 +3853,7 @@ export default function ChatClient() {
                               type="button"
                               onClick={() => void handleContinueResearch()}
                               disabled={loading}
-                              className="inline-flex h-11 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                              className="inline-flex h-11 items-center rounded-full bg-ink px-5 text-sm font-semibold text-canvas transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-[#f1f1f1]"
                             >
                               Start
                             </button>
@@ -3862,7 +3862,7 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={() => void handleCancelResearch()}
-                            className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                            className="inline-flex h-11 items-center rounded-full border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
                           >
                             Stop research
                           </button>
@@ -3871,7 +3871,7 @@ export default function ChatClient() {
                             <button
                               type="button"
                               onClick={handleEditResearchPlan}
-                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                              className="inline-flex h-11 items-center rounded-full border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
                             >
                               Edit
                             </button>
@@ -3879,7 +3879,7 @@ export default function ChatClient() {
                               type="button"
                               onClick={() => void handleContinueResearch()}
                               disabled={loading}
-                              className="inline-flex h-11 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                              className="inline-flex h-11 items-center rounded-full bg-ink px-5 text-sm font-semibold text-canvas transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-[#f1f1f1]"
                             >
                               {deepSession.status === "failed" ? "Retry" : "Resume"}
                             </button>
@@ -3888,7 +3888,7 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={handleEditResearchPlan}
-                            className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                            className="inline-flex h-11 items-center rounded-full border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
                           >
                             Update
                           </button>
@@ -3901,7 +3901,7 @@ export default function ChatClient() {
                         type="button"
                         onClick={() => setThinkingOpen(thinkingFolded)}
                         aria-expanded={!thinkingFolded}
-                        className="mt-5 inline-flex items-center gap-2 rounded-full text-sm font-medium text-slate-700 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 dark:text-[#d4d4d4] dark:hover:text-white"
+                        className="mt-5 inline-flex items-center gap-2 rounded-full text-sm font-medium text-ink transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70"
                       >
                         <ChevronDownIcon className={`h-4 w-4 transition-transform ${thinkingFolded ? "-rotate-90" : ""}`} />
                         {thinkingFolded
@@ -3958,13 +3958,13 @@ export default function ChatClient() {
                             <span
                               className={`mt-1 inline-flex h-6 w-6 flex-none items-center justify-center rounded-full ${
                                 isComplete
-                                  ? "bg-slate-900 text-white dark:bg-white dark:text-[#111111]"
+                                  ? "bg-ink text-canvas"
                                   : isProcessing
-                                    ? "border border-slate-400 bg-transparent text-slate-700 dark:border-white dark:text-white"
+                                    ? "border border-slate-400 bg-transparent text-ink dark:border-white"
                                   : isBlocked
                                       ? "border border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-200"
                                     : isPending
-                                      ? "border border-slate-300 bg-transparent text-transparent dark:border-[#1f1f1f]"
+                                      ? "border border-hairline-strong bg-transparent text-transparent"
                                       : "border border-red-400/50 bg-red-500/10 text-red-700 dark:text-red-300"
                               }`}
                             >
@@ -3982,7 +3982,7 @@ export default function ChatClient() {
                             </span>
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[15px] leading-8 text-slate-900 dark:text-[#ececec]">
+                                <p className="text-[15px] leading-8 text-ink">
                                   {step.title}
                                 </p>
                                 {isAppended ? (
@@ -3991,7 +3991,7 @@ export default function ChatClient() {
                                   </span>
                                 ) : null}
                                 {phaseLabel ? (
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#8e8e8e]">
+                                  <span className="rounded-full border border-hairline bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-body dark:bg-white/5">
                                     {phaseLabel}
                                   </span>
                                 ) : null}
@@ -4001,7 +4001,7 @@ export default function ChatClient() {
                                   </span>
                                 ) : null}
                                 {isObsolete ? (
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]">
+                                  <span className="rounded-full border border-hairline bg-slate-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-body dark:bg-white/5">
                                     Obsolete
                                   </span>
                                 ) : null}
@@ -4017,24 +4017,24 @@ export default function ChatClient() {
                                 ) : null}
                               </div>
                               {stepBody ? (
-                                <p className={`${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
+                                <p className={`${ANSWER_META_SM_CLASS} text-body`}>
                                   {stepBody}
                                 </p>
                               ) : null}
                               {statusReason ? (
-                                <p className="text-xs leading-5 text-slate-600 dark:text-[#8e8e8e]">
+                                <p className="text-xs leading-5 text-body">
                                   {statusReason}
                                 </p>
                               ) : null}
                               {sourceCounts ? (
-                                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-[#8e8e8e]">
+                                <p className="mt-1 text-xs leading-5 text-body">
                                   Sources: {sourceCounts.total ?? 0} total,{" "}
                                   {sourceCounts.paper ?? 0} library,{" "}
                                   {sourceCounts.web ?? 0} web
                                 </p>
                               ) : null}
                               {citationCount > 0 ? (
-                                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-[#8e8e8e]">
+                                <p className="mt-1 text-xs leading-5 text-body">
                                   Evidence ledger: {citationCount} citation
                                   {citationCount === 1 ? "" : "s"}
                                 </p>
@@ -4053,7 +4053,7 @@ export default function ChatClient() {
                                   {unresolvedSections.slice(0, 3).map((section) => (
                                     <span
                                       key={`${step.id}-missing-${section}`}
-                                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]"
+                                      className="rounded-full border border-hairline bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-body dark:bg-white/5"
                                     >
                                       Missing: {section}
                                     </span>
@@ -4065,11 +4065,11 @@ export default function ChatClient() {
                                   {stepEvidenceItems.map((item, evidenceIndex) => (
                                     <div
                                       key={`${step.id}-evidence-${item.paperId}-${evidenceIndex}`}
-                                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                                      className="rounded-xl border border-hairline bg-canvas px-3 py-2"
                                     >
-                                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-normal text-body">
                                         <span>{item.section || item.requested_section}</span>
-                                        <span className="text-slate-600 dark:text-[#8e8e8e]">
+                                        <span className="text-body">
                                           |
                                         </span>
                                         <span>
@@ -4079,10 +4079,10 @@ export default function ChatClient() {
                                             : "n/a"}
                                         </span>
                                       </div>
-                                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-700 dark:text-[#d4d4d4]">
+                                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-ink">
                                         {item.title}
                                       </p>
-                                      <p className={`mt-1 line-clamp-2 ${ANSWER_META_CLASS} text-slate-600 dark:text-[#a3a3a3]`}>
+                                      <p className={`mt-1 line-clamp-2 ${ANSWER_META_CLASS} text-body`}>
                                         {item.snippet}
                                       </p>
                                     </div>
@@ -4097,7 +4097,7 @@ export default function ChatClient() {
 
                     {deepSession.status !== "planned" ? (
                       <div className="mt-6">
-                        <div className="flex items-center justify-between gap-3 text-sm text-slate-600 dark:text-[#b4b4b4]">
+                        <div className="flex items-center justify-between gap-3 text-sm text-body">
                           <span>{researchProgress.detail}</span>
                           <span>
                             {researchProgress.completedSteps}/{Math.max(
@@ -4109,7 +4109,7 @@ export default function ChatClient() {
                         </div>
                         <div className="mt-3 h-2.5 rounded-full bg-slate-200 dark:bg-white/10">
                           <div
-                            className="h-full rounded-full bg-slate-900 transition-[width] duration-500 dark:bg-white"
+                            className="h-full rounded-full bg-ink transition-[width] duration-500"
                             style={{
                               width: `${Math.max(
                                 6,
@@ -4132,19 +4132,19 @@ export default function ChatClient() {
             ) : null}
 
             {detailLoading ? (
-              <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+              <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-body">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-hairline-strong border-t-slate-700 dark:border-t-white" />
                 <span>Loading chat…</span>
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
           </div>
 
-          <div ref={composerAreaRef} className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
+          <div ref={composerAreaRef} className="flex-none bg-subtle px-4 pb-6 pt-3 sm:px-6 xl:px-8">
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
               {/* The composer shows keyboard focus on its own border, rather
                   than an outline drawn inside it around the text box. */}
-              <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] transition-colors duration-150 has-[textarea:focus-visible]:border-[rgb(var(--focus))] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] dark:has-[textarea:focus-visible]:border-[rgb(var(--focus))]">
+              <div className="rounded-xl border border-hairline bg-surface px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] transition-colors duration-150 has-[textarea:focus-visible]:border-[rgb(var(--focus))] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] dark:has-[textarea:focus-visible]:border-[rgb(var(--focus))]">
                 {error ? (
                   <div role="alert" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
                     {error}
@@ -4158,7 +4158,7 @@ export default function ChatClient() {
                       return (
                         <span
                           key={run.id}
-                          className="group inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4]"
+                          className="group inline-flex h-9 items-center gap-2 rounded-full border border-hairline bg-canvas px-3 text-xs text-ink shadow-sm"
                         >
                           <span
                             className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${runGlyphTone(run)}`}
@@ -4175,7 +4175,7 @@ export default function ChatClient() {
                                 current.filter((item) => item.id !== run.id)
                               )
                             }
-                            className="-my-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                            className="-my-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-body opacity-0 transition-opacity hover:bg-hairline hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                             aria-label={`Remove ${runTitleOf(run)}`}
                           >
                             <CloseIcon className="h-3 w-3" />
@@ -4232,7 +4232,7 @@ export default function ChatClient() {
                     disagree. */}
                 <p
                   data-testid="composer-scope"
-                  className={`px-1 pb-1 ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}
+                  className={`px-1 pb-1 ${ANSWER_META_CLASS} text-body`}
                 >
                   {/* Chosen papers are counted here, not by the summary: it is asked
                       by repository and folder, so with papers chosen it described
@@ -4258,7 +4258,7 @@ export default function ChatClient() {
                       : "Ask the repository…"
                   }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none focus-visible:outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-ink outline-none focus-visible:outline-none placeholder:text-body"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -4270,7 +4270,7 @@ export default function ChatClient() {
                           setMenuView("root");
                           setMenuOpen((current) => !current);
                         }}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-body transition-colors hover:bg-subtle hover:text-ink"
                         aria-label="Open attachment and tool menu"
                         aria-haspopup="menu"
                         aria-expanded={menuOpen}
@@ -4282,18 +4282,18 @@ export default function ChatClient() {
                         <div className="absolute bottom-12 left-0 z-30 w-[min(21rem,calc(100vw-2rem))] origin-bottom-left overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in">
                           {menuView === "scope" ? (
                             <>
-                              <div className="flex h-12 items-center gap-2 border-b border-slate-200 px-2 dark:border-[#1f1f1f]">
+                              <div className="flex h-12 items-center gap-2 border-b border-hairline px-2">
                                 <button
                                   type="button"
                                   onClick={() => setMenuView("root")}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0f0f0f] dark:hover:text-white"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-body transition-colors hover:bg-subtle hover:text-ink"
                                   aria-label="Back to chat tools"
                                 >
                                   <ChevronDownIcon className="h-4 w-4 rotate-90" />
                                 </button>
                                 <div className="min-w-0">
-                                  <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">Repository scope</p>
-                                  <p className="truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose what this message can use</p>
+                                  <p className="text-sm font-medium text-ink">Repository scope</p>
+                                  <p className="truncate text-[11px] text-body">Choose what this message can use</p>
                                 </div>
                               </div>
                               <div className="max-h-80 overflow-y-auto p-2">
@@ -4306,17 +4306,17 @@ export default function ChatClient() {
                                     setSelectedLibraryRuns([]);
                                     setMenuOpen(false);
                                   }}
-                                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeProjectId === "all" && chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeProjectId === "all" && chatScopeFolderId === "all" ? "bg-subtle" : "hover:bg-subtle"}`}
                                 >
-                                  <BooksIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                  <BooksIcon className="h-4 w-4 flex-none text-body" />
                                   <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">All repositories</span>
-                                    <span className="block truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">Every analyzed paper in this account</span>
+                                    <span className="block truncate text-sm font-medium text-ink">All repositories</span>
+                                    <span className="block truncate text-[11px] text-body">Every analyzed paper in this account</span>
                                   </span>
                                   {chatScopeProjectId === "all" && chatScopeFolderId === "all" ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                 </button>
                                 {allProjects.length > 0 ? (
-                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-600 dark:text-[#8e8e8e]">Repositories</p>
+                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-body">Repositories</p>
                                 ) : null}
                                 {allProjects.map((project) => {
                                   const projectActive = chatScopeProjectId === project.id && chatScopeFolderId === "all";
@@ -4331,10 +4331,10 @@ export default function ChatClient() {
                                         setSelectedLibraryRuns([]);
                                         setMenuOpen(false);
                                       }}
-                                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${projectActive ? "bg-subtle" : "hover:bg-subtle"}`}
                                     >
-                                      <BooksIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
-                                      <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
+                                      <BooksIcon className="h-4 w-4 flex-none text-body" />
+                                      <span className="min-w-0 flex-1 truncate text-sm text-ink">{project.name}</span>
                                       {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                     </button>
                                   );
@@ -4343,18 +4343,18 @@ export default function ChatClient() {
                             </>
                           ) : (
                             <div className="p-2">
-                              <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-slate-600 dark:text-[#8e8e8e]">Context</p>
+                              <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-body">Context</p>
                               <button
                                 type="button"
                                 onClick={() => setMenuView("scope")}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                               >
-                                <FolderIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                <FolderIcon className="h-4 w-4 flex-none text-body" />
                                 <span className="min-w-0 flex-1">
-                                  <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Repository scope</span>
-                                  <span className="block truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">{activeFolderLabel}</span>
+                                  <span className="block text-sm font-medium text-ink">Repository scope</span>
+                                  <span className="block truncate text-[11px] text-body">{activeFolderLabel}</span>
                                 </span>
-                                <ChevronDownIcon className="h-4 w-4 flex-none -rotate-90 text-slate-600" />
+                                <ChevronDownIcon className="h-4 w-4 flex-none -rotate-90 text-body" />
                               </button>
                               <button
                                 type="button"
@@ -4364,10 +4364,10 @@ export default function ChatClient() {
                                 }}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                               >
-                                <FileIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                <FileIcon className="h-4 w-4 flex-none text-body" />
                                 <span className="min-w-0 flex-1">
-                                  <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Attach papers</span>
-                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose specific papers from any repository</span>
+                                  <span className="block text-sm font-medium text-ink">Attach papers</span>
+                                  <span className="block text-[11px] text-body">Choose specific papers from any repository</span>
                                 </span>
                                 {selectedLibraryRuns.length > 0 ? <span className="text-xs font-medium">{selectedLibraryRuns.length}</span> : null}
                               </button>
@@ -4379,15 +4379,15 @@ export default function ChatClient() {
                                 }}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                               >
-                                <PaperIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                <PaperIcon className="h-4 w-4 flex-none text-body" />
                                 <span className="min-w-0 flex-1">
-                                  <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Upload a paper</span>
-                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Analyze and add it to this repository</span>
+                                  <span className="block text-sm font-medium text-ink">Upload a paper</span>
+                                  <span className="block text-[11px] text-body">Analyze and add it to this repository</span>
                                 </span>
                               </button>
 
-                              <div className="my-2 border-t border-slate-200 dark:border-[#1f1f1f]" />
-                              <p className="px-3 pb-1 text-[11px] font-medium text-slate-600 dark:text-[#8e8e8e]">Tools</p>
+                              <div className="my-2 border-t border-hairline" />
+                              <p className="px-3 pb-1 text-[11px] font-medium text-body">Tools</p>
                               {[
                                 { key: "chart", label: "Chart mode", description: "Build a chart from repository data", icon: ChartIcon, active: chartModeEnabled },
                                 { key: "web", label: "Web search", description: "Add current external sources", icon: SearchIcon, active: webSearchEnabled },
@@ -4410,10 +4410,10 @@ export default function ChatClient() {
                                     aria-pressed={item.active}
                                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70 ${item.active ? "bg-subtle shadow-[inset_3px_0_0_rgb(var(--ink))]" : "hover:bg-subtle"}`}
                                   >
-                                    <Icon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                    <Icon className="h-4 w-4 flex-none text-body" />
                                     <span className="min-w-0 flex-1">
-                                      <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">{item.label}</span>
-                                      <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">{item.description}</span>
+                                      <span className="block text-sm font-medium text-ink">{item.label}</span>
+                                      <span className="block text-[11px] text-body">{item.description}</span>
                                     </span>
                                     {item.active ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                   </button>
@@ -4459,7 +4459,7 @@ export default function ChatClient() {
                     ) : null}
 
                     {chatScopeFolderId !== "all" ? (
-                      <span className="inline-flex h-9 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                      <span className="inline-flex h-9 items-center gap-1 rounded-full border border-hairline bg-canvas px-3 text-xs text-body">
                         <FolderIcon className="h-3.5 w-3.5" />
                         {activeFolderLabel}
                       </span>
@@ -4497,10 +4497,10 @@ export default function ChatClient() {
                       }
                       className={`group inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
                         loading
-                          ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
+                          ? "bg-ink text-canvas hover:bg-slate-800 dark:hover:bg-[#f3f3f3]"
                           : draft.trim().length > 0 || chartModeEnabled
-                            ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
-                            : "bg-slate-200 text-slate-600 dark:bg-[#1f1f1f] dark:text-[#8e8e8e]"
+                            ? "bg-ink text-canvas hover:bg-slate-800 dark:hover:bg-[#f3f3f3]"
+                            : "bg-hairline text-body"
                       } disabled:cursor-not-allowed`}
                       aria-label={loading ? "Stop generating" : "Send message"}
                     >
@@ -4529,16 +4529,16 @@ export default function ChatClient() {
               onClick={() => setSourcesPanelOpen(false)}
               aria-label="Close conversation sources"
             />
-            <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(90vw,360px)] flex-col border-l border-slate-200 bg-white shadow-[-18px_0_50px_rgba(15,23,42,0.14)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[-18px_0_50px_rgba(0,0,0,0.4)] lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none">
-              <div className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-[#1f1f1f]">
+            <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(90vw,360px)] flex-col border-l border-hairline bg-surface shadow-[-18px_0_50px_rgba(15,23,42,0.14)] dark:shadow-[-18px_0_50px_rgba(0,0,0,0.4)] lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none">
+              <div className="flex h-14 flex-none items-center justify-between border-b border-hairline px-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">Sources</p>
-                  <p className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length} unique sources</p>
+                  <p className="text-sm font-semibold text-ink">Sources</p>
+                  <p className="text-xs text-body">{conversationSources.length} unique sources</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSourcesPanelOpen(false)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-body transition-colors hover:bg-subtle hover:text-ink"
                   aria-label="Close conversation sources"
                 >
                   <CloseIcon className="h-4 w-4" />
@@ -4555,7 +4555,7 @@ export default function ChatClient() {
                     ))}
                   </div>
                 ) : (
-                  <div className="px-2 py-8 text-center text-sm leading-6 text-slate-600 dark:text-[#8e8e8e]">
+                  <div className="px-2 py-8 text-center text-sm leading-6 text-body">
                     Sources cited by answers in this conversation will appear here.
                   </div>
                 )}
@@ -4571,20 +4571,20 @@ export default function ChatClient() {
           role="dialog"
           aria-modal="true"
           aria-label="Deep research report"
-          className="fixed inset-0 z-50 overscroll-contain bg-slate-50 text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
+          className="fixed inset-0 z-50 overscroll-contain bg-canvas text-ink"
         >
           <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f] sm:px-6">
+            <div className="flex items-center justify-between border-b border-hairline px-4 py-3 sm:px-6">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setReportFullViewOpen(false)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-body transition-colors hover:bg-subtle hover:text-ink"
                   aria-label="Close full report"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
-                <span className="text-sm font-medium text-slate-600 dark:text-[#b4b4b4]">
+                <span className="text-sm font-medium text-body">
                   Deep research report
                 </span>
               </div>
@@ -4592,7 +4592,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setReportFullViewOpen(false)}
-                className="inline-flex h-10 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                className="inline-flex h-10 items-center rounded-full border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
               >
                 Close
               </button>
@@ -4601,10 +4601,10 @@ export default function ChatClient() {
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-10 sm:px-10">
               <article className="mx-auto max-w-[900px] space-y-8">
                 <div className="space-y-3">
-                  <p className="text-sm text-slate-600 dark:text-[#8e8e8e]">
+                  <p className="text-sm text-body">
                     Research completed in the selected library scope.
                   </p>
-                  <h1 className="text-[2.2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[3rem]">
+                  <h1 className="text-[2.2rem] font-semibold tracking-normal text-ink sm:text-[3rem]">
                     {researchTitle}
                   </h1>
                 </div>
@@ -4671,23 +4671,23 @@ export default function ChatClient() {
 
       {searchModalOpen ? (
         <Modal onClose={() => setSearchModalOpen(false)} zIndexClassName="z-[60]">
-          <div className="flex h-[min(660px,86vh)] w-[min(860px,94vw)] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white text-slate-900 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f4f4f4] dark:shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
-            <div className="flex h-20 flex-none items-center border-b border-slate-200 px-6 dark:border-[#1f1f1f]">
+          <div className="flex h-[min(660px,86vh)] w-[min(860px,94vw)] flex-col overflow-hidden rounded-[22px] border border-hairline bg-surface text-ink shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex h-20 flex-none items-center border-b border-hairline px-6">
               <label className="relative flex min-w-0 flex-1 items-center">
-                <SearchIcon className="pointer-events-none absolute left-0 h-5 w-5 text-slate-600 dark:text-[#b4b4b4]" />
+                <SearchIcon className="pointer-events-none absolute left-0 h-5 w-5 text-body" />
                 <input
                   type="search"
                   value={chatSearchQuery}
                   onChange={(event) => setChatSearchQuery(event.target.value)}
                   placeholder="Search chats…"
-                  className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#c7c7c7]"
+                  className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-ink outline-none placeholder:text-body"
                   autoFocus
                 />
               </label>
               <button
                 type="button"
                 onClick={() => setSearchModalOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-body transition-colors hover:bg-subtle hover:text-ink"
                 aria-label="Close chat search"
               >
                 <CloseIcon className="h-5 w-5" />
@@ -4701,15 +4701,15 @@ export default function ChatClient() {
                   resetChat("normal");
                   setSearchModalOpen(false);
                 }}
-                className="mb-5 flex h-12 w-full items-center gap-4 rounded-xl px-1 text-left text-base font-medium text-slate-900 transition-colors hover:bg-slate-100 dark:text-white dark:hover:bg-[#0a0a0a]"
+                className="mb-5 flex h-12 w-full items-center gap-4 rounded-xl px-1 text-left text-base font-medium text-ink transition-colors hover:bg-subtle"
               >
                 <PencilSquareIcon className="h-5 w-5" />
                 <span>New chat</span>
               </button>
 
               {chatSearchLoading ? (
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+                <div className="flex items-center gap-3 rounded-xl border border-hairline bg-slate-50 px-4 py-4 text-sm text-body dark:bg-white/5">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-hairline-strong border-t-slate-700 dark:border-t-white" />
                   <span>Searching chats…</span>
                 </div>
               ) : null}
@@ -4721,7 +4721,7 @@ export default function ChatClient() {
               ) : null}
 
               {!chatSearchLoading && !chatSearchError && chatSearchResults.length === 0 ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                <div className="rounded-xl border border-hairline bg-slate-50 px-4 py-5 text-sm text-body dark:bg-white/5">
                   {chatSearchQuery.trim()
                     ? "No chats matched that search."
                     : "No chats yet."}
@@ -4737,7 +4737,7 @@ export default function ChatClient() {
                       if (groupResults.length === 0) return null;
                       return (
                         <section key={groupLabel} className="mb-6">
-                          <p className="mb-2 text-sm text-slate-600 dark:text-[#b4b4b4]">
+                          <p className="mb-2 text-sm text-body">
                             {groupLabel}
                           </p>
                           <div className="space-y-1">
@@ -4750,15 +4750,15 @@ export default function ChatClient() {
                                   setSearchModalOpen(false);
                                   setThreadMenuId(null);
                                 }}
-                                className="flex w-full items-start gap-4 rounded-xl px-1 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-start gap-4 rounded-xl px-1 py-3 text-left transition-colors hover:bg-subtle"
                               >
-                                <ChatIcon className="mt-1 h-5 w-5 flex-none text-slate-700 dark:text-white" />
+                                <ChatIcon className="mt-1 h-5 w-5 flex-none text-ink" />
                                 <span className="min-w-0">
-                                  <span className="block truncate text-base font-medium text-slate-900 dark:text-white">
+                                  <span className="block truncate text-base font-medium text-ink">
                                     {result.thread.title || "Untitled chat"}
                                   </span>
                                   {result.snippet ? (
-                                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-600 dark:text-[#c7c7c7]">
+                                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-body">
                                       {result.matchedIn === "message" ? "Message: " : ""}
                                       {result.snippet}
                                     </span>
@@ -4779,13 +4779,13 @@ export default function ChatClient() {
 
       {showLibraryPicker ? (
         <Modal onClose={() => setShowLibraryPicker(false)}>
-          <div className="w-[min(720px,92vw)] rounded-xl border border-slate-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+          <div className="w-[min(720px,92vw)] rounded-xl border border-hairline bg-surface p-6 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-[#ececec]">
+                <h2 className="text-xl font-semibold text-ink">
                   Add papers from repositories
                 </h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-[#8e8e8e]">
+                <p className="mt-1 text-sm text-body">
                   Choose papers from any repository in this account when you want to narrow
                   this message to specific sources.
                 </p>
@@ -4793,7 +4793,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setShowLibraryPicker(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-body transition-colors hover:bg-subtle hover:text-ink"
                 aria-label="Close library picker"
               >
                 <CloseIcon className="h-4 w-4" />
@@ -4801,25 +4801,25 @@ export default function ChatClient() {
             </div>
 
             <label className="relative mt-5 block">
-              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 dark:text-[#8e8e8e]" />
+              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-body" />
               <input
                 type="search"
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
                 placeholder="Search files…"
                 aria-label="Search files"
-                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-base text-slate-900 sm:text-sm outline-none placeholder:text-slate-600 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
+                className="w-full rounded-xl border border-hairline bg-surface py-3 pl-11 pr-4 text-base text-ink sm:text-sm outline-none placeholder:text-body focus:border-slate-400 dark:focus:border-white/20"
               />
             </label>
 
             <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
               {libraryLoading ? (
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+                <div className="flex items-center gap-3 rounded-xl border border-hairline bg-canvas px-4 py-4 text-sm text-body">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-hairline-strong border-t-slate-700 dark:border-t-white" />
                   <span>Loading repository files…</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
+                <div className="rounded-xl border border-hairline bg-canvas px-4 py-5 text-sm text-body">
                   No files matched this search.
                 </div>
               ) : (
@@ -4834,7 +4834,7 @@ export default function ChatClient() {
                       className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
                         selected
                           ? "border-sky-300 bg-sky-50 dark:border-[#3a3a3a] dark:bg-[#171717]/65"
-                          : "border-slate-200 bg-white hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
+                          : "border-hairline bg-surface hover:bg-subtle"
                       }`}
                     >
                       <span
@@ -4843,10 +4843,10 @@ export default function ChatClient() {
                         <Glyph className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">
+                        <span className="block truncate text-sm font-medium text-ink">
                           {runTitleOf(run)}
                         </span>
-                        <span className="mt-1 block text-xs text-slate-600 dark:text-[#8e8e8e]">
+                        <span className="mt-1 block text-xs text-body">
                           {runSourceLabel(run)} | {runExtOf(run).toUpperCase()}
                         </span>
                       </span>
@@ -4854,7 +4854,7 @@ export default function ChatClient() {
                         className={`mt-1 inline-flex h-5 w-5 flex-none rounded-full border ${
                           selected
                             ? "border-sky-600 bg-sky-600 dark:border-[#9cc8ff] dark:bg-[#9cc8ff]"
-                            : "border-slate-300 dark:border-[#1f1f1f]"
+                            : "border-hairline-strong"
                         }`}
                       >
                         {selected ? (
@@ -4868,7 +4868,7 @@ export default function ChatClient() {
             </div>
 
             <div className="mt-5 flex items-center justify-between gap-3">
-              <p className="text-sm text-slate-600 dark:text-[#8e8e8e]">
+              <p className="text-sm text-body">
                 {selectedLibraryRuns.length} file
                 {selectedLibraryRuns.length === 1 ? "" : "s"} selected
               </p>
@@ -4876,7 +4876,7 @@ export default function ChatClient() {
                 <button
                   type="button"
                   onClick={() => setShowLibraryPicker(false)}
-                  className="inline-flex h-10 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                  className="inline-flex h-10 items-center rounded-full border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:bg-subtle hover:text-ink"
                 >
                   Done
                 </button>
