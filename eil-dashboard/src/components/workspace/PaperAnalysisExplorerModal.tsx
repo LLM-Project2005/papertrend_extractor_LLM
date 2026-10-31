@@ -1182,7 +1182,7 @@ export function PaperExplorerPanel({
                       </div>
                       {detail.classification.additionalCategories.length ? <p className="mt-2 text-sm text-mute">Also: {detail.classification.additionalCategories.join(", ")}</p> : null}
                       <p className="mt-3 text-sm leading-6 text-body">{detail.classification.rationale}</p>
-                      <p className="mt-3 text-xs text-mute">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
+                      <p className="mt-3 text-xs text-mute">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? `, classified ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
                     </section>
                   ) : null}
                   {detail.extracted ? <ExtractedDetails extracted={detail.extracted} year={detail.year} /> : null}

@@ -1945,7 +1945,7 @@ export default function AdminImportClient() {
               onClick={() => setToolsOpen((open) => !open)}
               aria-expanded={toolsOpen}
               aria-controls="library-tools"
-              className={buttonClass("secondary", "md", "min-[60rem]:hidden")}
+              className={buttonClass("secondary", "md", "min-[960px]:hidden")}
             >
               <FilterIcon className="h-4 w-4" />
               <span>Filter and sort</span>
@@ -1953,7 +1953,7 @@ export default function AdminImportClient() {
             </button>
             <div
               id="library-tools"
-              className={`${toolsOpen ? "flex" : "hidden"} flex-col gap-3 min-[60rem]:flex xl:flex-row xl:items-center xl:justify-between`}
+              className={`${toolsOpen ? "flex" : "hidden"} flex-col gap-3 min-[960px]:flex xl:flex-row xl:items-center xl:justify-between`}
             >
               <div className="flex flex-wrap items-center gap-2">
                 {renderFilterButton("type", typeFilter === "all" ? "Type" : typeFilterLabel)}
@@ -2213,7 +2213,7 @@ export default function AdminImportClient() {
           </div>
         ) : viewMode === "list" ? (
           <div className="px-4 py-4 sm:px-6">
-            <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_160px] items-center gap-4 border-b border-hairline px-3 py-3 text-sm font-medium text-body md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_96px] items-center gap-4 border-b border-hairline px-3 py-3 text-sm font-medium text-body md:grid">
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"

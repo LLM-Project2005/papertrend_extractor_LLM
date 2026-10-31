@@ -66,12 +66,12 @@ export function defaultColorMode(map: { clusters: unknown[]; points: Array<Pick<
 
 /** What the map's colours stand for, in a sentence under the legend. */
 export function colorMeaning(mode: ColorMode, neighborhoods: number): string {
-  if (mode === "category") return "Colour is each paper's research area, from the repository's own profile.";
-  if (mode === "year") return "Colour is the publication year; lighter is earlier.";
-  if (mode === "track") return "Colour is each paper's track.";
+  if (mode === "category") return "Color is each paper's research area, from the repository's own profile.";
+  if (mode === "year") return "Color is the publication year; lighter is earlier.";
+  if (mode === "track") return "Color is each paper's track.";
   return neighborhoods > 1
-    ? "Colour is a neighborhood: papers the map found close together in meaning, from their text. Lines join papers that share signals."
-    : "Colour is a neighborhood, and these papers form one: they are too close in meaning to split into groups. Colour by research area or year to tell them apart.";
+    ? "Color is a neighborhood: papers the map found close together in meaning, from their text. Lines join papers that share signals."
+    : "Color is a neighborhood, and these papers form one: they are too close in meaning to split into groups. Color by research area or year to tell them apart.";
 }
 
 /** Labels are drawn by default only on a map small enough to read them; the reader's choice wins. */

@@ -82,9 +82,8 @@ export default function LandingPage() {
               </Link>
             </div>
             <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-mute">
-              <li>English and Thai papers</li>
+              <li>English and Thai papers, 50 at a time</li>
               <li>From your computer or Google Drive</li>
-              <li>50 at a time</li>
             </ul>
             <p className="mt-2 text-[13px] text-mute">
               Invite-only during the beta.{" "}
