@@ -463,7 +463,8 @@ test("legend text is drawn in the readable label colour, not the series colour (
     const lists = [...html.matchAll(/<ul data-series-legend=""[^>]*>([\s\S]*?)<\/ul>/g)].map((match) => match[0]);
     assert.ok(lists.length > 0, `${name} has no legend to check`);
     for (const list of lists) {
-      assert.match(list, /text-slate-700/, name);
+      // The ink token: readable in both themes (it was text-slate-700 with a hand-picked dark twin).
+      assert.match(list, /text-ink/, name);
       assert.doesNotMatch(list, /style="color:/, `${name}: no text in a series colour`);
     }
   }

@@ -29,7 +29,7 @@ export default function ChartCsvButton({
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
       }}
-      className={`inline-flex min-h-9 flex-none items-center gap-1.5 rounded-lg px-1 text-xs font-medium text-slate-600 transition-colors hover:text-slate-900 dark:text-[#a3a3a3] dark:hover:text-white ${className}`}
+      className={`inline-flex min-h-9 flex-none items-center gap-1.5 rounded-lg px-1 text-xs font-medium text-body transition-colors hover:text-ink ${className}`}
     >
       <DownloadIcon className="h-3.5 w-3.5" />
       {label}

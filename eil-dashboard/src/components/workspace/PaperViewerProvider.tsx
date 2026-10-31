@@ -96,6 +96,8 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
   const shownRunIdRef = useRef<string | null>(null);
   const tokenRef = useRef(token);
   tokenRef.current = token;
+  /** Opens the last paper asked for again: the error's "Try again" (UI audit #7). */
+  const retryRef = useRef<(() => void) | null>(null);
 
   const authHeaders = useCallback((): Record<string, string> => (tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : {}), []);
 
@@ -184,11 +186,15 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
       }
       const list = paperSequence(target, options?.sequence);
       setSequence(list ? { ...list, focus: null } : null);
-      void load(target).then((runId) => {
-        if (!runId) return;
-        writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push", readPaperQuote(target.quote));
-        pushedRef.current = true;
-      });
+      const attempt = () => {
+        void load(target).then((runId) => {
+          if (!runId) return;
+          writeAddress(runId, target.tab ?? "overview", pushedRef.current ? "replace" : "push", readPaperQuote(target.quote));
+          pushedRef.current = true;
+        });
+      };
+      retryRef.current = attempt;
+      attempt();
     },
     [load, router, writeAddress]
   );
@@ -262,7 +268,9 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
         // A paper from the address (a reload, Forward) has no list around it.
         shownRunIdRef.current = runId;
         setSequence(null);
-        void load({ runId, tab: nextTab, quote: nextQuote });
+        const attempt = () => void load({ runId, tab: nextTab, quote: nextQuote });
+        retryRef.current = attempt;
+        attempt();
       } else {
         setTab(nextTab);
         setQuote(nextQuote);
@@ -335,9 +343,13 @@ export function PaperViewerProvider({ children }: { children: ReactNode }) {
               <>
                 <p className="text-sm font-medium text-ink">The paper could not be opened</p>
                 <p className="mt-1.5 text-sm leading-6 text-body">{error}</p>
-                <div className="mt-4 flex justify-end">
-                  <button type="button" onClick={close} className={buttonClass("secondary", "sm")}>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={close} className={buttonClass("ghost", "sm")}>
                     Close
+                  </button>
+                  {/* Every error here comes from an open that set retryRef. */}
+                  <button type="button" onClick={() => retryRef.current?.()} className={buttonClass("secondary", "sm")}>
+                    Try again
                   </button>
                 </div>
               </>

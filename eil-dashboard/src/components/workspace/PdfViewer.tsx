@@ -756,8 +756,8 @@ export default function PdfViewer({
           <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3 text-center">
             <div className="h-1 w-48 overflow-hidden rounded-full bg-hairline">
               <div
-                className="h-full rounded-full bg-ink transition-[width] duration-200"
-                style={{ width: `${Math.max(8, Math.round(progress * 100))}%` }}
+                className="h-full w-full origin-left rounded-full bg-ink transition-transform duration-200"
+                style={{ transform: `scaleX(${Math.max(8, Math.round(progress * 100)) / 100})` }}
               />
             </div>
             <p className="text-xs text-mute">Loading the PDF…</p>

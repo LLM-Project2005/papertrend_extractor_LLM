@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { DEMO_PAPERS_BY_YEAR, DEMO_YEARS } from "@/components/marketing/demo-data";
 import { EASE, useMotionOK, useOnScreen } from "@/components/marketing/kit/motion";
-import { ArrowRightIcon, ChatIcon, CopyIcon, PaperIcon, SendIcon } from "@/components/ui/Icons";
+import { ChatIcon, CopyIcon, PaperIcon, SendIcon } from "@/components/ui/Icons";
 
 /*
  * The dashboard's drilldown (DashboardClient): any bar opens the papers behind
@@ -67,7 +67,7 @@ export default function DrilldownDemo() {
                 }}
                 className="group flex h-full flex-1 flex-col items-center justify-end gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
               >
-                <span className={`font-mono text-[10.5px] tabular-nums transition-opacity ${on ? "text-ink opacity-100" : "text-mute opacity-0 group-hover:opacity-100"}`}>
+                <span className={`font-mono text-[11px] tabular-nums transition-opacity ${on ? "text-ink opacity-100" : "text-mute opacity-0 group-hover:opacity-100"}`}>
                   {item.papers || ""}
                 </span>
                 <span
@@ -78,7 +78,7 @@ export default function DrilldownDemo() {
             );
           })}
         </div>
-        <div className="mt-2 flex justify-between font-mono text-[10.5px] tabular-nums text-mute" aria-hidden="true">
+        <div className="mt-2 flex justify-between font-mono text-[11px] tabular-nums text-mute" aria-hidden="true">
           <span>2011</span>
           <span>2025</span>
         </div>
@@ -99,8 +99,11 @@ export default function DrilldownDemo() {
               transition={{ duration: 0.4, ease: EASE }}
               className="flex h-full flex-col p-5 sm:p-6"
             >
-              <p className="text-[14px] font-medium text-ink">
-                {year} · {papers.length} {papers.length === 1 ? "paper" : "papers"}
+              <p className="flex flex-wrap gap-x-3 text-[14px] font-medium text-ink">
+                <span>{year}</span>
+                <span>
+                  {papers.length} {papers.length === 1 ? "paper" : "papers"}
+                </span>
               </p>
               <ul className="mt-4 max-h-[188px] flex-1 space-y-1 overflow-y-auto pr-1">
                 {papers.map((title) => (
@@ -120,7 +123,6 @@ export default function DrilldownDemo() {
                   className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-[13px] font-medium text-canvas transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <ChatIcon className="h-3.5 w-3.5" /> Ask in chat
-                  <ArrowRightIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
             </motion.div>
@@ -133,9 +135,9 @@ export default function DrilldownDemo() {
               className="flex h-full min-h-[320px] flex-col justify-end p-5 sm:p-6"
             >
               <p className="text-[12.5px] text-mute">A new chat, scoped to the papers you chose</p>
-              <div className="mt-3 rounded-2xl border border-hairline-strong bg-canvas p-4 shadow-raise dark:bg-black/40">
+              <div className="mt-3 rounded-2xl border border-hairline-strong bg-canvas p-4 shadow-raise">
                 <p className="text-[12px] text-mute">
-                  Searching {papers.length} selected {papers.length === 1 ? "paper" : "papers"} · from the {year} bar
+                  Searching {papers.length} selected {papers.length === 1 ? "paper" : "papers"}, from the {year} bar
                 </p>
                 <p className="mt-2 min-h-[48px] text-[14.5px] leading-6 text-ink">
                   {text.slice(0, typed)}

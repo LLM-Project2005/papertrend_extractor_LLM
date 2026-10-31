@@ -77,9 +77,9 @@ test("Max thinks in a line: what it is doing now, and how long it took", () => {
   );
   assert.equal(
     thoughtLine({ durationMs: 42_000, questions: [{}, {}, {}], papersSearched: 7, audit: { checked: 32 }, auditRan: true }),
-    "Thought for 42s · 3 parts · 7 papers read · 32 claims checked"
+    "Thought for 42s, 3 parts, 7 papers read, 32 claims checked"
   );
-  assert.equal(thoughtLine({ durationMs: 9_000, questions: [{}], papersSearched: 1, auditRan: false }), "Thought for 9s · 1 paper read");
+  assert.equal(thoughtLine({ durationMs: 9_000, questions: [{}], papersSearched: 1, auditRan: false }), "Thought for 9s, 1 paper read");
 });
 
 test("a Max answer is drawn as an answer, without the research card", () => {

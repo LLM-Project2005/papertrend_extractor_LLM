@@ -165,7 +165,7 @@ export default function Hotspot({
             ? `${buttonClassName(open)} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`
             : variant === "cite"
             ? `mx-0.5 inline-flex h-[18px] min-w-[18px] -translate-y-[3px] items-center justify-center rounded-[5px] px-1 align-baseline font-mono text-[11px] font-semibold tabular-nums transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                open ? "bg-accent text-white dark:text-black" : "bg-accent-soft text-accent-ink hover:bg-accent/20"
+                open ? "bg-accent text-canvas" : "bg-accent-soft text-accent-ink hover:bg-accent/20"
               }`
             : variant === "dot"
             ? "hotspot-dot group relative flex h-7 w-7 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

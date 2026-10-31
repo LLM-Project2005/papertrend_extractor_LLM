@@ -8,14 +8,13 @@ import AnalysisProfileEditor, { profileSummary } from "@/components/workspace/An
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile, toIngestionAnalysisProfile } from "@/lib/project-analysis-profile";
 import Modal from "@/components/ui/Modal";
 import {
-  ArrowRightIcon,
   CheckCircleIcon,
   CloseIcon,
   DriveIcon,
   FileIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import { buttonClass } from "@/components/ui/controls";
+import { buttonClass, iconButtonClass } from "@/components/ui/controls";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 import { putWithFreshUrl } from "@/lib/upload-retry";
@@ -463,12 +462,11 @@ export default function AnalyzeFlowModal({
     }
   }
 
-  const secondaryButtonClass =
-    "inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white";
-  const primaryButtonClass =
-    "inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]";
+  // The shared button recipes (2026-10-31, UI audit #22); this dialog had its own.
+  const secondaryButtonClass = buttonClass("secondary", "md");
+  const primaryButtonClass = buttonClass("primary", "md");
   const panelClass =
-    "flex max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505] sm:max-h-[calc(100dvh-3rem)]";
+    "flex max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay sm:max-h-[calc(100dvh-3rem)]";
 
   if (queuedSummary) {
     const { count, firstName, failedCount, warning, skipped: skippedFiles } = queuedSummary;
@@ -477,22 +475,21 @@ export default function AnalyzeFlowModal({
         <div className={panelClass}>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-6">
             <div className="flex items-start justify-between gap-4">
-              <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
-                <CheckCircleIcon className="h-6 w-6" />
-              </span>
+              {/* The check sits beside the heading, not in a tile above it (UI audit #18). */}
+              <h2 className="flex items-start gap-2.5 pt-1.5 text-xl font-semibold text-ink">
+                <CheckCircleIcon className="mt-0.5 h-6 w-6 flex-none text-accent" />
+                <span>{count === 1 ? "Your paper is being analyzed" : `${count} papers are being analyzed`}</span>
+              </h2>
               <button
                 type="button"
                 onClick={handleClose}
-                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+                className={iconButtonClass("lg")}
                 aria-label="Close"
               >
                 <CloseIcon className="h-4 w-4" />
               </button>
             </div>
-            <h2 className="mt-5 text-xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
-              {count === 1 ? "Your paper is being analyzed" : `${count} papers are being analyzed`}
-            </h2>
-            <p className="mt-2 break-words text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
+            <p className="mt-2 break-words text-sm leading-6 text-body">
               {count === 1
                 ? `${firstName} was added to ${queuedSummary.projectName}.`
                 : `${firstName} and ${plural(count - 1, "other file")} were added to ${queuedSummary.projectName}.`}
@@ -501,37 +498,37 @@ export default function AnalyzeFlowModal({
             <ol className="mt-5 space-y-3 text-sm">
               <li className="flex gap-3">
                 <CheckCircleIcon className="mt-0.5 h-4 w-4 flex-none text-blue-600 dark:text-blue-300" />
-                <span className="text-slate-700 dark:text-[#d4d4d4]">Uploaded to private storage</span>
+                <span className="text-ink">Uploaded to private storage</span>
               </li>
               <li className="flex gap-3">
-                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-slate-900 motion-safe:animate-pulse dark:border-white" />
-                <span className="text-slate-700 dark:text-[#d4d4d4]">
+                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-ink motion-safe:animate-pulse" />
+                <span className="text-ink">
                   Analysis: title, year, topics, methods and research area. This usually takes a few minutes
                   per paper, and larger batches run one paper after another.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-slate-300 dark:border-[#444]" />
-                <span className="text-slate-500 dark:text-[#9c9c9c]">
+                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-hairline-strong" />
+                <span className="text-mute">
                   Ready: each paper appears in the Library and on the Dashboard as soon as it finishes.
                 </span>
               </li>
             </ol>
 
-            <p className="mt-5 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
+            <p className="mt-5 text-sm leading-6 text-mute">
               You can close this window and keep working. Progress shows on Home, and in the corner
               of every other page.
             </p>
 
             {skippedFiles.length > 0 ? (
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-[#1f1f1f] dark:bg-[#0a0a0a]">
-                <p className="font-medium text-slate-800 dark:text-[#e5e5e5]">
+              <div className="mt-4 rounded-lg bg-subtle px-4 py-3 text-sm">
+                <p className="font-medium text-ink">
                   {plural(skippedFiles.length, "file")} left out
                 </p>
-                <ul className="mt-1.5 space-y-1 text-slate-600 dark:text-[#b4b4b4]">
+                <ul className="mt-1.5 space-y-1 text-body">
                   {skippedFiles.map((skip) => (
                     <li key={skip.name} className="break-words">
-                      <span className="font-medium text-slate-800 dark:text-[#e5e5e5]">{skip.name}</span>: {skip.reason}
+                      <span className="font-medium text-ink">{skip.name}</span>: {skip.reason}
                     </li>
                   ))}
                 </ul>
@@ -549,7 +546,7 @@ export default function AnalyzeFlowModal({
               </p>
             ) : null}
           </div>
-          <div className="flex flex-none flex-col-reverse gap-2 border-t border-slate-200 px-5 py-4 dark:border-[#1f1f1f] sm:flex-row sm:justify-end sm:px-6">
+          <div className="flex flex-none flex-col-reverse gap-2 border-t border-hairline px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
             <button
               type="button"
               onClick={() => {
@@ -568,8 +565,7 @@ export default function AnalyzeFlowModal({
               }}
               className={primaryButtonClass}
             >
-              <span>Follow progress</span>
-              <ArrowRightIcon className="h-4 w-4" />
+              Follow progress
             </button>
           </div>
         </div>
@@ -585,17 +581,16 @@ export default function AnalyzeFlowModal({
   return (
     <Modal onClose={handleClose}>
       <div className={panelClass}>
-        <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f] sm:px-6">
+        <div className="flex flex-none items-start justify-between gap-4 border-b border-hairline px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-500 dark:text-[#9c9c9c]">Add papers</p>
-            <h2 className="mt-1 break-words text-xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
+            <h2 className="break-words text-xl font-semibold text-ink">
               {targetProject ? `Add papers to ${targetProject.name}` : "Choose a repository first"}
             </h2>
           </div>
           <button
             type="button"
             onClick={handleClose}
-            className="flex-none rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+            className={iconButtonClass("lg", "-mr-2")}
             aria-label="Close"
           >
             <CloseIcon className="h-4 w-4" />
@@ -618,8 +613,8 @@ export default function AnalyzeFlowModal({
             }}
             className={`block cursor-pointer rounded-lg border border-dashed px-5 py-7 text-center transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[rgb(var(--focus))] has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-surface ${
               dragActive
-                ? "border-slate-900 bg-slate-100 dark:border-white dark:bg-[#111111]"
-                : "border-slate-300 bg-slate-50 hover:border-slate-500 dark:border-[#3a3a3a] dark:bg-[#080808] dark:hover:border-[#666]"
+                ? "border-ink bg-subtle"
+                : "border-hairline-strong bg-surface hover:border-ink/60 hover:bg-subtle"
             }`}
           >
             <input
@@ -634,13 +629,12 @@ export default function AnalyzeFlowModal({
               }}
               className="sr-only"
             />
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm dark:bg-[#111111] dark:text-[#d0d0d0]">
-              <UploadIcon className="h-5 w-5" />
-            </span>
-            <span className="mt-4 block text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
+            {/* The icon sits on the drop area itself, not in a raised tile of its own (UI audit #17). */}
+            <UploadIcon aria-hidden="true" className="mx-auto block h-6 w-6 text-mute" />
+            <span className="mt-3 block text-base font-medium text-ink">
               {files.length > 0 ? "Add more PDFs" : "Drop PDFs here, or click to choose"}
             </span>
-            <span className="mt-1.5 block text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
+            <span className="mt-1.5 block text-sm leading-6 text-mute">
               Up to {MAX_UPLOAD_FILES} PDFs at a time, 10 MB each. A paper already analyzed in this account is left out, and you are told which.
             </span>
           </label>
@@ -665,9 +659,9 @@ export default function AnalyzeFlowModal({
           {files.length > 0 ? (
             <section>
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                <p className="text-sm font-medium text-ink">
                   {plural(files.length, "PDF")} selected
-                  <span className="font-normal text-slate-500 dark:text-[#9c9c9c]"> ({formatFileSize(totalBytes)})</span>
+                  <span className="font-normal text-mute"> ({formatFileSize(totalBytes)})</span>
                 </p>
                 {!uploading ? (
                   <button
@@ -676,7 +670,7 @@ export default function AnalyzeFlowModal({
                       setFiles([]);
                       setError(null);
                     }}
-                    className="rounded px-1 text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-[#9c9c9c] dark:hover:text-white"
+                    className={buttonClass("ghost", "sm")}
                   >
                     Clear all
                   </button>
@@ -685,7 +679,7 @@ export default function AnalyzeFlowModal({
               {room && room.remaining !== null && room.limit !== null ? (
                 <p
                   className={`mt-1 text-xs leading-5 ${
-                    files.length > room.remaining ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-[#9c9c9c]"
+                    files.length > room.remaining ? "text-amber-700 dark:text-amber-300" : "text-mute"
                   }`}
                 >
                   {files.length > room.remaining
@@ -703,16 +697,16 @@ export default function AnalyzeFlowModal({
                       className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${
                         flagged
                           ? "border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30"
-                          : "border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          : "border-hairline bg-surface"
                       }`}
                     >
                       <span className="flex min-w-0 items-center gap-3">
-                        <FileIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#9c9c9c]" />
+                        <FileIcon className="h-4 w-4 flex-none text-mute" />
                         <span className="min-w-0">
-                          <span className="block truncate text-sm text-slate-900 dark:text-[#f2f2f2]" title={file.name}>
+                          <span className="block truncate text-sm text-ink" title={file.name}>
                             {file.name}
                           </span>
-                          <span className={`block text-xs ${flagged ? "text-red-700 dark:text-red-200" : "text-slate-500 dark:text-[#9c9c9c]"}`}>
+                          <span className={`block text-xs ${flagged ? "text-red-700 dark:text-red-200" : "text-mute"}`}>
                             {skipReason ?? (flagged ? "Remove this file to continue" : formatFileSize(file.size))}
                           </span>
                         </span>
@@ -724,7 +718,7 @@ export default function AnalyzeFlowModal({
                             setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
                             if (flagged) setError(null);
                           }}
-                          className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:bg-[#111] dark:hover:text-white"
+                          className={iconButtonClass("md")}
                           aria-label={`Remove ${file.name}`}
                           title="Remove file"
                         >
@@ -739,12 +733,12 @@ export default function AnalyzeFlowModal({
           ) : null}
 
           {PROJECT_ANALYSIS_PROFILES_ENABLED && targetProject ? (
-            <section className="rounded-lg border border-slate-200 px-4 py-3 dark:border-[#242424]">
+            <section className="rounded-lg border border-hairline px-4 py-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Analysis profile</p>
-                  <p className="mt-1 text-sm font-medium leading-6 text-slate-900 dark:text-white">{profileSummary(activeAnalysisProfile)}</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">
+                  <p className="text-xs font-medium text-mute">Analysis profile</p>
+                  <p className="mt-1 text-sm font-medium leading-6 text-ink">{profileSummary(activeAnalysisProfile)}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-mute">
                     {activeAnalysisProfile.classificationEnabled
                       ? "Every paper in this upload is classified with it."
                       : "Papers are analyzed without being sorted into research areas."}
@@ -763,13 +757,14 @@ export default function AnalyzeFlowModal({
                     setProfileError(null);
                     setShowProfileEditor((visible) => !visible);
                   }}
-                  className="flex-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:border-[#333] dark:bg-black dark:text-[#ddd] dark:hover:bg-[#111]"
+                  className={buttonClass("secondary", "sm", "flex-none")}
                 >
                   {showProfileEditor ? "Cancel" : "Change"}
                 </button>
               </div>
               {showProfileEditor ? (
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-[#242424] dark:bg-[#080808]">
+                // Divided from the summary above, not boxed inside it: one containment layer (UI audit #17).
+                <div className="mt-4 border-t border-hairline pt-4">
                   <AnalysisProfileEditor
                     value={profileDraft}
                     onChange={(next) => { setProfileDraft(next); setProfileError(null); }}
@@ -778,7 +773,7 @@ export default function AnalyzeFlowModal({
                     error={profileError}
                   />
                   <div className="mt-4 flex justify-end gap-2">
-                    <button type="button" onClick={() => { setProfileDraft(activeAnalysisProfile); setProfileError(null); setShowProfileEditor(false); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-[#333]">Discard</button>
+                    <button type="button" onClick={() => { setProfileDraft(activeAnalysisProfile); setProfileError(null); setShowProfileEditor(false); }} className={buttonClass("ghost", "sm")}>Discard</button>
                     <button
                       type="button"
                       disabled={savingProfile}
@@ -795,7 +790,8 @@ export default function AnalyzeFlowModal({
                           setProfileError(saveError instanceof Error ? saveError.message : "Could not save the analysis profile.");
                         } finally { setSavingProfile(false); }
                       }}
-                      className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
+                      // Secondary: "Analyze" below is the dialog's one filled button (UI audit #22).
+                      className={buttonClass("secondary", "sm")}
                     >
                       {savingProfile ? "Saving…" : "Save for repository"}
                     </button>
@@ -806,18 +802,18 @@ export default function AnalyzeFlowModal({
           ) : null}
 
           <section>
-            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">What happens next</p>
-            <ol className="mt-2 space-y-2 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
+            <p className="text-sm font-medium text-ink">What happens next</p>
+            <ol className="mt-2 space-y-2 text-sm leading-6 text-body">
               <li className="flex gap-3">
-                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">1</span>
+                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-subtle text-xs font-semibold text-body">1</span>
                 <span>The PDFs upload to private storage. Keep this tab open until the upload finishes.</span>
               </li>
               <li className="flex gap-3">
-                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">2</span>
+                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-subtle text-xs font-semibold text-body">2</span>
                 <span>Each paper is read for its title, year, topics, methods and research area, usually in a few minutes. You can keep working meanwhile.</span>
               </li>
               <li className="flex gap-3">
-                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">3</span>
+                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-subtle text-xs font-semibold text-body">3</span>
                 <span>Finished papers appear in the Library, on the Dashboard and in Chat.</span>
               </li>
             </ol>
@@ -830,21 +826,22 @@ export default function AnalyzeFlowModal({
           ) : null}
         </div>
 
-        <div className="flex-none border-t border-slate-200 px-5 py-4 dark:border-[#1f1f1f] sm:px-6">
+        <div className="flex-none border-t border-hairline px-5 py-4 sm:px-6">
           {uploading ? (
             <div className="mb-3" role="status" aria-live="polite">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate font-medium text-slate-900 dark:text-[#f2f2f2]">{uploadStage || "Working"}</span>
+                <span className="min-w-0 truncate font-medium text-ink">{uploadStage || "Working"}</span>
                 {uploadProgress ? (
-                  <span className="flex-none text-slate-500 dark:text-[#9c9c9c]">
+                  <span className="flex-none text-mute">
                     {uploadProgress.done}/{uploadProgress.total}
                   </span>
                 ) : null}
               </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1a1a1a]">
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-subtle">
+                {/* Grows by transform, not width (UI audit #13). */}
                 <div
-                  className={`h-full rounded-full bg-slate-900 transition-[width] dark:bg-white ${progressPercent === null ? "w-1/3 motion-safe:animate-pulse" : ""}`}
-                  style={progressPercent === null ? undefined : { width: `${Math.max(4, progressPercent)}%` }}
+                  className={`h-full origin-left bg-ink ${progressPercent === null ? "w-1/3 rounded-full motion-safe:animate-pulse" : "w-full transition-transform duration-300 ease-out"}`}
+                  style={progressPercent === null ? undefined : { transform: `scaleX(${Math.max(4, progressPercent) / 100})` }}
                 />
               </div>
             </div>

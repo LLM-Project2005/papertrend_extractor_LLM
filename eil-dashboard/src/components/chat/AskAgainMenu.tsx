@@ -102,7 +102,7 @@ export default function AskAgainMenu({
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 disabled:pointer-events-none disabled:opacity-50 dark:text-[#a3a3a3] dark:hover:bg-[#141414] dark:hover:text-white"
+        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 disabled:pointer-events-none disabled:opacity-50"
       >
         <RefreshIcon className="h-3.5 w-3.5" />
         <span>Ask again</span>

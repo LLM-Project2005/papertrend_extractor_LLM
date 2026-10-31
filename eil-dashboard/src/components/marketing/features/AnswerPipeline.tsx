@@ -171,13 +171,11 @@ export default function AnswerPipeline() {
               index === active ? "border-hairline-strong bg-surface shadow-raise" : "border-transparent lg:opacity-60"
             }`}
           >
-            <div className="flex items-center gap-3 lg:hidden">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-hairline bg-surface text-ink">
-                <step.Icon className="h-[18px] w-[18px]" />
-              </span>
-              <span className="font-mono text-[12px] tabular-nums text-mute">{String(index + 1).padStart(2, "0")}</span>
-            </div>
-            <h3 className="mt-4 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink lg:mt-0">{step.title}</h3>
+            {/* On a phone the rail of icons is hidden, so the stage's number goes into its heading (no icon tile above it). */}
+            <h3 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+              <span className="tabular-nums text-mute lg:hidden">{index + 1}. </span>
+              {step.title}
+            </h3>
             <p className="mt-3 text-[16px] leading-7 text-body">{step.body}</p>
             <UnderTheHood className="mt-4">{step.hood}</UnderTheHood>
           </li>

@@ -213,7 +213,7 @@ export default function EvidenceText({
             const onPage = located.filter((mark) => mark.page === pageIndex);
             return (
               <section key={pageIndex} aria-label={page.number ? `Page ${page.number}` : "Text"}>
-                {page.number ? <p className="mb-3 font-mono text-[11px] uppercase tracking-wide text-mute">Page {page.number}</p> : null}
+                {page.number ? <p className="mb-3 text-xs font-medium text-mute">Page {page.number}</p> : null}
                 <div className="space-y-2.5">
                   {page.lines.map((line, lineIndex) => {
                     const ranges = onPage

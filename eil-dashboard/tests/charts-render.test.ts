@@ -135,7 +135,7 @@ test("a comparison of groups is in shares of each group, with the counts behind 
       measure: "papers",
     })
   );
-  assert.match(html, /2011–2021<span class="text-mute"> · 17 papers/);
+  assert.match(html, /2011–2021<span class="text-mute">, 17 papers/);
   assert.match(html, />29%</, "5 of 17");
   assert.match(html, />50%</, "12 of 24");
   assert.match(html, /title="2011–2021: 5 of 17 papers \(29%\); 2022–2025: 12 of 24 papers \(50%\)"/);

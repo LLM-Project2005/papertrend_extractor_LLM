@@ -24,17 +24,19 @@ import { readPaperQuote, readPaperTab } from "@/lib/paper-address";
 import { rememberOpenedPaper, runProjectId } from "@/lib/recent-papers";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload, triggerUrlDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import Notice from "@/components/ui/Notice";
 import dynamic from "next/dynamic";
 import {
-  ArrowRightIcon,
   CheckIcon,
-  ChartIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CloseIcon,
-  DownloadIcon,
   BooksIcon,
   DriveIcon,
   FileIcon,
+  FilterIcon,
   FolderIcon,
   GridViewIcon,
   ImageIcon,
@@ -42,11 +44,11 @@ import {
   MoreHorizontalIcon,
   PaperIcon,
   PdfFileIcon,
-  PencilSquareIcon,
   PlusIcon,
   RefreshIcon,
   SearchIcon,
   SortIcon,
+  StackIcon,
   StarIcon,
   TrashIcon,
   UndoIcon,
@@ -62,7 +64,19 @@ import {
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
-import { buttonClass, fieldClass, labelClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
+import {
+  buttonClass,
+  chipClass,
+  fieldClass,
+  iconButtonClass,
+  labelClass,
+  menuItemClass,
+  menuLabelClass,
+  menuPanelClass,
+  segmentClass,
+  segmentedClass,
+  selectedClass,
+} from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
@@ -292,6 +306,43 @@ function defaultDirectionForSort(sortKey: SortKey): SortDirection {
   return sortKey === "name" ? "asc" : "desc";
 }
 
+/** The list or grid blocked out while the papers load (UI audit C1). */
+function LibrarySkeleton({ view }: { view: ViewMode }) {
+  if (view === "grid") {
+    return (
+      <div role="status" className="grid gap-4 px-4 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 2xl:grid-cols-5">
+        <span className="sr-only">Loading papers…</span>
+        {[0, 1, 2, 3, 4].map((index) => (
+          <div key={index} aria-hidden="true" className="overflow-hidden rounded-xl border border-hairline">
+            <span className="skeleton block h-44 rounded-none" />
+            <div className="space-y-2 px-4 py-4">
+              <span className="skeleton block h-4 w-4/5" />
+              <span className="skeleton block h-3 w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div role="status" className="divide-y divide-hairline px-4 py-4 sm:px-6">
+      <span className="sr-only">Loading papers…</span>
+      {[0, 1, 2, 3, 4, 5].map((index) => (
+        <div key={index} aria-hidden="true" className="flex items-center gap-3 px-3 py-4">
+          <span className="skeleton h-4 w-4 flex-none" />
+          <span className="skeleton h-8 w-8 flex-none" />
+          <span className="min-w-0 flex-1 space-y-2">
+            <span className="skeleton block h-4 w-3/5" />
+            <span className="skeleton block h-3 w-2/5" />
+          </span>
+          <span className="skeleton hidden h-4 w-12 flex-none md:block" />
+          <span className="skeleton hidden h-4 w-24 flex-none md:block" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Loaded when first opened: the formats are only needed by people who cite.
 const ReferencesDialog = dynamic(() => import("@/components/admin/ReferencesDialog"), { ssr: false });
 
@@ -365,6 +416,15 @@ export default function AdminImportClient() {
   const [loading, setLoading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
+  // Whether the last read of the list failed, so its error offers Try again
+  // (an action's error, such as a failed rename, does not).
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Which list last arrived, Trash or the papers: on opening Trash the papers'
+  // list said "Trash is empty" until Trash's own arrived.
+  const [loadedTrash, setLoadedTrash] = useState<boolean | null>(null);
+  // Filters and sort folded away on a narrow screen (UI audit C18).
+  const [toolsOpen, setToolsOpen] = useState(false);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
   // ?paper= is the explorer's own address; ?runId= is the older form links still use.
@@ -429,6 +489,7 @@ export default function AdminImportClient() {
     }
 
     setLoading(true);
+    const forTrash = showTrash;
     try {
       const response = await fetch(
         `/api/workspace/library?includeTrashed=${showTrash ? "true" : "false"}`,
@@ -443,8 +504,11 @@ export default function AdminImportClient() {
       }
       setRuns(payload.runs ?? []);
       setRunsLoaded(true);
+      setLoadedTrash(forTrash);
+      setLoadFailed(false);
       setError(null);
     } catch (loadError) {
+      setLoadFailed(true);
       setError(
         loadError instanceof Error
           ? loadError.message
@@ -847,10 +911,15 @@ export default function AdminImportClient() {
       setError("There are no finished papers to analyze again.");
       return;
     }
-    const confirmed = window.confirm(
-      `Analyze again with the current pipeline?\n\n${formatReanalysisEstimate(paperCount)} ` +
-        "(about 30,000 a paper; this does not count toward your daily chat tokens). Titles and years you corrected are kept."
-    );
+    // The product's own dialog, not the browser's confirm() (UI audit #22).
+    const confirmed = await confirm({
+      title: paperCount === 1 ? "Analyze this paper again?" : `Analyze ${paperCount} papers again?`,
+      body:
+        `${formatReanalysisEstimate(paperCount)} ` +
+        "(about 30,000 a paper; this does not count toward your daily chat tokens). Titles and years you corrected are kept.",
+      confirmLabel: "Analyze again",
+      tone: "primary",
+    });
     if (!confirmed) return;
     const response = await fetch("/api/workspace/library/reanalyze", {
       method: "POST",
@@ -1062,7 +1131,10 @@ export default function AdminImportClient() {
                   ? "Analyzing again did not finish; the earlier results are shown. Try Analyze again later."
                   : secondaryName
                     ? secondaryName
-                    : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
+                    : // In words, not two facts joined by a dot (UI audit #15).
+                      sourceLabel === "Google Drive"
+                      ? `${extOf(run).toUpperCase()} from Google Drive`
+                      : `Uploaded ${extOf(run).toUpperCase()}`;
         return {
           id: `file:${run.id}`,
           kind: "file",
@@ -1122,6 +1194,13 @@ export default function AdminImportClient() {
   ]);
 
   const rootGridFiles = visibleEntries;
+  // The list in view has arrived: the papers, or Trash's own.
+  const listReady = runsLoaded && loadedTrash === showTrash;
+  // The repositories the search leaves, at the top of the Library.
+  const shownProjects = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return needle ? allProjects.filter((project) => project.name.toLowerCase().includes(needle)) : allProjects;
+  }, [allProjects, query]);
   const steppableRuns = useMemo(() => visibleEntries.map((entry) => entry.run).filter((run) => hasUsableAnalysis(run)), [visibleEntries]);
   const analysisIndex = analysisRun ? steppableRuns.findIndex((run) => run.id === analysisRun.id) : -1;
   function stepAnalysis(delta: -1 | 1) {
@@ -1391,7 +1470,7 @@ export default function AdminImportClient() {
         }}
       >
         <div className="space-y-1">
-          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#808080]">
+          <p className={menuLabelClass}>
             Sort by
           </p>
           {SORT_KEY_OPTIONS.map((option) => (
@@ -1411,8 +1490,8 @@ export default function AdminImportClient() {
           ))}
         </div>
 
-        <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]">
-          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#808080]">
+        <div className="space-y-1 border-t border-hairline pt-3">
+          <p className={menuLabelClass}>
             Sort direction
           </p>
           {currentSortDirectionOptions.map((option) => (
@@ -1524,6 +1603,26 @@ export default function AdminImportClient() {
         >
           Open in new tab
         </button>
+        {/* Download and Rename live here only, and the star beside this menu
+            is the one way to favourite: the row used to offer all three twice
+            (UI audit #23). */}
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await handleDownloadRun(activeMenuRun);
+            } catch (downloadError) {
+              setError(
+                downloadError instanceof Error ? downloadError.message : "Failed to download file."
+              );
+            } finally {
+              setItemMenuState(null);
+            }
+          }}
+          className={itemClass}
+        >
+          Download PDF
+        </button>
         <button
           type="button"
           onClick={async () => {
@@ -1571,25 +1670,6 @@ export default function AdminImportClient() {
             Move to another repository…
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              await handleToggleFavorite(activeMenuRun);
-            } catch (favoriteError) {
-              setError(
-                favoriteError instanceof Error
-                  ? favoriteError.message
-                  : "Failed to update favorite."
-              );
-            } finally {
-              setItemMenuState(null);
-            }
-          }}
-          className={itemClass}
-        >
-          {activeMenuRun.is_favorite ? "Remove favorite" : "Add to favorite"}
-        </button>
         {activeMenuRun.status === "succeeded" && !activeMenuRun.trashed_at ? (
           <button
             type="button"
@@ -1691,6 +1771,35 @@ export default function AdminImportClient() {
     );
   }
 
+  /** The star: the one way to favourite a paper, the size and shape of the buttons beside it. */
+  function favoriteButton(item: LibraryEntry) {
+    return (
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await handleToggleFavorite(item.run);
+          } catch (favoriteError) {
+            setError(
+              favoriteError instanceof Error
+                ? favoriteError.message
+                : "Failed to update favorite."
+            );
+          }
+        }}
+        className={`inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg transition-colors duration-150 hover:bg-subtle ${
+          item.favorite ? "text-amber-800 dark:text-amber-300" : "text-mute hover:text-ink"
+        }`}
+        aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
+          item.favorite ? "from" : "to"
+        } favorites`}
+        aria-pressed={item.favorite}
+      >
+        <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
+      </button>
+    );
+  }
+
   function renderFilterButton(
     kind: Exclude<ToolbarPopoverKind, "new" | "sort">,
     label: string
@@ -1700,7 +1809,7 @@ export default function AdminImportClient() {
         type="button"
         onClick={(event) => openToolbarMenu(event, kind, 220)}
         aria-expanded={toolbarPopover?.kind === kind}
-        className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+        className={buttonClass("secondary", "md")}
       >
         <span>{label}</span>
         <ChevronDownIcon className="h-3.5 w-3.5 text-mute" />
@@ -1709,7 +1818,8 @@ export default function AdminImportClient() {
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6">
+    // One container for every workspace page (UI audit #26).
+    <div className="mx-auto w-full max-w-[1500px] space-y-6">
       <div className="space-y-5">
         {/*
           Browsing and switching are now different acts, so the one place they
@@ -1718,17 +1828,18 @@ export default function AdminImportClient() {
           sidebar were about another, with nothing on screen to say so.
         */}
         {!showTrash && libraryProject && currentProject && libraryProject.id !== currentProject.id ? (
-          <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="leading-6 text-slate-600 dark:text-[#a3a3a3]">
+          <div className="flex flex-col gap-3 rounded-lg border border-hairline bg-surface px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="leading-6 text-body">
               You are browsing{" "}
-              <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>. Dashboard
+              <span className="font-medium text-ink">{libraryProject.name}</span>. Dashboard
               and Chat still use{" "}
-              <span className="font-medium text-slate-900 dark:text-white">{currentProject.name}</span>.
+              <span className="font-medium text-ink">{currentProject.name}</span>.
             </p>
             <button
               type="button"
               onClick={() => setSelectedProjectId(libraryProject.id)}
-              className="inline-flex flex-none items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+              // Secondary: New is the page's one filled button.
+              className={buttonClass("secondary", "md", "flex-none")}
             >
               Switch to this repository
             </button>
@@ -1737,34 +1848,26 @@ export default function AdminImportClient() {
 
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
-            {/* A way back up, only where there is somewhere to go back to: at
-                the root it would just repeat the heading. */}
-            {showTrash || libraryProject ? (
-              <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (showTrash) {
-                      setShowTrash(false);
-                    } else {
-                      setLibraryProjectId(null);
-                      setSelectedFolderId("all");
-                    }
-                  }}
-                  className="-mx-2 rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                >
-                  Library
-                </button>
-                <span aria-hidden="true">/</span>
-                <span className="font-medium text-slate-900 dark:text-white">
-                  {showTrash ? "Trash" : libraryProject?.name}
-                </span>
-              </div>
+            {/* The way back to every repository, only inside one. The "Library /
+                EIL" trail here repeated the header's "Repositories > EIL" (UI
+                audit C19); in Trash, "Back to library" beside the search leads out. */}
+            {libraryProject && !showTrash ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setLibraryProjectId(null);
+                  setSelectedFolderId("all");
+                }}
+                className={buttonClass("ghost", "sm", "-ml-3 mb-2 text-mute")}
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+                All repositories
+              </button>
             ) : null}
-            <h1 className="text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+            <h1 className="text-3xl font-semibold tracking-tight text-ink">
               {showTrash ? "Trash" : libraryProject?.name ?? "Library"}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-mute">
               {showTrash
                 ? "Review files moved out of repositories and restore them when needed."
                 : libraryProject
@@ -1791,7 +1894,7 @@ export default function AdminImportClient() {
                 openToolbarMenu(event, "new", 240);
               }}
               aria-expanded={toolbarPopover?.kind === "new"}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas shadow-raise transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
+              className={buttonClass("primary", "md")}
             >
               <PlusIcon className="h-4 w-4" />
               <span>New</span>
@@ -1804,97 +1907,111 @@ export default function AdminImportClient() {
                 setSelectedFolderId("all");
                 setQuery("");
               }}
-              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-medium shadow-raise transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] ${
+              // In Trash the button wears the selected look (soft fill, ink
+              // bar), not the primary button's ink fill (UI audit #22).
+              className={
                 showTrash
-                  ? "border-ink bg-ink text-canvas"
-                  : "border-hairline bg-surface text-ink hover:border-hairline-strong hover:bg-subtle"
-              }`}
+                  ? `inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors duration-150 ${selectedClass}`
+                  : buttonClass("secondary", "md")
+              }
             >
               <TrashIcon className="h-4 w-4" />
               <span>{showTrash ? "Back to library" : "Trash"}</span>
             </button>
 
             <label className="relative col-span-2 block min-w-0 flex-1">
+              <span className="sr-only">{libraryProject ? `Search in ${libraryProject.name}` : showTrash ? "Search Trash" : "Search repositories"}</span>
               <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
               <input
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder={libraryProject ? `Search in ${libraryProject.name}` : "Search repositories"}
-                className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
+                placeholder={libraryProject ? `Search in ${libraryProject.name}` : showTrash ? "Search Trash" : "Search repositories"}
+                // The field's own edge and focus (UI audit C3): the hairline was about 1.2:1.
+                className={`${fieldClass} h-9 pl-10`}
               />
             </label>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            {renderFilterButton("type", typeFilter === "all" ? "Type" : typeFilterLabel)}
-            {renderFilterButton(
-              "modified",
-              modifiedFilter === "all" ? "Modified" : modifiedFilterLabel
-            )}
-            {/* A filter that cannot match anything is not offered (audit LIB-7). */}
-            {sourceFilter !== "all" || fileEntries.some((entry) => entry.sourceFilter === "google-drive")
-              ? renderFilterButton(
-                  "source",
-                  sourceFilter === "all" ? "Source" : SOURCE_OPTIONS.find((option) => option.id === sourceFilter)?.label ?? "Source"
-                )
-              : null}
-
-          </div>
-
-          <div className="flex items-center gap-2 self-start xl:self-auto">
+        {/* Filters, sort and layout act on papers, so they show only where there
+            are papers: inside a repository or in Trash. At the list of
+            repositories they did nothing (UI audit C6). On a narrow screen they
+            fold behind one button, so the papers start near the top (C18). */}
+        {libraryProject || showTrash ? (
+          <div className="space-y-3">
             <button
               type="button"
-              onClick={(event) => openToolbarMenu(event, "sort", 260)}
-              aria-expanded={toolbarPopover?.kind === "sort"}
-              aria-label={`Sort: ${SORT_KEY_OPTIONS.find((option) => option.id === sortKey)?.label ?? "Name"}, ${
-                currentSortDirectionOptions.find((option) => option.id === sortDirection)?.label ?? ""
-              }`}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              onClick={() => setToolsOpen((open) => !open)}
+              aria-expanded={toolsOpen}
+              aria-controls="library-tools"
+              className={buttonClass("secondary", "md", "min-[960px]:hidden")}
             >
-              <SortIcon className="h-4 w-4" />
-              <span>Sort</span>
+              <FilterIcon className="h-4 w-4" />
+              <span>Filter and sort</span>
+              <ChevronDownIcon className={`h-3.5 w-3.5 text-mute transition-transform duration-150 ${toolsOpen ? "rotate-180" : ""}`} />
             </button>
-            <button
-              type="button"
-              onClick={() => void loadRuns()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+            <div
+              id="library-tools"
+              className={`${toolsOpen ? "flex" : "hidden"} flex-col gap-3 min-[960px]:flex xl:flex-row xl:items-center xl:justify-between`}
             >
-              {loading ? "Refreshing…" : "Refresh"}
-            </button>
-            <div className="inline-flex rounded-lg border border-hairline bg-surface p-0.5 shadow-raise">
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                // The chosen layout in ink, and said: a pale fill alone was 1.1:1 (A11Y-6, A11Y-7).
-                aria-pressed={viewMode === "list"}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
-                  viewMode === "list"
-                    ? "bg-ink text-canvas"
-                    : "text-mute hover:text-ink"
-                }`}
-                aria-label="List layout"
-              >
-                <ListViewIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("grid")}
-                aria-pressed={viewMode === "grid"}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
-                  viewMode === "grid"
-                    ? "bg-ink text-canvas"
-                    : "text-mute hover:text-ink"
-                }`}
-                aria-label="Grid layout"
-              >
-                <GridViewIcon className="h-4 w-4" />
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {renderFilterButton("type", typeFilter === "all" ? "Type" : typeFilterLabel)}
+                {renderFilterButton(
+                  "modified",
+                  modifiedFilter === "all" ? "Modified" : modifiedFilterLabel
+                )}
+                {/* A filter that cannot match anything is not offered (audit LIB-7). */}
+                {sourceFilter !== "all" || fileEntries.some((entry) => entry.sourceFilter === "google-drive")
+                  ? renderFilterButton(
+                      "source",
+                      sourceFilter === "all" ? "Source" : SOURCE_OPTIONS.find((option) => option.id === sourceFilter)?.label ?? "Source"
+                    )
+                  : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 self-start xl:self-auto">
+                <button
+                  type="button"
+                  onClick={(event) => openToolbarMenu(event, "sort", 260)}
+                  aria-expanded={toolbarPopover?.kind === "sort"}
+                  aria-label={`Sort: ${SORT_KEY_OPTIONS.find((option) => option.id === sortKey)?.label ?? "Name"}, ${
+                    currentSortDirectionOptions.find((option) => option.id === sortDirection)?.label ?? ""
+                  }`}
+                  className={buttonClass("secondary", "md")}
+                >
+                  <SortIcon className="h-4 w-4" />
+                  <span>Sort</span>
+                </button>
+                <button type="button" onClick={() => void loadRuns()} className={buttonClass("secondary", "md")}>
+                  {loading ? "Refreshing…" : "Refresh"}
+                </button>
+                {/* One segmented control: the chosen layout is the lighter
+                    segment, not an ink fill (UI audit #22), and said (A11Y-7). */}
+                <div className={segmentedClass}>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("list")}
+                    aria-pressed={viewMode === "list"}
+                    className={segmentClass(viewMode === "list")}
+                    aria-label="List layout"
+                  >
+                    <ListViewIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("grid")}
+                    aria-pressed={viewMode === "grid"}
+                    className={segmentClass(viewMode === "grid")}
+                    aria-label="Grid layout"
+                  >
+                    <GridViewIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
       </div>
 
       {message ? (
@@ -1903,20 +2020,32 @@ export default function AdminImportClient() {
         </div>
       ) : null}
       {error ? (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        // A failed read of the list offers Try again (UI audit #7); an action's
+        // own error says what failed and can be closed.
+        <Notice
+          tone="error"
+          actionLabel={loadFailed ? "Try again" : undefined}
+          onAction={loadFailed ? () => void loadRuns() : undefined}
+          onDismiss={loadFailed ? undefined : () => setError(null)}
+        >
           {error}
-        </div>
+        </Notice>
       ) : null}
 
       {libraryProject || showTrash ? (
       <section className="app-surface overflow-visible">
-        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-5 dark:border-[#1f1f1f] sm:px-6">
+        <div className="flex flex-col gap-2 border-b border-hairline px-4 py-5 sm:px-6">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                {visibleEntries.length} item{visibleEntries.length === 1 ? "" : "s"}
+              <p className="text-sm font-medium text-ink">
+                {/* No count until the list has arrived: "0 items" was a false fact. */}
+                {listReady
+                  ? `${visibleEntries.length} item${visibleEntries.length === 1 ? "" : "s"}`
+                  : loadFailed
+                    ? "Papers not loaded"
+                    : "Loading papers…"}
               </p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
+              <p className="mt-1 text-sm text-mute">
                 {showTrash
                   ? "Papers in Trash still count toward your account's 50. Delete them permanently to free the space."
                   : "Every paper in this repository. Open one to see what the analysis found."}
@@ -2037,7 +2166,12 @@ export default function AdminImportClient() {
           ) : null}
         </div>
 
-        {visibleEntries.length === 0 ? (
+        {/* While the list loads, its shape; under a load error, only the
+            error above with its Try again. "No papers in this repository yet"
+            used to show in both (UI audit C1). */}
+        {!listReady ? (
+          loadFailed ? null : <LibrarySkeleton view={viewMode} />
+        ) : visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
               <Mascot
@@ -2047,16 +2181,17 @@ export default function AdminImportClient() {
               />
               {fileEntries.length === 0 && !showTrash ? (
                 <>
-                  <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
+                  <p className="mt-5 text-lg font-medium text-ink">
                     No papers in this repository yet
                   </p>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
+                  <p className="mt-2 text-sm text-mute">
                     Add PDFs and each one is analyzed for its topics, methods and research area.
                   </p>
                   <button
                     type="button"
                     onClick={() => setShowUploadModal(true)}
-                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+                    // Secondary: New above is the page's one filled button.
+                    className={buttonClass("secondary", "md", "mt-5")}
                   >
                     <UploadIcon className="h-4 w-4" />
                     <span>Add papers</span>
@@ -2064,10 +2199,10 @@ export default function AdminImportClient() {
                 </>
               ) : (
                 <>
-                  <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
+                  <p className="mt-5 text-lg font-medium text-ink">
                     {showTrash ? "Trash is empty" : "Nothing matches these filters"}
                   </p>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
+                  <p className="mt-2 text-sm text-mute">
                     {showTrash
                       ? "Papers you move to Trash wait here until you restore them."
                       : "Clear the search or pick another filter to see more papers."}
@@ -2078,7 +2213,7 @@ export default function AdminImportClient() {
           </div>
         ) : viewMode === "list" ? (
           <div className="px-4 py-4 sm:px-6">
-            <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_160px] items-center gap-4 border-b border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#9c9c9c] md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_96px] items-center gap-4 border-b border-hairline px-3 py-3 text-sm font-medium text-body md:grid">
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
@@ -2094,7 +2229,7 @@ export default function AdminImportClient() {
                   type="button"
                   onClick={() => handleSortHeaderClick("name")}
                   aria-label={sortLabel("Name", "name")}
-                  className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
+                  className="flex items-center gap-2 text-left transition hover:text-ink"
                 >
                   <span>Name</span>
                   {sortKey === "name" ? (
@@ -2109,7 +2244,7 @@ export default function AdminImportClient() {
                 type="button"
                 onClick={() => handleSortHeaderClick("modified")}
                 aria-label={sortLabel("Date modified", "modified")}
-                className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
+                className="flex items-center gap-2 text-left transition hover:text-ink"
               >
                 <span>Date modified</span>
                 {sortKey === "modified" ? (
@@ -2122,7 +2257,7 @@ export default function AdminImportClient() {
                 type="button"
                 onClick={() => handleSortHeaderClick("size")}
                 aria-label={sortLabel("File size", "size")}
-                className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
+                className="flex items-center gap-2 text-left transition hover:text-ink"
               >
                 <span>File size</span>
                 {sortKey === "size" ? (
@@ -2134,13 +2269,13 @@ export default function AdminImportClient() {
               <div className="text-right">Actions</div>
             </div>
 
-            <div className="divide-y divide-slate-200 dark:divide-[#2a2a2a]">
+            <div className="divide-y divide-hairline">
               {visibleEntries.map((item) => {
                 const Glyph = glyphForEntry(item);
                 return (
                   <article
                     key={item.id}
-                    className="group grid gap-4 px-3 py-4 md:grid-cols-[minmax(0,1.5fr)_180px_170px_120px_160px] md:items-center"
+                    className="group grid gap-4 px-3 py-4 md:grid-cols-[minmax(0,1.5fr)_180px_170px_120px_96px] md:items-center"
                   >
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
@@ -2173,23 +2308,11 @@ export default function AdminImportClient() {
                               {item.name}
                             </button>
                             {item.typeFilter === "pdf" ? null : (
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
-                                {extOf(item.run).toUpperCase()}
-                              </span>
+                              <span className={chipClass("neutral")}>{extOf(item.run).toUpperCase()}</span>
                             )}
-                            {item.favorite ? (
-                              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                                Favorite
-                              </span>
-                            ) : null}
+                            {/* No "Favorite" chip: the star in the row says it (UI audit #23). */}
                             {item.statusLabel ? (
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
-                                  item.run.status === "failed"
-                                    ? "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-200"
-                                    : "bg-slate-100 text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]"
-                                }`}
-                              >
+                              <span className={chipClass(item.run.status === "failed" ? "danger" : "neutral")}>
                                 {item.statusLabel}
                               </span>
                             ) : null}
@@ -2199,7 +2322,7 @@ export default function AdminImportClient() {
                             className={`mt-1 truncate text-sm ${
                               item.run.status === "failed"
                                 ? "text-red-700 dark:text-red-200"
-                                : "text-slate-500 dark:text-[#9c9c9c]"
+                                : "text-mute"
                             }`}
                           >
                             {item.subtitle}
@@ -2208,91 +2331,31 @@ export default function AdminImportClient() {
                       </div>
                     </div>
 
-                    <div className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]">
+                    <div className="text-sm tabular-nums text-body">
                       <span className="md:hidden">Year: </span>
                       {item.yearLabel}
                     </div>
 
                     <div
-                      className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]"
+                      className="text-sm tabular-nums text-body"
                       title={formatDetailedDate(item.modifiedAt)}
                     >
                       {formatShortDate(item.modifiedAt)}
                     </div>
 
-                    <div className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]">
+                    <div className="text-sm tabular-nums text-body">
                       {item.sizeLabel}
                     </div>
 
                     <div className="flex items-center justify-end gap-1">
-                      <>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                await handleDownloadRun(item.run);
-                              } catch (downloadError) {
-                                setError(
-                                  downloadError instanceof Error
-                                    ? downloadError.message
-                                    : "Failed to download file."
-                                );
-                              }
-                            }}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
-                            aria-label={`Download ${item.name}`}
-                          >
-                            <DownloadIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                await handleRenameRun(item.run);
-                              } catch (renameError) {
-                                setError(
-                                  renameError instanceof Error
-                                    ? renameError.message
-                                    : "Failed to rename file."
-                                );
-                              }
-                            }}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
-                            aria-label={`Rename ${item.name}`}
-                          >
-                            <PencilSquareIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                await handleToggleFavorite(item.run);
-                              } catch (favoriteError) {
-                                setError(
-                                  favoriteError instanceof Error
-                                    ? favoriteError.message
-                                    : "Failed to update favorite."
-                                );
-                              }
-                            }}
-                            className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
-                              item.favorite
-                                ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-                                : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                            }`}
-                            aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
-                              item.favorite ? "from" : "to"
-                            } favorites`}
-                            aria-pressed={item.favorite}
-                          >
-                            <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
-                          </button>
-                      </>
+                      {/* Each action once: the star, and the menu, which holds
+                          Download, Rename and the rest (UI audit #23). */}
+                      {favoriteButton(item)}
                       <button
                         type="button"
                         onClick={(event) => openItemMenu(event, item)}
                         aria-expanded={itemMenuState?.item.id === item.id}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
+                        className={iconButtonClass("md")}
                         aria-label={`Open actions for ${item.name}`}
                       >
                         <MoreHorizontalIcon className="h-4 w-4" />
@@ -2308,7 +2371,7 @@ export default function AdminImportClient() {
             {rootGridFiles.length > 0 ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8b8b8b]">
+                  <h2 className="text-sm font-medium text-mute">
                     Files
                   </h2>
                 </div>
@@ -2318,7 +2381,7 @@ export default function AdminImportClient() {
                     return (
                       <article
                         key={item.id}
-                        className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
+                        className="group relative overflow-hidden rounded-xl border border-hairline bg-surface transition-colors duration-150 hover:border-hairline-strong"
                       >
                         <input
                           type="checkbox"
@@ -2335,7 +2398,7 @@ export default function AdminImportClient() {
                           {item.typeFilter === "pdf" ? (
                             // The paper's first page, as Drive shows a file; the
                             // badge holds the place until it is drawn.
-                            <div className="relative h-44 overflow-hidden bg-slate-100 px-5 pt-5 dark:bg-[#0a0a0a]">
+                            <div className="relative h-44 overflow-hidden bg-subtle px-5 pt-5">
                               {item.sourceFilter === "google-drive" || !item.run.source_path ? (
                                 <span className="flex h-full items-center justify-center">
                                   <PdfFileIcon className="h-12 w-12" />
@@ -2351,32 +2414,22 @@ export default function AdminImportClient() {
                                   }
                                 />
                               )}
-                              {item.favorite ? (
-                                <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-700 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
-                                  <StarIcon className="h-4 w-4" weight="fill" />
-                                </span>
-                              ) : null}
                             </div>
                           ) : (
-                            <div className="relative flex h-44 items-center justify-center overflow-hidden bg-slate-100 dark:bg-[#050505]">
+                            <div className="relative flex h-44 items-center justify-center overflow-hidden bg-subtle">
                               <span
                                 className={`flex h-14 w-14 items-center justify-center rounded-xl ${badgeToneForEntry(item)}`}
                               >
                                 <Glyph className="h-7 w-7" />
                               </span>
-                              <span className="absolute left-10 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#050505]/90 dark:text-[#d0d0d0]">
+                              <span className="absolute left-10 top-3 rounded-full bg-surface/90 px-2.5 py-1 text-xs font-medium text-body shadow-raise">
                                 {extOf(item.run!).toUpperCase()}
                               </span>
-                              {item.favorite ? (
-                                <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-700 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
-                                  <StarIcon className="h-4 w-4" weight="fill" />
-                                </span>
-                              ) : null}
                             </div>
                           )}
                           <div className="space-y-3 px-4 py-4">
                             <div className="min-w-0">
-                              <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                              <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">
                                 {item.typeFilter === "pdf" ? <PdfFileIcon className="h-4 w-4 flex-none" /> : null}
                                 <span className="truncate">{item.name}</span>
                               </p>
@@ -2385,87 +2438,26 @@ export default function AdminImportClient() {
                                 className={`mt-1 line-clamp-2 text-xs ${
                                   item.run.status === "failed"
                                     ? "text-red-700 dark:text-red-200"
-                                    : "text-slate-500 dark:text-[#9c9c9c]"
+                                    : "text-mute"
                                 }`}
                               >
                                 {item.subtitle}
                               </p>
                             </div>
-                            <div className="flex items-center justify-between text-xs tabular-nums text-slate-500 dark:text-[#9c9c9c]">
+                            <div className="flex items-center justify-between text-xs tabular-nums text-mute">
                               <span>{formatShortDate(item.modifiedAt)}</span>
                               <span>{item.sizeLabel}</span>
                             </div>
                           </div>
                         </button>
-                        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await handleDownloadRun(item.run!);
-                                } catch (downloadError) {
-                                  setError(
-                                    downloadError instanceof Error
-                                      ? downloadError.message
-                                      : "Failed to download file."
-                                  );
-                                }
-                              }}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
-                              aria-label={`Download ${item.name}`}
-                            >
-                              <DownloadIcon className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await handleRenameRun(item.run!);
-                                } catch (renameError) {
-                                  setError(
-                                    renameError instanceof Error
-                                      ? renameError.message
-                                      : "Failed to rename file."
-                                  );
-                                }
-                              }}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
-                              aria-label={`Rename ${item.name}`}
-                            >
-                              <PencilSquareIcon className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await handleToggleFavorite(item.run!);
-                                } catch (favoriteError) {
-                                  setError(
-                                    favoriteError instanceof Error
-                                      ? favoriteError.message
-                                      : "Failed to update favorite."
-                                  );
-                                }
-                              }}
-                              className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
-                                item.favorite
-                                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-                                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                              }`}
-                              aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
-                                item.favorite ? "from" : "to"
-                              } favorites`}
-                            aria-pressed={item.favorite}
-                            >
-                              <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
-                            </button>
-                          </div>
+                        {/* As in the list: the star, and the menu with the rest (UI audit #23). */}
+                        <div className="flex items-center justify-between border-t border-hairline px-4 py-3">
+                          {favoriteButton(item)}
                           <button
                             type="button"
                             onClick={(event) => openItemMenu(event, item)}
-                        aria-expanded={itemMenuState?.item.id === item.id}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
+                            aria-expanded={itemMenuState?.item.id === item.id}
+                            className={iconButtonClass("md")}
                             aria-label={`Open actions for ${item.name}`}
                           >
                             <MoreHorizontalIcon className="h-4 w-4" />
@@ -2482,23 +2474,43 @@ export default function AdminImportClient() {
       </section>
       ) : (
         <section className="app-surface overflow-hidden">
-          <div className="border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f]">
-            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-              {allProjects.length} repositor{allProjects.length === 1 ? "y" : "ies"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
-              Repositories are the top-level containers for this account.
-            </p>
+          <div className="flex items-start justify-between gap-4 border-b border-hairline px-5 py-5">
+            <div>
+              <p className="text-sm font-medium text-ink">
+                {allProjects.length} repositor{allProjects.length === 1 ? "y" : "ies"}
+              </p>
+              <p className="mt-1 text-sm text-mute">
+                Repositories are the top-level containers for this account.
+              </p>
+            </div>
+            {/* Refresh still acts here (the paper counts); the filters, sort and
+                layout, which did nothing for repositories, are not offered. */}
+            <button type="button" onClick={() => void loadRuns()} className={buttonClass("secondary", "sm", "flex-none")}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
           </div>
-          {allProjects.length > 0 ? (
-            <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
-              {allProjects
-                .filter((project) => !query.trim() || project.name.toLowerCase().includes(query.trim().toLowerCase()))
-                .map((project) => {
-                  const stats = projectStats.get(project.id) ?? { papers: 0, inProgress: 0, failed: 0, latest: null };
-                  return (
+          {allProjects.length === 0 ? (
+            <div className="px-6 py-16 text-center text-sm text-mute">
+              Create a repository from the repository switcher to begin.
+            </div>
+          ) : shownProjects.length === 0 ? (
+            // A search with no match says so, instead of an empty panel (UI audit C6).
+            <div className="px-6 py-12 text-center">
+              <p className="text-sm font-medium text-ink">No repository matches &ldquo;{query.trim()}&rdquo;</p>
+              <button type="button" onClick={() => setQuery("")} className={buttonClass("secondary", "sm", "mt-4")}>
+                Clear the search
+              </button>
+            </div>
+          ) : (
+            // One layer: rows divided by hairlines inside the panel, each with
+            // its icon beside the name; they were cards with an icon tile inside
+            // this card (UI audit #17, #18).
+            <ul className="divide-y divide-hairline">
+              {shownProjects.map((project) => {
+                const stats = projectStats.get(project.id) ?? { papers: 0, inProgress: 0, failed: 0, latest: null };
+                return (
+                  <li key={project.id}>
                     <button
-                      key={project.id}
                       type="button"
                       // Opening a repository here used to also set the app's
                       // active repository, so looking inside one to see what was
@@ -2512,33 +2524,36 @@ export default function AdminImportClient() {
                         setSelectedFolderId("all");
                         setQuery("");
                       }}
-                      className="group flex min-h-32 items-start gap-4 rounded-lg border border-slate-200 bg-white p-5 text-left transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                      className="group flex w-full items-center gap-4 px-5 py-4 text-left transition-colors duration-150 hover:bg-subtle"
                     >
-                      <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">
-                        <BooksIcon className="h-5 w-5" />
-                      </span>
+                      <StackIcon className="h-5 w-5 flex-none text-mute" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>
-                        <span className="mt-2 block text-sm text-slate-500 dark:text-[#9c9c9c]">
-                          {stats.papers} paper{stats.papers === 1 ? "" : "s"}
-                          {stats.inProgress > 0 ? `, ${stats.inProgress} being analyzed` : ""}
+                        <span className="block truncate text-base font-semibold text-ink">{project.name}</span>
+                        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-mute">
+                          {/* No count until the papers have loaded: "0 papers"
+                              was shown meanwhile, and under a load error (C1). */}
+                          {runsLoaded ? (
+                            <>
+                              <span>
+                                {stats.papers} paper{stats.papers === 1 ? "" : "s"}
+                              </span>
+                              {stats.inProgress > 0 ? <span>{stats.inProgress} being analyzed</span> : null}
+                              {stats.failed > 0 ? (
+                                <span className="text-red-700 dark:text-red-300">{stats.failed} failed to analyze</span>
+                              ) : null}
+                            </>
+                          ) : loadFailed ? null : (
+                            <span aria-hidden="true" className="skeleton inline-block h-4 w-16 self-center" />
+                          )}
+                          <span>Updated {formatShortDate(stats.latest)}</span>
                         </span>
-                        {stats.failed > 0 ? (
-                          <span className="mt-1 block text-xs text-red-700 dark:text-red-300">
-                            {stats.failed} failed to analyze
-                          </span>
-                        ) : null}
-                        <span className="mt-3 block text-xs text-slate-500 dark:text-[#8f8f8f]">Updated {formatShortDate(stats.latest)}</span>
                       </span>
-                      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5" />
+                      <ChevronRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
                     </button>
-                  );
-                })}
-            </div>
-          ) : (
-            <div className="px-6 py-16 text-center text-sm text-slate-500 dark:text-[#9c9c9c]">
-              Create a repository from the repository switcher to begin.
-            </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </section>
       )}
@@ -2752,15 +2767,15 @@ export default function AdminImportClient() {
 
       {previewUrl ? (
         <Modal onClose={() => setPreviewUrl(null)}>
-          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
-              <p className="text-sm font-medium text-slate-900 dark:text-white">
+          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay">
+            <div className="flex items-center justify-between border-b border-hairline px-5 py-4">
+              <p className="text-sm font-medium text-ink">
                 {previewTitle}
               </p>
               <button
                 type="button"
                 onClick={() => setPreviewUrl(null)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                className={buttonClass("secondary", "sm")}
               >
                 Close
               </button>
@@ -2794,6 +2809,8 @@ export default function AdminImportClient() {
           detail={analysisDetail}
           loading={analysisLoading}
           error={analysisError}
+          // The viewer's load error offers Try again: the same read, same tab (UI audit #7).
+          onRetry={() => void handleViewAnalysis(analysisRun, analysisTab).catch(() => undefined)}
           onClose={() => {
             setAnalysisRun(null);
             setAnalysisDetail(null);
@@ -2844,433 +2861,13 @@ export default function AdminImportClient() {
         />
       ) : null}
 
-      {false && analysisRun && analysisDetail ? (
-        <Modal
-          onClose={() => {
-            setAnalysisRun(null);
-            setAnalysisDetail(null);
-            setAnalysisError(null);
-          }}
-        >
-          <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                  Pipeline analysis
-                </p>
-                <h2 className="mt-2 truncate text-xl font-semibold text-slate-900 dark:text-white">
-                  {analysisDetail?.title || titleOf(analysisRun!)}
-                </h2>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                    {analysisDetail?.year || "Year unavailable"}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                    {analysisRun!.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(analysisRun!)}
-                  </span>
-                  {analysisDetail?.available === false ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                      <ChartIcon className="h-3.5 w-3.5" />
-                      <span>Not analyzed yet</span>
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setAnalysisRun(null);
-                  setAnalysisDetail(null);
-                  setAnalysisError(null);
-                }}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-5 px-5 py-5 sm:px-6">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                  This panel shows the fixed pipeline analysis from the workspace nodes.
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                  It is separate from deep research, which is prompt-driven and should be treated as its own workflow.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await handlePreviewRun(analysisRun!);
-                    } catch (previewError) {
-                      setAnalysisError(
-                        previewError instanceof Error
-                          ? previewError.message
-                          : "Failed to preview file."
-                      );
-                    }
-                  }}
-                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-[#171717]"
-                >
-                  Preview PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await handleOpenRunInNewTab(analysisRun!);
-                    } catch (openError) {
-                      setAnalysisError(
-                        openError instanceof Error
-                          ? openError.message
-                          : "Failed to open file."
-                      );
-                    }
-                  }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
-                >
-                  Open in new tab
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await handleDownloadRun(analysisRun!);
-                    } catch (downloadError) {
-                      setAnalysisError(
-                        downloadError instanceof Error
-                          ? downloadError.message
-                          : "Failed to download file."
-                      );
-                    }
-                  }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
-                >
-                  Download
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof window !== "undefined") {
-                      window.location.assign("/workspace/dashboard");
-                    }
-                  }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
-                >
-                  Open dashboard charts
-                </button>
-              </div>
-
-              {analysisLoading ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-                  <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
-                  <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                    Loading the extracted analysis for this paper...
-                  </p>
-                </div>
-              ) : null}
-
-              {!analysisLoading && analysisError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-                  {analysisError}
-                </div>
-              ) : null}
-
-              {!analysisLoading && !analysisError && !analysisDetail?.available ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                  <p className="text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
-                    Analysis details are not ready yet for this file.
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                    The PDF is still available, but the extracted paper sections and chart-ready analysis
-                    have not been written back for this run yet.
-                  </p>
-                </div>
-              ) : null}
-
-              {!analysisLoading && !analysisError && analysisDetail?.available ? (
-                <>
-                  {(analysisDetail!.tracksSingle.length > 0 ||
-                    analysisDetail!.concepts.length > 0 ||
-                    analysisDetail!.facets.length > 0 ||
-                    analysisDetail!.tracksMulti.length > 0 ||
-                    analysisDetail!.topics.length > 0) ? (
-                    <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          Primary track classification
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail!.tracksSingle.length > 0 ? (
-                            analysisDetail!.tracksSingle.map((track) => (
-                              <span
-                                key={track}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
-                              >
-                                {track}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                              No single-track label found.
-                            </span>
-                          )}
-                        </div>
-                      </article>
-
-                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          Cross-track classification
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail!.tracksMulti.length > 0 ? (
-                            analysisDetail!.tracksMulti.map((track) => (
-                              <span
-                                key={track}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
-                              >
-                                {track}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                              No multi-track label found.
-                            </span>
-                          )}
-                        </div>
-                      </article>
-
-                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          Concept clusters
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail!.concepts.length > 0 ? (
-                            analysisDetail!.concepts.slice(0, 6).map((concept) => (
-                              <span
-                                key={concept.label}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
-                              >
-                                {concept.label}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                              No concept clusters were stored.
-                            </span>
-                          )}
-                        </div>
-                      </article>
-
-                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          Analytical facets
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail!.facets.length > 0 ? (
-                            analysisDetail!.facets.slice(0, 6).map((facet, index) => (
-                              <span
-                                key={`${facet.facetType}-${facet.label}-${index}`}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
-                              >
-                                {facet.label}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                              No analytical facets were stored.
-                            </span>
-                          )}
-                        </div>
-                      </article>
-
-                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          Pipeline topics
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail!.topics.length > 0 ? (
-                            analysisDetail!.topics.slice(0, 8).map((topic) => (
-                              <span
-                                key={topic}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
-                              >
-                                {topic}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                              No topic labels found.
-                            </span>
-                          )}
-                        </div>
-                      </article>
-                    </section>
-                  ) : null}
-
-                  {analysisDetail!.concepts.length > 0 ? (
-                    <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                            Canonical concepts
-                          </p>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
-                            Grouped concept families produced by the node pipeline.
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                          {analysisDetail!.concepts.length} concept
-                          {analysisDetail!.concepts.length === 1 ? "" : "s"}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                        {analysisDetail!.concepts.slice(0, 8).map((concept) => (
-                          <article
-                            key={concept.label}
-                            className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                                {concept.label}
-                              </p>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                                {concept.totalFrequency}
-                              </span>
-                            </div>
-                            {concept.matchedTerms.length > 0 ? (
-                              <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                                {concept.matchedTerms.slice(0, 5).join(" • ")}
-                              </p>
-                            ) : null}
-                            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                              {concept.firstEvidence ||
-                                concept.evidenceSnippets[0] ||
-                                "No concept evidence snippet was stored."}
-                            </p>
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
-
-                  {analysisDetail!.facets.length > 0 ? (
-                    <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                            Analytical facets
-                          </p>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
-                            Higher-level labels extracted by the analysis nodes.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                        {analysisDetail!.facets.map((facet, index) => (
-                          <article
-                            key={`${facet.facetType}-${facet.label}-${index}`}
-                            className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
-                          >
-                            <p className="text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                              {facet.facetType.replace(/_/g, " ")}
-                            </p>
-                            <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                              {facet.label}
-                            </p>
-                            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                              {facet.evidence || "No supporting facet evidence was stored."}
-                            </p>
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
-
-                  <section className="grid gap-4 lg:grid-cols-2">
-                    {[
-                      ["Extracted abstract claims", analysisDetail!.abstract_claims],
-                      ["Extracted methods", analysisDetail!.methods],
-                      ["Extracted results", analysisDetail!.results],
-                      ["Extracted conclusion", analysisDetail!.conclusion],
-                    ].map(([label, content]) => (
-                      <article
-                        key={label}
-                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                      >
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          {label}
-                        </p>
-                        <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-[#d0d0d0]">
-                          {content?.trim() || "No extracted text was available for this section."}
-                        </p>
-                      </article>
-                    ))}
-                  </section>
-
-                  <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                          Grounded keywords
-                        </p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
-                          Evidence-backed keyword rows that feed the dashboard and chart planner.
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                        {analysisDetail!.keywords.length} keyword
-                        {analysisDetail!.keywords.length === 1 ? "" : "s"}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 grid gap-3">
-                      {analysisDetail!.keywords.length > 0 ? (
-                        analysisDetail!.keywords.slice(0, 10).map((keyword, index) => (
-                          <article
-                            key={`${keyword.keyword}-${index}`}
-                            className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                                {keyword.keyword}
-                              </p>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                                {keyword.frequency}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                              {keyword.topic || "Unclassified topic"}
-                            </p>
-                            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                              {keyword.evidence || "No supporting evidence snippet was stored."}
-                            </p>
-                          </article>
-                        ))
-                      ) : (
-                        <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                          No grounded keyword rows were available for this paper.
-                        </p>
-                      )}
-                    </div>
-                  </section>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </Modal>
-      ) : null}
+      {confirmDialog}
 
       {infoRun ? (
         <Modal onClose={() => setInfoRun(null)}>
-          <div className="w-[min(560px,92vw)] rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+          <div className="w-[min(560px,92vw)] rounded-xl border border-hairline bg-surface px-6 py-6 shadow-overlay">
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+              <h2 className="text-xl font-semibold text-ink">
                 File information
               </h2>
               <button
@@ -3284,38 +2881,38 @@ export default function AdminImportClient() {
             </div>
             <dl className="mt-5 space-y-4 text-sm">
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 dark:text-[#9c9c9c]">Name</dt>
-                <dd className="text-right text-slate-900 dark:text-white">
+                <dt className="text-mute">Name</dt>
+                <dd className="text-right text-ink">
                   {titleOf(infoRun)}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 dark:text-[#9c9c9c]">Type</dt>
-                <dd className="text-right text-slate-900 dark:text-white">
+                <dt className="text-mute">Type</dt>
+                <dd className="text-right text-ink">
                   {extOf(infoRun).toUpperCase()}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 dark:text-[#9c9c9c]">Source</dt>
-                <dd className="text-right text-slate-900 dark:text-white">
+                <dt className="text-mute">Source</dt>
+                <dd className="text-right text-ink">
                   {sourceOf(infoRun)}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 dark:text-[#9c9c9c]">Size</dt>
-                <dd className="text-right text-slate-900 dark:text-white">
+                <dt className="text-mute">Size</dt>
+                <dd className="text-right text-ink">
                   {formatBytes(infoRun.file_size_bytes)}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 dark:text-[#9c9c9c]">Updated</dt>
-                <dd className="text-right text-slate-900 dark:text-white">
+                <dt className="text-mute">Updated</dt>
+                <dd className="text-right text-ink">
                   {formatDetailedDate(infoRun.updated_at)}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 dark:text-[#9c9c9c]">Path</dt>
-                <dd className="max-w-[280px] break-all text-right text-slate-900 dark:text-white">
+                <dt className="text-mute">Path</dt>
+                <dd className="max-w-[280px] break-all text-right text-ink">
                   {infoRun.source_path || "Unavailable"}
                 </dd>
               </div>

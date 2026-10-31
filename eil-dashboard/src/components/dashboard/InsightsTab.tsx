@@ -19,6 +19,7 @@ import { insightCsv } from "@/lib/insights/csv";
 import { ChartIcon, CloseIcon, RefreshIcon, SearchIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
 import type { Insight, InsightNotice, InsightPlan, InsightReport } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
+import { buttonClass, fieldClass } from "@/components/ui/controls";
 
 interface InsightsResponse {
   report: InsightReport;
@@ -78,14 +79,14 @@ function InsightCard({
   return (
     <section className="app-surface px-4 py-5 sm:px-6" aria-labelledby={`insight-${insight.id}-${index}`} data-insight={insight.id}>
       {index >= 0 ? (
-        <p className="text-xs font-medium text-slate-500 dark:text-[#8f8f8f]">
-          {index + 1} · {title === insight.question ? FAMILY[insight.family] : insight.question}
+        <p className="text-xs font-medium text-mute">
+          {index + 1}. {title === insight.question ? FAMILY[insight.family] : insight.question}
         </p>
       ) : null}
-      <h3 id={`insight-${insight.id}-${index}`} className={`${index >= 0 ? "mt-1.5 " : ""}text-base font-semibold leading-6 text-slate-900 dark:text-white`}>
+      <h3 id={`insight-${insight.id}-${index}`} className={`${index >= 0 ? "mt-1.5 " : ""}text-base font-semibold leading-6 text-ink`}>
         {title}
       </h3>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]" data-takeaway>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-ink" data-takeaway>
         {takeaway}
       </p>
       {insight.caution ? (
@@ -97,14 +98,14 @@ function InsightCard({
       <div className="mt-5">
         <InsightChart insight={insight} onOpen={onOpen} paperTitles={paperTitles} />
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-[#1a1a1a]">
-        <p className="max-w-2xl text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{insight.basis}</p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-3">
+        <p className="max-w-2xl text-xs leading-5 text-mute">{insight.basis}</p>
         <div className="flex flex-wrap items-center gap-2">
           <ChartCsvButton csv={insightCsv(insight, title)} />
           <button
             type="button"
             onClick={() => onOpen(insight.paperIds, title)}
-            className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#262626] dark:text-[#d4d4d4] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            className="inline-flex min-h-9 items-center rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink"
           >
             The {insight.paperIds.length} paper{insight.paperIds.length === 1 ? "" : "s"} behind this
           </button>
@@ -138,8 +139,8 @@ function Notices({ notices }: { notices: Array<Pick<InsightNotice, "id" | "text"
   return (
     <ul className="space-y-1.5" aria-label="About this selection">
       {notices.map((notice) => (
-        <li key={notice.id} className="flex gap-2 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]">
-          <InfoIcon className="mt-1 h-4 w-4 flex-none text-slate-400 dark:text-[#737373]" />
+        <li key={notice.id} className="flex gap-2 text-sm leading-6 text-body">
+          <InfoIcon className="mt-1 h-4 w-4 flex-none text-mute" />
           <span>{notice.text}</span>
         </li>
       ))}
@@ -381,7 +382,7 @@ export default function InsightsTab({
 
   if (!projectId) {
     return (
-      <section className="app-surface px-6 py-12 text-center text-sm text-slate-600 dark:text-[#a3a3a3]">
+      <section className="app-surface px-6 py-12 text-center text-sm text-body">
         Choose a repository to see its insights.
       </section>
     );
@@ -396,7 +397,7 @@ export default function InsightsTab({
             <button
               type="button"
               onClick={() => void load("auto")}
-              className="mt-4 inline-flex min-h-10 items-center rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-800 hover:border-slate-300 dark:border-[#2a2a2a] dark:text-[#e5e5e5]"
+              className="mt-4 inline-flex min-h-10 items-center rounded-lg border border-hairline px-4 text-sm font-medium text-ink hover:border-hairline-strong"
             >
               Try again
             </button>
@@ -427,25 +428,25 @@ export default function InsightsTab({
       <section className="app-surface px-4 py-5 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 max-w-3xl">
-            <p className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500 dark:text-[#8f8f8f]">
+            <p className="flex flex-wrap items-center gap-2 text-xs font-medium text-mute">
               <span>Insights</span>
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
                   written
                     ? "bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
-                    : "bg-slate-100 text-slate-600 dark:bg-[#141414] dark:text-[#b3b3b3]"
+                    : "bg-subtle text-body"
                 }`}
                 title={written ? "A model chose and worded these; every number was checked against the computed data." : "Computed from the papers; no model was used."}
               >
-                {written ? "Written by AI · numbers checked" : "Computed"}
+                {written ? "Written by AI, numbers checked" : "Computed"}
               </span>
               {written && result.cached ? <span>Saved {timeAgo(plan.generatedAt)}</span> : null}
               {loading ? <SpinnerIcon className="h-3.5 w-3.5" /> : null}
             </p>
-            <h2 className="mt-2 text-lg font-semibold leading-7 text-slate-900 dark:text-[#f2f2f2]">{plan.headline}</h2>
-            <p className="mt-1.5 text-sm leading-6 text-slate-600 dark:text-[#b3b3b3]">{plan.summary}</p>
+            <h2 className="mt-2 text-lg font-semibold leading-7 text-ink">{plan.headline}</h2>
+            <p className="mt-1.5 text-sm leading-6 text-body">{plan.summary}</p>
             {plan.caveats.length ? (
-              <ul className="mt-2 space-y-1 text-[13px] leading-5 text-slate-500 dark:text-[#999]">
+              <ul className="mt-2 space-y-1 text-[13px] leading-5 text-mute">
                 {plan.caveats.map((caveat) => (
                   <li key={caveat}>{caveat}</li>
                 ))}
@@ -460,7 +461,7 @@ export default function InsightsTab({
                     type="button"
                     onClick={() => void generate()}
                     disabled={generating}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
+                    className={buttonClass("primary", "md")}
                   >
                     {generating ? <SpinnerIcon className="h-4 w-4" /> : <ChartIcon className="h-4 w-4" />}
                     {generating ? "Generating…" : "Generate views"}
@@ -471,14 +472,14 @@ export default function InsightsTab({
                     type="button"
                     onClick={() => void load("write", written)}
                     disabled={writing || loading}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:text-[#e5e5e5] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                    className={buttonClass("secondary", "md")}
                   >
                     {writing ? <SpinnerIcon className="h-4 w-4" /> : <SparkIcon className="h-4 w-4" />}
                     {writing ? "Writing…" : written ? "Rewrite with AI" : "Write up with AI"}
                   </button>
                 ) : null}
               </div>
-              <p className="max-w-[20rem] text-xs leading-5 text-slate-500 dark:text-[#8f8f8f] sm:text-right">
+              <p className="max-w-[20rem] text-xs leading-5 text-mute sm:text-right">
                 {report.summary.papers >= 3
                   ? "Generate draws three views these papers can answer, new each time. AI only words them; the numbers are computed here."
                   : "One short AI call. It can only use the numbers computed here."}
@@ -488,12 +489,12 @@ export default function InsightsTab({
         </div>
         {error ? <p className="mt-3 text-sm font-medium text-red-700 dark:text-red-300">{error}</p> : null}
         {generateNote ? (
-          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]" role="status">
+          <p className="mt-3 text-sm leading-6 text-body" role="status">
             {generateNote}
           </p>
         ) : null}
         {notices.length ? (
-          <div className="mt-4 border-t border-slate-100 pt-3 dark:border-[#1a1a1a]">
+          <div className="mt-4 border-t border-hairline pt-3">
             <Notices notices={notices} />
           </div>
         ) : null}
@@ -506,39 +507,39 @@ export default function InsightsTab({
               Ask about these papers
             </label>
             <div className="relative min-w-0 flex-1">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#737373]" />
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
               <input
                 id="insights-ask"
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
                 maxLength={300}
                 placeholder="Ask about these papers, e.g. which methods are used for which themes?"
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 focus:border-slate-400 focus:outline-none dark:border-[#262626] dark:bg-[#050505] dark:text-[#f2f2f2] dark:placeholder:text-[#8f8f8f] dark:focus:border-[#4a4a4a]"
+                className={`${fieldClass} h-10 pl-9`}
               />
             </div>
             <button
               type="submit"
               disabled={asking || question.trim().length < 3}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:text-[#e5e5e5] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
             >
               {asking ? <SpinnerIcon className="h-4 w-4" /> : null}
               {asking ? "Working it out…" : "Ask"}
             </button>
           </form>
-          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+          <p className="mt-2 text-xs leading-5 text-mute">
             One short AI call turns the question into a view; the numbers are computed from the papers.{" "}
           </p>
           {suggestions === null ? (
-            <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Finding questions these papers can answer…</p>
+            <p className="mt-3 text-xs leading-5 text-mute">Finding questions these papers can answer…</p>
           ) : suggestions.length > 0 || suggestionsNote ? (
             <div className="mt-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Questions these papers can answer:</p>
+                <p className="text-xs leading-5 text-mute">Questions these papers can answer:</p>
                 <button
                   type="button"
                   onClick={() => void newSuggestions()}
                   disabled={refreshing}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:text-[#b3b3b3] dark:hover:bg-[#141414] dark:hover:text-white"
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {refreshing ? <SpinnerIcon className="h-3.5 w-3.5" /> : <RefreshIcon className="h-3.5 w-3.5" />}
                   Other questions
@@ -551,14 +552,14 @@ export default function InsightsTab({
                       type="button"
                       onClick={() => askSuggestion(suggestion)}
                       disabled={asking}
-                      className="inline-flex min-h-9 items-center rounded-full border border-slate-200 bg-white px-3.5 text-left text-xs font-medium text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:border-[#4a4a4a] dark:hover:text-white"
+                      className="inline-flex min-h-9 items-center rounded-full border border-hairline bg-surface px-3.5 text-left text-xs font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {suggestion.question}
                     </button>
                   </li>
                 ))}
               </ul>
-              {suggestionsNote ? <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{suggestionsNote}</p> : null}
+              {suggestionsNote ? <p className="mt-2 text-xs leading-5 text-mute">{suggestionsNote}</p> : null}
             </div>
           ) : null}
           {askError ? <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300" role="alert">{askError}</p> : null}
@@ -567,16 +568,16 @@ export default function InsightsTab({
 
       {answers.map((answer) => (
         <div key={answer.id} className="relative">
-          <p className="mb-2 flex items-center justify-between gap-3 px-1 text-sm text-slate-600 dark:text-[#b3b3b3]">
+          <p className="mb-2 flex items-center justify-between gap-3 px-1 text-sm text-body">
             <span>
               {answer.generated ? "Generated: " : "You asked: "}
-              <span className="font-medium text-slate-900 dark:text-white">{answer.question}</span>
+              <span className="font-medium text-ink">{answer.question}</span>
             </span>
             <button
               type="button"
               onClick={() => setAnswers((current) => current.filter((entry) => entry.id !== answer.id))}
               aria-label="Remove this answer"
-              className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#141414] dark:hover:text-white"
+              className="rounded-md p-1.5 text-mute transition-colors hover:bg-subtle hover:text-ink"
             >
               <CloseIcon className="h-4 w-4" />
             </button>
@@ -584,23 +585,23 @@ export default function InsightsTab({
           {answer.insight ? (
             <InsightCard insight={answer.insight} title={answer.insight.question} takeaway={answer.insight.takeaway} onOpen={openPapers} index={-1} paperTitles={paperTitles} />
           ) : (
-            <section className="app-surface px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4] sm:px-6">{answer.unanswerable}</section>
+            <section className="app-surface px-4 py-4 text-sm leading-6 text-ink sm:px-6">{answer.unanswerable}</section>
           )}
         </div>
       ))}
 
       {cards.length === 0 ? (
         <section className="app-surface flex flex-col items-center px-6 py-12 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-slate-500 dark:border-[#2a2a2a] dark:text-[#a3a3a3]">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-mute">
             <ChartIcon className="h-5 w-5" />
           </span>
-          <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">Nothing strong enough to show yet</h3>
-          <p className="mt-2 max-w-lg text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
+          <h3 className="mt-4 text-base font-semibold text-ink">Nothing strong enough to show yet</h3>
+          <p className="mt-2 max-w-lg text-sm leading-6 text-body">
             A pattern needs at least 3 papers behind it and must hold when any one is removed. Widen the years or research areas, or clear the search, to give it more to work with.
           </p>
           {report.summary.papers >= 3 && answers.length === 0 ? (
-            <p className="mt-3 max-w-lg text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
-              Smaller questions still have answers: <strong className="font-semibold text-slate-900 dark:text-white">Generate views</strong> above draws three of them.
+            <p className="mt-3 max-w-lg text-sm leading-6 text-body">
+              Smaller questions still have answers: <strong className="font-semibold text-ink">Generate views</strong> above draws three of them.
             </p>
           ) : null}
         </section>
@@ -624,12 +625,12 @@ export default function InsightsTab({
             type="button"
             onClick={() => setShowMore((value) => !value)}
             aria-expanded={showMore}
-            className="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-slate-800 dark:text-[#e5e5e5]"
+            className="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-ink"
           >
             <span>
               {more.length} more pattern{more.length === 1 ? "" : "s"} in these papers
             </span>
-            <span className="text-xs text-slate-500 dark:text-[#8f8f8f]">{showMore ? "Hide" : "Show"}</span>
+            <span className="text-xs text-mute">{showMore ? "Hide" : "Show"}</span>
           </button>
           {showMore ? (
             <div className="mt-4 space-y-5">

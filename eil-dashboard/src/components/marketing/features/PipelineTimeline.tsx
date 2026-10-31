@@ -161,7 +161,7 @@ export default function PipelineTimeline() {
                   align={item.col <= 2 ? "start" : item.col >= 8 ? "end" : "center"}
                   className="!flex h-full w-full"
                   buttonClassName={(open) =>
-                    `flex h-full w-full items-center justify-center rounded-xl border px-2 text-center text-[12.5px] font-medium leading-tight transition-[background-color,border-color,color,box-shadow,transform] duration-300 ease-out-expo ${
+                    `flex h-full w-full items-center justify-center rounded-xl border px-2 text-center text-[12.5px] font-medium leading-tight transition-[background-color,border-color,color,transform] duration-300 ease-out-expo ${
                       open
                         ? "border-ink bg-ink text-canvas"
                         : state === "on"
@@ -174,7 +174,7 @@ export default function PipelineTimeline() {
                   trigger={
                     <span>
                       {item.label}
-                      {item.optional ? <span className="mt-0.5 block text-[10.5px] font-normal opacity-70">if needed</span> : null}
+                      {item.optional ? <span className="mt-0.5 block text-[11px] font-normal opacity-70">if needed</span> : null}
                     </span>
                   }
                 >

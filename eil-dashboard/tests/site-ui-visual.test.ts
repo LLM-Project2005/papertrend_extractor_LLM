@@ -118,7 +118,8 @@ test("the drawer marks the page you are on in the rail's tone", () => {
   const shell = read("src/components/workspace/WorkspaceShell.tsx");
   assert.equal(/"bg-slate-900 text-white dark:bg-\[#030303\]"/.test(shell), false);
   assert.ok(contrast("#1f1f1f", "#050505") > contrast("#111111", "#050505"));
-  assert.equal((shell.match(/bg-slate-900 text-white dark:bg-\[#1f1f1f\]/g) ?? []).length, 2);
+  // 2026-10-31 UI audit #22: rail and drawer both wear the shared selectedClass (fill + ink bar).
+  assert.equal((shell.match(/\? selectedClass/g) ?? []).length, 2);
 });
 
 test("a failed chat message can be read in light mode", () => {
@@ -139,7 +140,9 @@ test("the commit action in the message editor outranks the cancel action", () =>
   // editor opens on a click, which a server render cannot make.
   const chat = read("src/components/chat/ChatClient.tsx");
   assert.equal(/dark:bg-black dark:text-white dark:hover:bg-\[#0a0a0a\]/.test(chat), false);
-  assert.match(chat, /onClick=\{cancelEditingUserMessage\}\s*\n\s*className="inline-flex h-10 items-center rounded-full border/);
+  // Both are the shared controls now (UI audit #22): Cancel secondary, Send primary.
+  assert.match(chat, /onClick=\{cancelEditingUserMessage\}\s*\n\s*className=\{buttonClass\("secondary", "md"\)\}/);
+  assert.match(chat, /onClick=\{\(\) => void submitEditedUserMessage\(message\)\}[\s\S]{0,140}className=\{buttonClass\("primary", "md"\)\}/);
 });
 
 /* ---------------------------------------------------------------- navigation */
@@ -231,7 +234,7 @@ test("a loading indicator still means something without motion", () => {
   // The bar shows only after a navigation link is clicked.
   const shell = readCode("src/components/workspace/WorkspaceShell.tsx");
   assert.match(shell, /role="status"\s*\n\s*aria-label="Loading page"/);
-  assert.match(shell, /w-full bg-slate-950 motion-safe:w-1\/2 motion-safe:animate-pulse/);
+  assert.match(shell, /w-full bg-ink motion-safe:w-1\/2 motion-safe:animate-pulse/);
 });
 
 test("both tab states carry the same bottom border, so neither is larger", () => {

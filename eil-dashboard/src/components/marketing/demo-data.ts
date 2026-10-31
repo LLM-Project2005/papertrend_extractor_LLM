@@ -34,7 +34,7 @@ export const DEMO_YEARS: Array<{ year: number; papers: number }> = [
 export const DEMO_PAPER = {
   title: "Mangroves and seawalls: household choices in Semarang",
   journalLine: "Ocean & Coastal Management 214 (2022)",
-  received: "Received 14 October 2021 · Accepted 2 May 2022",
+  received: "Received 14 October 2021; accepted 2 May 2022",
   abstract:
     "Semarang is sinking faster than the sea is rising. This study asks how households choose between hard defences and restored mangroves, and what each choice costs them.",
   authorKeywords: ["mangrove restoration", "seawalls", "land subsidence", "household survey"],
@@ -46,7 +46,7 @@ export const DEMO_PAPER = {
     "Mangroves and seawalls are not alternatives but partners: the wall buys time while the mangroves grow.",
   category: "Adaptation strategies",
   categoryReason: "Its main contribution compares two ways of adapting to flooding, shown in its survey design and findings.",
-  researchType: "Empirical · mixed methods",
+  researchType: "Empirical, mixed methods",
   topics: ["Mangrove restoration", "Seawall trade-offs", "Coastal land subsidence", "Household surveys"],
 };
 

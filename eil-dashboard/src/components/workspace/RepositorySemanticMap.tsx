@@ -40,11 +40,12 @@ import {
 } from "@/lib/semantic-map-colors";
 import type { RepositorySemanticMap, SemanticMapCoverage, SemanticMapEdge, SemanticMapPoint } from "@/types/semantic-map";
 import { CheckIcon, CloseIcon, DownloadIcon, FilterIcon, RefreshIcon, SearchIcon, SparkIcon } from "@/components/ui/Icons";
+import { buttonClass, fieldClass, segmentClass, segmentedClass, selectedClass } from "@/components/ui/controls";
 
 const COLOR_MODE_OPTIONS: SelectOption<ColorMode>[] = [
   { value: "cluster", label: "Neighborhood", description: "Papers the map found near each other" },
   { value: "category", label: "Research area", description: "The repository's own research areas" },
-  { value: "year", label: "Year", description: "One colour for each publication year" },
+  { value: "year", label: "Year", description: "One color for each publication year" },
 ];
 
 interface Props {
@@ -88,7 +89,7 @@ function PaperMapNode({ data, selected }: NodeProps) {
         className={`block h-6 w-6 rounded-full border-[3px] transition-[transform,box-shadow] duration-200 ${selected ? "scale-125 border-white shadow-[0_0_0_3px_var(--node-color),0_8px_24px_rgba(0,0,0,.28)]" : "scale-100 shadow-[0_3px_12px_rgba(0,0,0,.2)]"}`}
         style={{ backgroundColor: node.color, borderColor: selected ? undefined : node.color, "--node-color": node.color } as React.CSSProperties}
       />
-      {node.label ? <span className="pointer-events-none absolute left-1/2 top-[calc(100%+7px)] w-[168px] -translate-x-1/2 break-words rounded-md bg-white/90 px-2 py-1 text-center text-[10px] font-semibold leading-[14px] text-slate-800 shadow-sm backdrop-blur-sm dark:bg-black/90 dark:text-[#eee]">{node.label}</span> : null}
+      {node.label ? <span className="pointer-events-none absolute left-1/2 top-[calc(100%+7px)] w-[168px] -translate-x-1/2 break-words rounded-md bg-surface/90 px-2 py-1 text-center text-[11px] font-semibold leading-[14px] text-ink shadow-raise backdrop-blur-sm">{node.label}</span> : null}
       {HANDLE_POSITIONS.map((position) => (
         <Handle key={handleId(position, "source")} id={handleId(position, "source")} type="source" position={position} className="!pointer-events-none !h-0 !w-0 !border-0 !bg-transparent" />
       ))}
@@ -485,7 +486,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     setDownloading(true);
     try {
       const live = layoutMode === "force" ? positionsRef.current?.() ?? {} : {};
-      const modeLabel = COLOR_MODE_OPTIONS.find((option) => option.value === colorMode)?.label ?? "Colour";
+      const modeLabel = COLOR_MODE_OPTIONS.find((option) => option.value === colorMode)?.label ?? "Color";
       const today = new Date();
       await downloadSemanticMapPng(
         {
@@ -500,7 +501,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
             faded: forceDimmedIds.has(point.paperId),
           })),
           edges: visibleEdges.map((edge) => ({ source: edge.sourcePaperId, target: edge.targetPaperId })),
-          legendTitle: `Colour: ${modeLabel}`,
+          legendTitle: `Color: ${modeLabel}`,
           legend: colourKey.map((item) => ({ label: item.label, color: item.color, count: item.count })),
           footnote: "Made with Papertrend. Distance and links are exploratory: they do not show citation, causation or agreement.",
         },
@@ -514,15 +515,30 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   }
   const waitingForMapCount = Math.max(eligiblePapers - mappedPaperCount, 0);
   const repositoryFileCount = coverage?.repositoryFiles ?? eligiblePapers;
-  if (loading) return <div className="flex min-h-[520px] items-center justify-center text-sm text-slate-500 dark:text-[#999]">Loading semantic map…</div>;
+  // The dashboard's loading look (skeletons in the map's own shape), not a line of text.
+  if (loading) {
+    return (
+      <div className="space-y-4" role="status" aria-label="Loading semantic map">
+        <div className="space-y-2">
+          <span className="skeleton block h-5 w-40" />
+          <span className="skeleton block h-4 w-56 max-w-full" />
+        </div>
+        <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <span className="skeleton block h-[clamp(560px,72vh,780px)] w-full rounded-xl" />
+          <span className="skeleton hidden h-80 w-full rounded-xl xl:block" />
+        </div>
+        <p className="sr-only">Loading semantic map…</p>
+      </div>
+    );
+  }
   if (!map) {
     return (
       <div className="flex min-h-[520px] items-center justify-center px-6 text-center">
         <div className="max-w-md">
-          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-[#111] dark:text-white"><SparkIcon className="h-6 w-6" /></span>
-          <h2 className="mt-5 text-xl font-semibold text-slate-950 dark:text-white">See how these papers connect</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#999]">Generate a map from {eligiblePapers} analyzed paper{eligiblePapers === 1 ? "" : "s"}. Euclidean distance is exploratory and does not imply citation or causation.</p>
-          {eligiblePapers > 0 ? <button type="button" disabled={generating} onClick={() => void generate(false)} className="mt-5 inline-flex h-11 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-[#ddd]"><SparkIcon className="h-4 w-4" />{generating ? "Starting…" : "Generate semantic map"}</button> : <p className="mt-5 text-sm font-medium text-slate-700 dark:text-[#ddd]">Analyze at least one paper to create this map.</p>}
+          <SparkIcon className="mx-auto h-7 w-7 text-mute" />
+          <h2 className="mt-5 text-xl font-semibold text-ink">See how these papers connect</h2>
+          <p className="mt-2 text-sm leading-6 text-mute">Generate a map from {eligiblePapers} analyzed paper{eligiblePapers === 1 ? "" : "s"}. Euclidean distance is exploratory and does not imply citation or causation.</p>
+          {eligiblePapers > 0 ? <button type="button" disabled={generating} onClick={() => void generate(false)} className={buttonClass("primary", "lg", "mt-5")}><SparkIcon className="h-4 w-4" />{generating ? "Starting…" : "Generate semantic map"}</button> : <p className="mt-5 text-sm font-medium text-ink">Analyze at least one paper to create this map.</p>}
           {error ? <p className="mt-4 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
         </div>
       </div>
@@ -533,13 +549,12 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   const notOnMap = coverage
     ? [
         coverage.failedFiles > 0 ? `${coverage.failedFiles} paper${coverage.failedFiles === 1 ? "" : "s"} that failed analysis` : "",
-        coverage.queuedFiles + coverage.processingFiles > 0 ? `${coverage.queuedFiles + coverage.processingFiles} still being analysed` : "",
+        coverage.queuedFiles + coverage.processingFiles > 0 ? `${coverage.queuedFiles + coverage.processingFiles} still being analyzed` : "",
         coverage.missingAnalysis > 0 ? `${coverage.missingAnalysis} without a usable analysis` : "",
       ].filter(Boolean)
     : [];
-  const sectionLabel = "text-xs font-semibold uppercase text-slate-500 dark:text-[#888]";
-  const layoutButton = (active: boolean) =>
-    `h-8 rounded-md px-2.5 text-xs font-semibold transition ${active ? "bg-white text-slate-950 shadow-sm dark:bg-[#292929] dark:text-white" : "text-slate-500 hover:text-slate-900 dark:text-[#888] dark:hover:text-white"}`;
+  // Sentence case, the body face: the panel's group names are labels, not shouted eyebrows (UI audit #14).
+  const sectionLabel = "text-xs font-medium text-mute";
 
   return (
     <div className="space-y-4">
@@ -549,42 +564,37 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
           and how the map is built. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold text-slate-950 dark:text-white">Semantic map</h2>
-            {map.stale ? (
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950 dark:bg-amber-950/40 dark:text-amber-200">
-                Map out of date
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm tabular-nums text-slate-600 dark:text-[#aaa]">
-            {visiblePoints.length} paper{visiblePoints.length === 1 ? "" : "s"} · {candidateEdges.length} link{candidateEdges.length === 1 ? "" : "s"}
-            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
+          {/* One place says the map is out of date: the banner below, with the
+              one Update map button. The chip and a second button repeated it (UI audit #23). */}
+          <h2 className="text-base font-semibold text-ink">Semantic map</h2>
+          <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm tabular-nums text-body">
+            <span>{visiblePoints.length} paper{visiblePoints.length === 1 ? "" : "s"}</span>
+            <span>{candidateEdges.length} link{candidateEdges.length === 1 ? "" : "s"}</span>
           </p>
           {notOnMap.length > 0 ? (
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-[#888]">
+            <p className="mt-0.5 text-xs text-mute">
               Not on the map: {notOnMap.length === 1 ? notOnMap[0] : `${notOnMap.slice(0, -1).join(", ")} and ${notOnMap[notOnMap.length - 1]}`}.
             </p>
           ) : null}
-          <div className="mt-1 min-h-5" aria-live="polite">{hiddenCount > 0 || focusedClusterId !== null ? <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-[#aaa]"><span>{hiddenCount ? `${hiddenCount} paper${hiddenCount === 1 ? "" : "s"} hidden` : "Neighborhood focused"}</span><button type="button" onClick={resetViewFilters} className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2 dark:text-white dark:decoration-[#555]">Reset view</button></div> : <span className="sr-only">No view filters active.</span>}</div>
+          <div className="mt-1 min-h-5" aria-live="polite">{hiddenCount > 0 || focusedClusterId !== null ? <div className="flex items-center gap-2 text-xs text-body"><span>{hiddenCount ? `${hiddenCount} paper${hiddenCount === 1 ? "" : "s"} hidden` : "Neighborhood focused"}</span><button type="button" onClick={resetViewFilters} className="font-semibold text-ink underline decoration-mute/50 underline-offset-2">Reset view</button></div> : <span className="sr-only">No view filters active.</span>}</div>
         </div>
-        <button type="button" disabled={generating} onClick={() => void generate(true)} className="inline-flex h-10 flex-none items-center gap-2 self-start rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50 dark:border-[#292929] dark:bg-[#050505] dark:text-white"><RefreshIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />{map.stale ? "Update map" : "Regenerate"}</button>
+        {map.stale ? null : <button type="button" disabled={generating} onClick={() => void generate(true)} className={buttonClass("secondary", "md", "flex-none self-start")}><RefreshIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />Regenerate</button>}
       </div>
 
-      {map.stale ? <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100"><div><span className="font-semibold">The saved map does not match the current repository.</span><span className="ml-1">{waitingForMapCount > 0 ? `${waitingForMapCount} analyzed paper${waitingForMapCount === 1 ? " is" : "s are"} waiting to be added.` : "The paper set or analysis changed."}</span></div><button type="button" disabled={generating} onClick={() => void generate(true)} className="h-9 flex-none rounded-md bg-amber-900 px-3 text-xs font-semibold text-white disabled:opacity-50 dark:bg-amber-200 dark:text-black">Update map</button></div> : null}
+      {map.stale ? <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100"><div><span className="font-semibold">The saved map does not match the current repository.</span><span className="ml-1">{waitingForMapCount > 0 ? `${waitingForMapCount} analyzed paper${waitingForMapCount === 1 ? " is" : "s are"} waiting to be added.` : "The paper set or analysis changed."}</span></div><button type="button" disabled={generating} onClick={() => void generate(true)} className={buttonClass("secondary", "md", "flex-none")}><RefreshIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />Update map</button></div> : null}
       {generating || jobId ? <div aria-live="polite" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-950 dark:bg-blue-950/30 dark:text-blue-200"><span className="font-semibold capitalize">{map.progress.stage.replaceAll("_", " ")}</span><span className="ml-2">{map.progress.current}/{map.progress.total || eligiblePapers}</span></div> : null}
       {error ? <div className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-950 dark:bg-red-950/30 dark:text-red-200"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss error"><CloseIcon className="h-4 w-4" /></button></div> : null}
 
       <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="relative h-[clamp(560px,72vh,780px)] overflow-hidden rounded-xl border border-slate-200 bg-[#fafafa] dark:border-[#202020] dark:bg-black">
-          <div className="nodrag nopan absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-[#242424] dark:bg-[#080808]/95">
-            <label className="relative min-w-[180px] flex-1"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a paper, topic, or keyword" aria-label="Find on map" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
-            <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-0.5 dark:bg-[#111]" role="group" aria-label="Semantic map layout">
-              <button type="button" aria-pressed={layoutMode === "projection"} onClick={() => changeLayoutMode("projection")} className={layoutButton(layoutMode === "projection")}>Fixed projection</button>
-              <button type="button" aria-pressed={layoutMode === "force"} onClick={() => changeLayoutMode("force")} className={layoutButton(layoutMode === "force")}>Free graph</button>
+        <div className="relative h-[clamp(560px,72vh,780px)] overflow-hidden rounded-xl border border-hairline bg-canvas">
+          <div className="nodrag nopan absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-surface/95 p-2 shadow-raise backdrop-blur">
+            <label className="relative min-w-[180px] flex-1"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find on map" aria-label="Find on map" className={`${fieldClass} h-9 pl-9`} /></label>
+            <div className={segmentedClass} role="group" aria-label="Semantic map layout">
+              <button type="button" aria-pressed={layoutMode === "projection"} onClick={() => changeLayoutMode("projection")} className={segmentClass(layoutMode === "projection")}>Fixed projection</button>
+              <button type="button" aria-pressed={layoutMode === "force"} onClick={() => changeLayoutMode("force")} className={segmentClass(layoutMode === "force")}>Free graph</button>
             </div>
             <Select<ColorMode> value={colorMode} onChange={(next) => { setColorMode(next); setFocusedClusterId(null); }} label="Color papers by" prefix="Color:" options={COLOR_MODE_OPTIONS} />
-            <details className="group relative"><summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-sm font-medium text-ink transition-colors hover:border-hairline-strong [&::-webkit-details-marker]:hidden"><FilterIcon className="h-4 w-4" /> Papers <span className="tabular-nums">{visiblePoints.length}/{map.points.length}</span></summary><div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(380px,calc(100vw-3rem))] origin-top-right rounded-xl border border-hairline bg-surface p-3 shadow-overlay motion-safe:animate-scale-in"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div><button type="button" onClick={() => setHiddenPaperIds([])} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Show all</button></div><label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" aria-label="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm text-slate-950 outline-none dark:border-[#292929] dark:text-white" /></label>{paperFilterNotice ? <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{paperFilterNotice}</p> : null}<div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">{paperFilterPoints.map((point) => { const visible = !hiddenIds.has(point.paperId); return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#121212]"><input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="peer sr-only" /><span aria-hidden="true" className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border peer-focus-visible:ring-2 peer-focus-visible:ring-[rgb(var(--focus))] peer-focus-visible:ring-offset-2 ${visible ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black" : "border-field"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span><span className="min-w-0"><span className="block text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{point.title}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{point.year}</span></span></label>; })}</div></div></details>
+            <details className="group relative"><summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-sm font-medium text-ink transition-colors hover:border-hairline-strong [&::-webkit-details-marker]:hidden"><FilterIcon className="h-4 w-4" /> Papers <span className="tabular-nums">{visiblePoints.length}/{map.points.length}</span></summary><div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(380px,calc(100vw-3rem))] origin-top-right rounded-xl border border-hairline bg-surface p-3 shadow-overlay motion-safe:animate-scale-in"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink">Papers in view</p><p className="text-xs text-mute">Hide papers without rebuilding the map.</p></div><button type="button" onClick={() => setHiddenPaperIds([])} className="text-xs font-semibold text-ink">Show all</button></div><label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" aria-label="Filter paper list" className={`${fieldClass} h-9 pl-9`} /></label>{paperFilterNotice ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{paperFilterNotice}</p> : null}<div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">{paperFilterPoints.map((point) => { const visible = !hiddenIds.has(point.paperId); return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-subtle"><input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="peer sr-only" /><span aria-hidden="true" className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border peer-focus-visible:ring-2 peer-focus-visible:ring-[rgb(var(--focus))] peer-focus-visible:ring-offset-2 ${visible ? "border-ink bg-ink text-canvas" : "border-field"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span><span className="min-w-0"><span className="block text-xs font-medium leading-5 text-ink">{point.title}</span><span className="block text-[11px] text-mute">{point.year}</span></span></label>; })}</div></div></details>
             <button type="button" onClick={() => void downloadPng()} disabled={downloading} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 text-sm font-medium text-ink transition-colors hover:border-hairline-strong disabled:opacity-50"><DownloadIcon className="h-4 w-4" />{downloading ? "Saving…" : "Download PNG"}</button>
           </div>
           {layoutMode === "projection" ? <ReactFlow key={`${map.mapId}:projection`} nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onInit={fitInitialView} onNodeClick={onNodeClick} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable autoPanOnNodeFocus={false} minZoom={0.45} maxZoom={2.5} className="semantic-map-flow">
@@ -593,70 +603,70 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
                  nothing about where they were. */
               maskColor="rgba(15,23,42,.22)" />
           </ReactFlow> : <ForceDirectedSemanticGraph points={visiblePoints} edges={visibleEdges} colors={forceColors} dimmedPaperIds={forceDimmedIds} recededPaperIds={forceRecededIds} focusedPaperId={focusedPaperId} selectedPaperIds={selectedIdSet} selectedEdgeId={focusedEdge ? `${focusedEdge.sourcePaperId}:${focusedEdge.targetPaperId}` : null} running={forceRunning} resetVersion={forceResetVersion} showLabels={showPaperLabels} onPaperSelect={togglePaperSelection} onEdgeSelect={(edge) => { setFocusedPaperId(null); setFocusedEdge(edge); }} positionsRef={positionsRef} />}
-          <p className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md sm:block bg-white/85 px-2 py-1 text-[11px] text-slate-600 backdrop-blur dark:bg-black/85 dark:text-[#a3a3a3]">Scroll to zoom · drag to move</p>
+          <p className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md sm:block bg-surface/85 px-2 py-1 text-[11px] text-body backdrop-blur">Scroll to zoom, drag to move</p>
           <ul className="sr-only focus-within:not-sr-only focus-within:absolute focus-within:bottom-3 focus-within:left-3 focus-within:z-20 focus-within:max-h-64 focus-within:w-80 focus-within:overflow-y-auto focus-within:rounded-lg focus-within:border focus-within:border-hairline focus-within:bg-surface focus-within:p-2 focus-within:text-sm focus-within:shadow-overlay" aria-label={`Papers in ${projectName} semantic map`}>{visiblePoints.map((point) => <li key={point.paperId}><button type="button" aria-pressed={selectedIdSet.has(point.paperId)} className="block w-full rounded px-2 py-1 text-left aria-pressed:bg-subtle" onClick={() => { setFocusedPaperId(point.paperId); togglePaperSelection(point.paperId); }}>{point.title}, {point.year}</button></li>)}</ul>
         </div>
 
-        <aside className="self-start divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-[#202020] dark:border-[#202020] dark:bg-[#050505]" aria-label="About the map">
+        <aside className="self-start divide-y divide-hairline rounded-xl border border-hairline bg-surface" aria-label="About the map">
           <section className="p-4" aria-label="Selection">
             {selectionInsight ? (
               <div>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className={sectionLabel}>{selectionInsight.selectedCount} papers selected</p>
-                    <p className="mt-1 text-xs tabular-nums text-slate-500 dark:text-[#999]">{selectionInsight.neighborhoodLabels.length} neighborhood{selectionInsight.neighborhoodLabels.length === 1 ? "" : "s"}</p>
+                    <p className="mt-1 text-xs tabular-nums text-mute">{selectionInsight.neighborhoodLabels.length} neighborhood{selectionInsight.neighborhoodLabels.length === 1 ? "" : "s"}</p>
                   </div>
-                  <button type="button" onClick={() => { setSelectedPaperIds([]); setFocusedPaperId(null); }} className="rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#151515] dark:hover:text-white" aria-label="Clear selected papers"><CloseIcon className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => { setSelectedPaperIds([]); setFocusedPaperId(null); }} className="rounded-md p-1 text-mute transition hover:bg-subtle hover:text-ink" aria-label="Clear selected papers"><CloseIcon className="h-4 w-4" /></button>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-[#ddd]">{selectionInsight.summary}</p>
-                {selectionInsight.recurringSignals.length ? <div className="mt-3 flex flex-wrap gap-1.5">{selectionInsight.recurringSignals.map((signal) => <span key={signal} className="max-w-full truncate rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700 dark:bg-[#151515] dark:text-[#ddd]" title={signal}>{signal}</span>)}</div> : null}
-                {selectionInsight.closestConnection ? <div className="mt-4"><p className="text-[11px] font-semibold text-slate-500 dark:text-[#888]">Closest retained connection</p><p className="mt-1 text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{closestSelectionSource?.title ?? "Paper"} ↔ {closestSelectionTarget?.title ?? "Paper"}</p><p className="mt-1 text-[11px] tabular-nums text-slate-500 dark:text-[#999]">Distance {selectionInsight.closestConnection.distance.toFixed(3)} · lower is closer</p></div> : null}
-                <div className="mt-4 space-y-1">{selectedPoints.slice(0, 5).map((point) => <button key={point.paperId} type="button" onClick={() => { setFocusedPaperId(null); setSelectedPaperIds((current) => current.filter((paperId) => paperId !== point.paperId)); }} className="group flex w-full items-start justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-[#111]" title={`Remove ${point.title} from selection`}><span className="line-clamp-2 text-xs leading-5 text-slate-700 group-hover:text-slate-950 dark:text-[#ccc] dark:group-hover:text-white">{point.title}</span><CloseIcon className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" /></button>)}{selectedPoints.length > 5 ? <p className="px-2 text-[11px] text-slate-500 dark:text-[#888]">+{selectedPoints.length - 5} more selected</p> : null}</div>
+                <p className="mt-3 text-sm leading-6 text-ink">{selectionInsight.summary}</p>
+                {selectionInsight.recurringSignals.length ? <div className="mt-3 flex flex-wrap gap-1.5">{selectionInsight.recurringSignals.map((signal) => <span key={signal} className="max-w-full truncate rounded-full bg-subtle px-2 py-1 text-[11px] text-ink" title={signal}>{signal}</span>)}</div> : null}
+                {selectionInsight.closestConnection ? <div className="mt-4"><p className="text-[11px] font-semibold text-mute">Closest retained connection</p><p className="mt-1 text-xs font-medium leading-5 text-ink">{closestSelectionSource?.title ?? "Paper"} ↔ {closestSelectionTarget?.title ?? "Paper"}</p><p className="mt-1 text-[11px] tabular-nums text-mute">Distance {selectionInsight.closestConnection.distance.toFixed(3)} (lower is closer)</p></div> : null}
+                <div className="mt-4 space-y-1">{selectedPoints.slice(0, 5).map((point) => <button key={point.paperId} type="button" onClick={() => { setFocusedPaperId(null); setSelectedPaperIds((current) => current.filter((paperId) => paperId !== point.paperId)); }} className="group flex w-full items-start justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-subtle" title={`Remove ${point.title} from selection`}><span className="line-clamp-2 text-xs leading-5 text-ink group-hover:text-ink">{point.title}</span><CloseIcon className="mt-0.5 h-3.5 w-3.5 flex-none text-mute" /></button>)}{selectedPoints.length > 5 ? <p className="px-2 text-[11px] text-mute">+{selectedPoints.length - 5} more selected</p> : null}</div>
                 <div className="mt-4 grid gap-2">
-                  <button type="button" onClick={() => transferToChat(`Explain how these ${selectionInsight.selectedCount} papers relate. Identify shared themes, methods, findings, important differences, and any limitations in the comparison.`)} className="w-full rounded-lg bg-slate-950 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#ddd]">Explain in chat</button>
-                  <button type="button" onClick={() => transferToChat()} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 dark:border-[#303030] dark:text-white">Ask about {selectionInsight.selectedCount} papers</button>
+                  <button type="button" onClick={() => transferToChat(`Explain how these ${selectionInsight.selectedCount} papers relate. Identify shared themes, methods, findings, important differences, and any limitations in the comparison.`)} className={buttonClass("primary", "md", "w-full")}>Explain in chat</button>
+                  <button type="button" onClick={() => transferToChat()} className={buttonClass("secondary", "md", "w-full")}>Ask about {selectionInsight.selectedCount} papers</button>
                 </div>
               </div>
             ) : focusedEdge ? (
               <div>
                 <p className={sectionLabel}>Link</p>
-                <p className="mt-2 text-sm font-semibold leading-5 text-slate-950 dark:text-white">{edgeSource?.title ?? "Paper"}</p>
-                <p className="my-1 text-xs text-slate-500 dark:text-[#999]">and</p>
-                <p className="text-sm font-semibold leading-5 text-slate-950 dark:text-white">{edgeTarget?.title ?? "Paper"}</p>
-                <p className="mt-3 text-2xl font-semibold tabular-nums text-slate-950 dark:text-white">{focusedEdge.distance.toFixed(3)}</p>
-                <p className="text-xs text-slate-500 dark:text-[#999]">Euclidean distance · lower means closer</p>
-                <div className="mt-3 space-y-1 text-xs text-slate-700 dark:text-[#ddd]">{sharedSignalText(focusedEdge).length ? sharedSignalText(focusedEdge).map((text) => <p key={text}>{text}</p>) : <p>No exact metadata overlap; closeness comes from the document embedding.</p>}</div>
+                <p className="mt-2 text-sm font-semibold leading-5 text-ink">{edgeSource?.title ?? "Paper"}</p>
+                <p className="my-1 text-xs text-mute">and</p>
+                <p className="text-sm font-semibold leading-5 text-ink">{edgeTarget?.title ?? "Paper"}</p>
+                <p className="mt-3 text-2xl font-semibold tabular-nums text-ink">{focusedEdge.distance.toFixed(3)}</p>
+                <p className="text-xs text-mute">Euclidean distance (lower means closer)</p>
+                <div className="mt-3 space-y-1 text-xs text-ink">{sharedSignalText(focusedEdge).length ? sharedSignalText(focusedEdge).map((text) => <p key={text}>{text}</p>) : <p>No exact metadata overlap; closeness comes from the document embedding.</p>}</div>
               </div>
             ) : focusedPoint ? (
               <div>
                 <p className={sectionLabel}>Selected paper</p>
-                <h3 className="mt-2 text-sm font-semibold leading-5 text-slate-950 dark:text-white">{focusedPoint.title}</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-[#999]">{focusedPoint.year}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">{focusedPoint.categories.slice(0, 4).map((category) => <span key={category} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700 dark:bg-[#151515] dark:text-[#ddd]">{category}</span>)}</div>
-                <button type="button" onClick={openFocusedPaper} disabled={!focusedPoint.runId} className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-50 dark:border-[#303030] dark:text-white">Open analysis</button>
+                <h3 className="mt-2 text-sm font-semibold leading-5 text-ink">{focusedPoint.title}</h3>
+                <p className="mt-1 text-xs text-mute">{focusedPoint.year}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">{focusedPoint.categories.slice(0, 4).map((category) => <span key={category} className="rounded-full bg-subtle px-2 py-1 text-[11px] text-ink">{category}</span>)}</div>
+                <button type="button" onClick={openFocusedPaper} disabled={!focusedPoint.runId} className={buttonClass("secondary", "md", "mt-4 w-full")}>Open analysis</button>
               </div>
             ) : (
-              <p className="text-sm leading-6 text-slate-600 dark:text-[#aaa]">Select a paper to see it here, or select two or more to compare them.</p>
+              <p className="text-sm leading-6 text-body">Select a paper to see it here, or select two or more to compare them.</p>
             )}
           </section>
 
           <section className="p-4" aria-label="Colours">
             <div className="flex items-center justify-between gap-3">
-              <p className={sectionLabel}>Colours</p>
-              {focusedClusterId !== null ? <button type="button" onClick={() => setFocusedClusterId(null)} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Clear</button> : null}
+              <p className={sectionLabel}>Colors</p>
+              {focusedClusterId !== null ? <button type="button" onClick={() => setFocusedClusterId(null)} className="text-xs font-semibold text-ink">Clear</button> : null}
             </div>
-            <p className="mt-2 text-[11px] leading-4 text-slate-600 dark:text-[#999]">
+            <p className="mt-2 text-xs leading-5 text-body">
               {colorMeaning(colorMode, map.clusters.length)}
-              {colorMode !== "cluster" && map.clusters.length === 1 ? ` These papers form one neighborhood, so the map is coloured by ${colorMode === "category" ? "research area" : "year"} instead.` : ""}
+              {colorMode !== "cluster" && map.clusters.length === 1 ? ` These papers form one neighborhood, so the map is colored by ${colorMode === "category" ? "research area" : "year"} instead.` : ""}
             </p>
             <ul className="nowheel mt-2 max-h-64 space-y-0.5 overflow-y-auto overscroll-contain">
               {colourKey.map((item) => {
                 const active = item.clusterId !== null && focusedClusterId === item.clusterId;
-                const content = <><span className="mt-1 h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: item.color }} /><span className="line-clamp-2 min-w-0 flex-1 text-xs leading-5 text-slate-800 dark:text-[#eee]" title={item.label}>{item.label}</span><span className="text-[11px] tabular-nums text-slate-500 dark:text-[#888]">{item.count}</span></>;
+                const content = <><span className="mt-1 h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: item.color }} /><span className="line-clamp-2 min-w-0 flex-1 text-xs leading-5 text-ink" title={item.label}>{item.label}</span><span className="text-[11px] tabular-nums text-mute">{item.count}</span></>;
                 return (
                   <li key={item.key}>
                     {item.clusterId !== null ? (
-                      <button type="button" aria-pressed={active} onClick={() => setFocusedClusterId(active ? null : item.clusterId)} className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition ${active ? "bg-slate-100 dark:bg-[#151515]" : "hover:bg-slate-50 dark:hover:bg-[#101010]"}`}>{content}</button>
+                      <button type="button" aria-pressed={active} onClick={() => setFocusedClusterId(active ? null : item.clusterId)} className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${active ? selectedClass : "hover:bg-subtle"}`}>{content}</button>
                     ) : (
                       <div className="flex items-start gap-2 px-2 py-1.5">{content}</div>
                     )}
@@ -668,38 +678,38 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
 
           <section className="space-y-3 p-4" aria-label="Show">
             <p className={sectionLabel}>Show</p>
-            <label className="flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Links</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label>
-            <label className="flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setLabelChoice(event.target.checked)} /></label>
-            <p className="text-[11px] leading-5 text-slate-500 dark:text-[#888]">{layoutMode === "projection" ? "Fixed projection: positions come from what each paper says, so papers close together are similar in content." : "Free graph: positions come from the links and your dragging, so distance does not show similarity. Use Fixed projection to read similarity."}</p>
-            {layoutMode === "force" ? <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setForceRunning((current) => !current)} disabled={prefersReducedMotion} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">{forceRunning ? "Pause motion" : "Resume motion"}</button><button type="button" onClick={resetForceLayout} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">Reset graph</button></div> : null}
+            <label className="flex items-center justify-between gap-3 text-sm text-ink"><span>Links</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label>
+            <label className="flex items-center justify-between gap-3 text-sm text-ink"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setLabelChoice(event.target.checked)} /></label>
+            <p className="text-xs leading-5 text-mute">{layoutMode === "projection" ? "Fixed projection: positions come from what each paper says, so papers close together are similar in content." : "Free graph: positions come from the links and your dragging, so distance does not show similarity. Use Fixed projection to read similarity."}</p>
+            {layoutMode === "force" ? <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setForceRunning((current) => !current)} disabled={prefersReducedMotion} className="h-8 rounded-md border border-hairline bg-surface px-2 text-xs font-semibold text-ink transition-colors hover:border-hairline-strong hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40">{forceRunning ? "Pause motion" : "Resume motion"}</button><button type="button" onClick={resetForceLayout} className="h-8 rounded-md border border-hairline bg-surface px-2 text-xs font-semibold text-ink transition-colors hover:border-hairline-strong hover:bg-subtle">Reset graph</button></div> : null}
           </section>
 
           <details className="group p-4">
-            <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">About this map</summary>
-            <dl className="mt-3 space-y-3 text-[11px] leading-5 text-slate-600 dark:text-[#aaa]">
+            <summary className="cursor-pointer text-xs font-medium text-mute">About this map</summary>
+            <dl className="mt-3 space-y-3 text-xs leading-5 text-body">
               <div>
-                <dt className="font-semibold text-slate-800 dark:text-[#eee]">What decides a neighborhood</dt>
+                <dt className="font-semibold text-ink">What decides a neighborhood</dt>
                 <dd className="mt-0.5">{methodology.clustering}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-slate-800 dark:text-[#eee]">What decides a position</dt>
+                <dt className="font-semibold text-ink">What decides a position</dt>
                 <dd className="mt-0.5">{methodology.position}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-slate-800 dark:text-[#eee]">What decides a line</dt>
+                <dt className="font-semibold text-ink">What decides a line</dt>
                 <dd className="mt-0.5">{methodology.lines}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-slate-800 dark:text-[#eee]">Same colour but no line</dt>
+                <dt className="font-semibold text-ink">Same color but no line</dt>
                 <dd className="mt-0.5">{methodology.colourVersusLines}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-slate-800 dark:text-[#eee]">How to read distance</dt>
+                <dt className="font-semibold text-ink">How to read distance</dt>
                 <dd className="mt-0.5">{methodology.caution} Distance is computed from the original document embeddings, not screen coordinates, and neither layout shows citation, causation, quality or agreement.</dd>
               </div>
               <div>
-                <dt className="font-semibold text-slate-800 dark:text-[#eee]">Papers</dt>
-                <dd className="mt-0.5 tabular-nums">{mappedPaperCount} mapped of {eligiblePapers} analysed{repositoryFileCount !== eligiblePapers ? `, from ${repositoryFileCount} files in the repository` : ""}.</dd>
+                <dt className="font-semibold text-ink">Papers</dt>
+                <dd className="mt-0.5 tabular-nums">{mappedPaperCount} mapped of {eligiblePapers} analyzed{repositoryFileCount !== eligiblePapers ? `, from ${repositoryFileCount} files in the repository` : ""}.</dd>
               </div>
             </dl>
           </details>

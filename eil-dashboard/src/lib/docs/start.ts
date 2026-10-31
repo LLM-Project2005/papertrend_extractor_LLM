@@ -91,7 +91,7 @@ export const startCategory: DocsCategoryBase = {
           id: "follow-the-analysis",
           title: "Follow the analysis",
           body: [
-            "Each paper passes through ten steps, from **Upload** to **Done**, usually in a few minutes. Papers in one upload are analyzed one after another.",
+            "The progress tray follows each paper through ten steps, from **Upload** to **Done**, usually in a few minutes; underneath, the analysis runs 13 steps, which the tray groups into these ten. Papers in one upload are analyzed one after another.",
             "On Home, a progress card lists every paper with the step it is on. On any other page a small pill in the bottom corner shows the overall progress; click it to open the full list. [How a paper is analyzed](/docs/analysis-pipeline) describes each step.",
           ],
         },

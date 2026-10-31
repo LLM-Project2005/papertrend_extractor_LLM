@@ -69,7 +69,7 @@ export default function YearColumns({
               return (
                 <div key={point.key} className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-end" title={`${point.label}: ${describe(point)}`}>
                   {points.length <= 20 && point.value > 0 && !units ? (
-                    <span className="absolute inset-x-0 text-center text-[10px] tabular-nums text-body" style={{ bottom: `calc(${position(point.value, axis)}% + 2px)` }} aria-hidden>
+                    <span className="absolute inset-x-0 text-center text-[11px] tabular-nums text-body" style={{ bottom: `calc(${position(point.value, axis)}% + 2px)` }} aria-hidden>
                       {formatNumber(point.value)}
                     </span>
                   ) : null}
@@ -108,7 +108,7 @@ export default function YearColumns({
           </div>
           <div className="mt-1 flex gap-[3px] sm:gap-1.5" aria-hidden>
             {points.map((point, index) => (
-              <span key={point.key} className="min-w-0 flex-1 truncate text-center text-[10px] tabular-nums text-mute sm:text-[11px]">
+              <span key={point.key} className="min-w-0 flex-1 truncate text-center text-[11px] tabular-nums text-mute">
                 {index % every === 0 || index === points.length - 1 ? point.label : ""}
               </span>
             ))}

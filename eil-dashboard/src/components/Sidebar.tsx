@@ -3,6 +3,7 @@
 import { TRACK_COLORS, TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { selectedCategoryKeys, type CategoryOption } from "@/lib/category-options";
 import type { ResearchFolderRow } from "@/types/database";
+import { selectedClass } from "@/components/ui/controls";
 
 interface Props {
   allYears: string[];
@@ -102,13 +103,13 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <aside className="overflow-hidden rounded-xl border border-hairline bg-surface">
       {showHeader && (
-        <div className="border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">
+        <div className="border-b border-hairline px-5 py-4">
+          <h2 className="text-base font-semibold text-ink">
             {title}
           </h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
+          <p className="mt-1 text-sm text-mute">
             {description}
           </p>
         </div>
@@ -116,14 +117,14 @@ export default function Sidebar({
 
       <div className="space-y-6 px-5 py-5">
         {useMock && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-[#6a3416] dark:bg-[#3a2618] dark:text-[#f4c97c]">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
             Showing preview data until Supabase is connected and populated.
           </div>
         )}
 
         {showFolders && onFolderChange ? (
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+            <h3 className="mb-3 text-xs font-medium text-mute">
               Folders
             </h3>
             <div className="space-y-3">
@@ -132,8 +133,8 @@ export default function Sidebar({
                 onClick={() => onFolderChange([], true)}
                 className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                   allFoldersSelected
-                    ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-[#ececec]"
+                    ? "border-ink bg-subtle font-medium text-ink"
+                    : "border-hairline bg-surface text-body hover:border-hairline-strong hover:text-ink"
                 }`}
               >
                 All folders
@@ -149,8 +150,8 @@ export default function Sidebar({
                       onClick={() => toggleFolder(folder.id)}
                       className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                         active
-                          ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-[#ececec]"
+                          ? "border-ink bg-subtle font-medium text-ink"
+                          : "border-hairline bg-surface text-body hover:border-hairline-strong hover:text-ink"
                       }`}
                     >
                       {folder.name}
@@ -158,7 +159,7 @@ export default function Sidebar({
                   );
                 })}
               </div>
-              <p className="text-xs leading-6 text-slate-500 dark:text-[#7d7d7d]">
+              <p className="text-xs leading-6 text-mute">
                 {allFoldersSelected
                   ? "Showing every folder in this project."
                   : `Showing ${normalizedSelectedFolderIds.length} selected folder${
@@ -171,12 +172,12 @@ export default function Sidebar({
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+            <h3 className="text-xs font-medium text-mute">
               Years
             </h3>
             <button
               type="button"
-              className="-my-2 rounded px-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              className="-my-2 rounded px-1 py-2 text-xs font-medium text-mute hover:text-ink"
               onClick={() => onYearsChange([])}
             >
               Show all
@@ -193,8 +194,8 @@ export default function Sidebar({
                   onClick={() => toggleYear(year)}
                   className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-[#ececec]"
+                      ? "border-ink bg-subtle font-medium text-ink"
+                      : "border-hairline bg-surface text-body hover:border-hairline-strong hover:text-ink"
                   }`}
                 >
                   {year}
@@ -206,12 +207,12 @@ export default function Sidebar({
 
         {showCategories ? <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+            <h3 className="text-xs font-medium text-mute">
               Research areas
             </h3>
             <button
               type="button"
-              className="-my-2 rounded px-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              className="-my-2 rounded px-1 py-2 text-xs font-medium text-mute hover:text-ink"
               onClick={() => onTracksChange([])}
             >
               Show all
@@ -229,8 +230,8 @@ export default function Sidebar({
                   onClick={() => toggleTrack(category.key)}
                   className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition-colors ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a]"
+                      ? `border-hairline ${selectedClass}`
+                      : "border-hairline bg-surface text-ink hover:border-hairline-strong"
                   }`}
                 >
                   <span>
@@ -239,7 +240,7 @@ export default function Sidebar({
                       className={`mt-1 block text-xs ${
                         active
                           ? "opacity-80"
-                          : "text-slate-500 dark:text-[#8f8f8f]"
+                          : "text-mute"
                       }`}
                     >
                       {category.isOther ? "Fallback research area" : category.key}
@@ -248,7 +249,7 @@ export default function Sidebar({
                   <span
                     className="mt-0.5 h-2.5 w-2.5 rounded-full"
                     style={{
-                      backgroundColor: active ? category.color : "#d7dee8",
+                      backgroundColor: active ? category.color : "rgb(var(--hairline-strong))",
                     }}
                   />
                 </button>
@@ -257,7 +258,7 @@ export default function Sidebar({
           </div>
         </section> : null}
 
-        <p className="text-xs leading-6 text-slate-500 dark:text-[#7d7d7d]">
+        <p className="text-xs leading-6 text-mute">
           Data source: analyzed research outputs in this repository.
         </p>
       </div>

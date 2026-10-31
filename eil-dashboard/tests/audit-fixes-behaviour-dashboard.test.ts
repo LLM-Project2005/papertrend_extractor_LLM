@@ -167,28 +167,31 @@ function following(status: IngestionRunRow["status"], projectId: string): Ingest
 // DASH-7: an empty repository says so; the tabs' empty messages only ever mean the filters.
 test("a repository with no analysed paper says so, instead of every tab blaming the filters", async () => {
   const empty = await dashboard({});
-  assert.match(empty, /<h2[^>]*>No analysed papers yet<\/h2>/);
-  assert.match(empty, /Add papers from the Library to begin\./);
+  // US spelling and the one action offered in place (UI audit #20, D14, 2026-10-31).
+  assert.match(empty, /<h2[^>]*>No analyzed papers yet<\/h2>/);
+  assert.match(empty, /Add papers to begin\./);
+  assert.match(empty, /<button[^>]*>\s*Add papers\s*<\/button>/, "the empty state offers its one action");
   assert.doesNotMatch(empty, /No papers match the current filters/, "the tabs are not drawn");
 
-  assert.doesNotMatch(await dashboard(null, { loading: true }), /No analysed papers yet/, "not before it loads");
-  assert.doesNotMatch(await dashboard({}, { loading: true }), /No analysed papers yet/, "nor while it loads again");
+  assert.doesNotMatch(await dashboard(null, { loading: true }), /No analyzed papers yet/, "not before it loads");
+  assert.doesNotMatch(await dashboard({}, { loading: true }), /No analyzed papers yet/, "nor while it loads again");
   const failed = await dashboard({ diagnostics: { errorMessage: "the database did not answer" } });
   assert.match(failed, /Dashboard data could not be loaded for this repository\. the database did not answer/);
-  assert.doesNotMatch(failed, /No analysed papers yet/, "a failed load is not an empty repository");
-  assert.doesNotMatch(await dashboard({}, { search: "tab=semantic_map" }), /No analysed papers yet/, "the map has its own empty state");
+  assert.doesNotMatch(failed, /No analyzed papers yet/, "a failed load is not an empty repository");
+  assert.doesNotMatch(await dashboard({}, { search: "tab=semantic_map" }), /No analyzed papers yet/, "the map has its own empty state");
   // Area Analysis loads when opened: draw once, let its code arrive, then check it.
   await dashboard(ONE_PAPER);
   await import("../src/components/tabs/AreaAnalysis");
   await new Promise((resolve) => setTimeout(resolve, 50));
   const withPaper = await dashboard(ONE_PAPER);
-  assert.doesNotMatch(withPaper, /No analysed papers yet/);
+  assert.doesNotMatch(withPaper, /No analyzed papers yet/);
   assert.match(withPaper, /<h2[^>]*>\s*Themes\s*<\/h2>/);
 });
 
 test("the dashboard counts the papers the shell is following for this repository only", async () => {
   const runs = [following("queued", PROJECT), following("processing", PROJECT), following("processing", "another-repository"), following("succeeded", PROJECT)];
-  assert.match(await dashboard({}, { runs }), /2 papers are being analysed\. Each appears here as soon as it finishes\./);
-  assert.match(await dashboard(ONE_PAPER, { runs }), /role="status"[^>]*>2 papers are being analysed\. The charts update as each one finishes\./);
-  assert.doesNotMatch(await dashboard(ONE_PAPER, { runs: [following("succeeded", PROJECT)] }), /being analysed/);
+  // US spelling, as the page heading has it (UI audit #20, 2026-10-31).
+  assert.match(await dashboard({}, { runs }), /2 papers are being analyzed\. Each appears here as soon as it finishes\./);
+  assert.match(await dashboard(ONE_PAPER, { runs }), /role="status"[^>]*>2 papers are being analyzed\. The charts update as each one finishes\./);
+  assert.doesNotMatch(await dashboard(ONE_PAPER, { runs: [following("succeeded", PROJECT)] }), /being analy[sz]ed/);
 });

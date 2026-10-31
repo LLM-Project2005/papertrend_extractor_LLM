@@ -8,6 +8,7 @@
 // React in scope: the test runner compiles JSX the classic way.
 import React from "react";
 import { formatNumber, formatPercent, position, type Axis } from "@/lib/charts/scale";
+import { segmentClass, segmentedClass } from "@/components/ui/controls";
 
 export type ValueMode = "count" | "percent";
 
@@ -18,15 +19,13 @@ export function ModeSwitch({ mode, onChange, countLabel = "Papers" }: { mode: Va
       type="button"
       onClick={() => onChange(value)}
       aria-pressed={mode === value}
-      className={`min-h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${
-        mode === value ? "bg-surface text-ink shadow-sm ring-1 ring-hairline" : "text-mute hover:text-ink"
-      }`}
+      className={segmentClass(mode === value)}
     >
       {label}
     </button>
   );
   return (
-    <div role="group" aria-label="Show the values as" className="inline-flex flex-none items-center gap-0.5 rounded-lg bg-subtle p-0.5">
+    <div role="group" aria-label="Show the values as" className={`${segmentedClass} flex-none`}>
       {option("count", countLabel)}
       {option("percent", "%")}
     </div>
@@ -49,7 +48,7 @@ export function Legend({ items }: { items: LegendItem[] }) {
           <span className="inline-block h-2.5 w-2.5 flex-none rounded-[3px]" style={{ backgroundColor: item.color }} aria-hidden />
           <span className="min-w-0">
             {item.label}
-            {item.detail ? <span className="text-mute"> · {item.detail}</span> : null}
+            {item.detail ? <span className="text-mute">, {item.detail}</span> : null}
           </span>
         </li>
       ))}

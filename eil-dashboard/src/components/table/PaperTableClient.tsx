@@ -29,6 +29,7 @@
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import UsageMeter from "@/components/chat/UsageMeter";
 import CellPanel from "@/components/table/CellPanel";
 import ColumnPicker from "@/components/table/ColumnPicker";
 import TableDownloadMenu, { type DownloadFormat } from "@/components/table/TableDownloadMenu";
@@ -39,7 +40,6 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   FilterIcon,
-  MinusIcon,
   PencilSquareIcon,
   PlusIcon,
   RefreshIcon,
@@ -186,7 +186,8 @@ function CellView({
       </button>
     );
   }
-  const words = !cell ? "–" : cell.status === "not_stated" ? "Not stated" : cell.status === "unverified" ? "Not confirmed" : "Not read yet";
+  // A cell not read yet says so in words; a lone dash read as a control (UI audit #25).
+  const words = !cell ? "Not read yet" : cell.status === "not_stated" ? "Not stated" : cell.status === "unverified" ? "Not confirmed" : "Not read yet";
   return (
     <button
       type="button"
@@ -381,6 +382,8 @@ function NewTableDialog({
 export default function PaperTableClient() {
   const { session } = useAuth();
   const token = session?.access_token ?? null;
+  // The day's AI allowance beside Fill table: filling spends it, as Chat does (2026-11-01).
+  const usageHeaders = useMemo((): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
   const { currentProject } = useWorkspaceProfile();
   const projectId = currentProject?.id ?? null;
   useTabTitleRepository(currentProject?.name);
@@ -838,7 +841,7 @@ export default function PaperTableClient() {
   const selectedCell = selected ? cells[cellKey(selected.paperId, selected.columnId)] : undefined;
 
   return (
-    <div className={`mx-auto max-w-[1400px] space-y-6 pb-24 pt-2 sm:pt-4 ${panelDocked ? "xl:pr-[436px]" : ""}`}>
+    <div className={`mx-auto w-full max-w-[1500px] space-y-6 pb-24 pt-2 sm:pt-4 ${panelDocked ? "xl:pr-[436px]" : ""}`}>
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 max-w-3xl">
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Table</h1>
@@ -945,6 +948,12 @@ export default function PaperTableClient() {
                 <CheckCircleIcon className="h-3.5 w-3.5" />
                 Screen
               </button>
+              <UsageMeter
+                requestHeaders={usageHeaders}
+                refreshKey={filling ? "filling" : "idle"}
+                placement="below"
+                note="Filling the table, screening papers and asking about a cell use this allowance, as Chat does."
+              />
               {filling ? (
                 <button type="button" onClick={() => fillRef.current?.abort()} className={buttonClass("secondary", "sm")}>
                   <StopIcon className="h-3.5 w-3.5" />
@@ -971,22 +980,25 @@ export default function PaperTableClient() {
               )}
             </div>
           </div>
-          <p className="text-[13px] leading-5 text-mute" aria-live="polite">
-            {filling
-              ? `Reading the papers… ${filling.total > 0 ? `${plural(filling.done, "cell")} of ${filling.total.toLocaleString()}` : ""}`
-              : notice ??
-                [
-                  filtered ? `${shownRows.length.toLocaleString()} of ${plural(rows.length, "study", "studies")} shown` : plural(rows.length, "study", "studies"),
-                  leftOutRows.length ? `${leftOutRows.length.toLocaleString()} left out` : null,
-                  plural(shown.length, "column"),
-                  counts.found ? `${plural(counts.found, "value")} found` : null,
-                  counts.notStated ? `${counts.notStated.toLocaleString()} not stated` : null,
-                  counts.unverified ? `${counts.unverified.toLocaleString()} not confirmed` : null,
-                  missing && shown.length ? `${plural(missing, "cell")} to read` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-            {more > 0 ? ` · the newest ${rows.length.toLocaleString()} of ${(rows.length + more).toLocaleString()} studies are shown` : ""}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5 text-mute" aria-live="polite">
+            {filling ? (
+              <span>{`Reading the papers… ${filling.total > 0 ? `${plural(filling.done, "cell")} of ${filling.total.toLocaleString()}` : ""}`}</span>
+            ) : notice ? (
+              <span>{notice}</span>
+            ) : (
+              [
+                filtered ? `${shownRows.length.toLocaleString()} of ${plural(rows.length, "study", "studies")} shown` : plural(rows.length, "study", "studies"),
+                leftOutRows.length ? `${leftOutRows.length.toLocaleString()} left out` : null,
+                plural(shown.length, "column"),
+                counts.found ? `${plural(counts.found, "value")} found` : null,
+                counts.notStated ? `${counts.notStated.toLocaleString()} not stated` : null,
+                counts.unverified ? `${counts.unverified.toLocaleString()} not confirmed` : null,
+                missing && shown.length ? `${plural(missing, "cell")} to read` : null,
+              ]
+                .filter((fact): fact is string => Boolean(fact))
+                .map((fact) => <span key={fact}>{fact}</span>)
+            )}
+            {more > 0 ? <span>{`The newest ${rows.length.toLocaleString()} of ${(rows.length + more).toLocaleString()} studies are shown`}</span> : null}
             {!filling && undo && notice === undo.notice ? (
               <button
                 type="button"
@@ -996,12 +1008,12 @@ export default function PaperTableClient() {
                   setUndo(null);
                   void changeRows(leave, putBack);
                 }}
-                className="ml-2 font-medium text-ink underline-offset-2 hover:underline"
+                className="font-medium text-ink underline-offset-2 hover:underline"
               >
                 Undo
               </button>
             ) : null}
-          </p>
+          </div>
           <ViewChips chips={chips} onClear={clearChip} onClearAll={() => setView(() => ({}))} />
 
           {shown.length === 0 ? (
@@ -1033,7 +1045,7 @@ export default function PaperTableClient() {
                     <th
                       scope="col"
                       aria-sort={paperSort?.by === SORT_YEAR ? (paperSort.descending ? "descending" : "ascending") : undefined}
-                      className="sticky left-0 top-0 z-30 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-bottom font-medium text-ink sm:w-[280px] sm:min-w-[220px] sm:px-4"
+                      className="sticky left-0 top-0 z-30 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-bottom font-medium text-ink sm:w-[360px] sm:min-w-[320px] sm:px-4"
                     >
                       <div className="flex items-center gap-1">
                         <button
@@ -1052,7 +1064,7 @@ export default function PaperTableClient() {
                           onClick={() => setDialog({ kind: "filter", columnId: null })}
                           aria-label="Filter the papers by title or year"
                           aria-pressed={paperFiltered}
-                          className={iconButtonClass("sm", `h-6 w-6 ${paperFiltered ? "bg-accent-soft text-accent-ink" : ""}`)}
+                          className={iconButtonClass("md", paperFiltered ? "bg-accent-soft text-accent-ink" : "")}
                         >
                           <FilterIcon className="h-3.5 w-3.5" />
                         </button>
@@ -1090,7 +1102,7 @@ export default function PaperTableClient() {
                               onClick={() => setDialog({ kind: "filter", columnId: column.id })}
                               aria-label={`Filter by ${column.name}`}
                               aria-pressed={filterOn}
-                              className={iconButtonClass("sm", `h-6 w-6 shrink-0 ${filterOn ? "bg-accent-soft text-accent-ink" : ""}`)}
+                              className={iconButtonClass("md", `shrink-0 ${filterOn ? "bg-accent-soft text-accent-ink" : ""}`)}
                             >
                               <FilterIcon className="h-3.5 w-3.5" />
                             </button>
@@ -1099,7 +1111,7 @@ export default function PaperTableClient() {
                               disabled={Boolean(filling)}
                               onClick={() => setDialog({ kind: "column", column })}
                               aria-label={`Edit column ${column.name}`}
-                              className={iconButtonClass("sm", "h-6 w-6 shrink-0")}
+                              className={iconButtonClass("md", "shrink-0")}
                             >
                               <PencilSquareIcon className="h-3.5 w-3.5" />
                             </button>
@@ -1107,9 +1119,8 @@ export default function PaperTableClient() {
                           {column.instruction ? <p className="mt-0.5 line-clamp-2 text-xs font-normal leading-5 text-mute">{column.instruction}</p> : null}
                           {answered && answered.yes + answered.no > 0 ? (
                             <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs font-normal leading-5 text-mute">
-                              <span className="tabular-nums">
-                                Yes {answered.yes.toLocaleString()} · No {answered.no.toLocaleString()}
-                              </span>
+                              <span className="tabular-nums">Yes {answered.yes.toLocaleString()}</span>
+                              <span className="tabular-nums">No {answered.no.toLocaleString()}</span>
                               {answered.no > 0 && !filling ? (
                                 <button type="button" disabled={busy} onClick={() => leaveOutNos(column)} className="font-medium text-ink underline-offset-2 hover:underline">
                                   Leave out the {answered.no.toLocaleString()} that say No
@@ -1125,8 +1136,8 @@ export default function PaperTableClient() {
                 <tbody>
                   {shownRows.map((row) => (
                     <tr key={row.paperId}>
-                      <th scope="row" className="sticky left-0 z-10 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-top font-normal sm:w-[280px] sm:min-w-[220px] sm:px-4">
-                        <PaperLink paper={{ paperId: row.paperId }} className="line-clamp-3 text-[13px] font-medium leading-5 text-ink hover:underline sm:text-sm sm:leading-6">
+                      <th scope="row" className="sticky left-0 z-10 w-[150px] min-w-[150px] border-b border-r border-hairline bg-surface px-3 py-3 text-left align-top font-normal sm:w-[360px] sm:min-w-[320px] sm:px-4">
+                        <PaperLink paper={{ paperId: row.paperId }} title={row.title} className="line-clamp-3 text-[13px] font-medium leading-5 text-ink hover:underline sm:line-clamp-2 sm:text-sm sm:leading-6">
                           {row.title}
                         </PaperLink>
                         <div className="mt-0.5 flex items-center justify-between gap-2">
@@ -1137,9 +1148,9 @@ export default function PaperTableClient() {
                             onClick={() => setDialog({ kind: "leave", row })}
                             aria-label={`Leave out ${row.title}`}
                             title="Leave this paper out of the table"
-                            className={iconButtonClass("sm", "h-6 w-6 shrink-0 text-mute")}
+                            className={buttonClass("ghost", "sm", "-mr-2 shrink-0")}
                           >
-                            <MinusIcon className="h-3.5 w-3.5" />
+                            Leave out
                           </button>
                         </div>
                       </th>

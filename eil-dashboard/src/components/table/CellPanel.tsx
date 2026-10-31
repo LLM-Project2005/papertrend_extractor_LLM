@@ -355,7 +355,7 @@ export default function CellPanel({
         event.preventDefault();
         void ask();
       }}
-      className="rounded-xl border border-hairline bg-surface p-2 focus-within:border-hairline-strong"
+      className="rounded-xl border border-field bg-surface p-2 has-[textarea:focus]:border-accent has-[textarea:focus]:ring-4 has-[textarea:focus]:ring-accent/15"
     >
       <textarea
         value={draft}

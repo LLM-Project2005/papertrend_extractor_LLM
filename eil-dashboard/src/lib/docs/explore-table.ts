@@ -102,7 +102,7 @@ export const tablePage: DocsPageBase = {
       id: "usage",
       title: "Daily allowance",
       body: [
-        "Filling a table reads the papers with the same model as Chat (GPT-6 Luna) and counts against the same daily allowance as Chat; so does **Read again**, and so does each question asked about a cell. A table of 40 papers and 5 columns uses about as much as a few chat answers. Making a table, opening it, sorting, filtering, leaving papers out and downloading use none.",
+        "Filling a table reads the papers with the same model as Chat (GPT-6 Luna) and counts against the same daily allowance as Chat; so does **Read again**, and so does each question asked about a cell. A table of 40 papers and 5 columns uses about as much as a few chat answers. Making a table, opening it, sorting, filtering, leaving papers out and downloading use none. The meter beside **Fill table** shows how much of today's allowance is left; select it to see when it starts again.",
       ],
     },
   ],

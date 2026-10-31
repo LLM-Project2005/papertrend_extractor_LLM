@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
   ANALYSIS_STEP_COUNT,
   SAMPLE_MERGES,
@@ -11,6 +11,7 @@ import {
 } from "@/components/marketing/how-it-works-content";
 import { DEMO_PAPER } from "@/components/marketing/demo-data";
 import { useMotionOK, useOnScreen } from "@/components/marketing/kit/motion";
+import { buttonClass } from "@/components/ui/controls";
 import { ArrowRightIcon, CheckCircleIcon, CheckIcon, PauseIcon, PlayIcon } from "@/components/ui/Icons";
 
 /*
@@ -20,9 +21,14 @@ import { ArrowRightIcon, CheckCircleIcon, CheckIcon, PauseIcon, PlayIcon } from 
  * plays when the stage is shown.
  *
  * Seen for the first time, the stages play through once, a bar filling under
- * the one on show; Pause stops it, and choosing a stage takes over. Every
- * stage's words are in the page; only the chosen one is shown. Under reduced
- * motion nothing plays, and each window is its finished state.
+ * the one on show; Pause stops it, and choosing a stage takes over. It holds,
+ * bar and all, while the pointer is over the stages or keyboard focus is
+ * inside them, and goes on afterwards. Every stage's words are in the page;
+ * only the chosen one is shown. Under reduced motion nothing plays, and each
+ * window is its finished state.
+ *
+ * One frame only (2026-10-31, UI audit): the chosen stage is not a card, so
+ * its illustrative window is the one frame on the page.
  */
 
 const STAGE_MS = 8000;
@@ -31,14 +37,25 @@ const delay = (seconds: number): CSSProperties => ({ animationDelay: `${seconds}
 
 /* ------------------------------------------------------------- pieces */
 
-function Kicker({ children }: { children: ReactNode }) {
-  return <p className="font-mono text-[12px] uppercase tracking-[0.04em] text-accent-ink">{children}</p>;
+/** Held while the pointer is over the stages or keyboard focus is inside them. */
+function useHold() {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const handlers = {
+    onPointerEnter: () => setHovered(true),
+    onPointerLeave: () => setHovered(false),
+    onFocus: () => setFocused(true),
+    onBlur: (event: FocusEvent<HTMLElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+    },
+  };
+  return [hovered || focused, handlers] as const;
 }
 
 function Checked({ title = "Checked by code", children }: { title?: string; children: ReactNode }) {
   return (
     <div className="mt-6 rounded-xl bg-subtle px-4 py-3.5">
-      <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-mute">{title}</p>
+      <p className="text-xs font-medium text-mute">{title}</p>
       <p className="mt-1.5 text-[14px] leading-6 text-ink">{children}</p>
     </div>
   );
@@ -48,16 +65,10 @@ function Pill({ children }: { children: ReactNode }) {
   return <li className="rounded-full border border-hairline px-3 py-1.5 text-[13px] text-ink">{children}</li>;
 }
 
-function Window({ name, tag, live = true, children }: { name: string; tag: string; live?: boolean; children: ReactNode }) {
+function Window({ tag, children }: { tag: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-[14px] border border-hairline bg-surface shadow-float">
-      <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-2.5 font-mono text-[11px] text-mute">
-        <span>{name}</span>
-        <span className="flex items-center gap-1.5">
-          {live ? <span className="live-dot" aria-hidden="true" /> : null}
-          {tag}
-        </span>
-      </div>
+    <div className="min-w-0 overflow-hidden rounded-xl border border-hairline bg-surface shadow-float">
+      <p className="border-b border-hairline px-4 py-2.5 text-xs text-mute">{tag}</p>
       {children}
     </div>
   );
@@ -87,39 +98,40 @@ function ReadWindow() {
     { tag: "Conclusion", text: "The wall buys time while the mangroves grow." },
   ];
   return (
-    <Window name="stage 01 · read" tag="illustrative">
+    <Window tag="Illustrative">
       <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-[minmax(0,2fr)_minmax(0,5fr)]">
-        <div className="relative flex flex-row flex-wrap gap-1.5 self-start font-mono text-[11px] text-mute sm:flex-col" aria-hidden="true">
+        <div className="flex flex-row flex-wrap gap-1.5 self-start text-[11px] text-mute sm:flex-col" aria-hidden="true">
           {["Abstract", "Introduction", "Literature review", "Methods", "Results", "Conclusion"].map((name) => (
-            <span key={name} className="rounded-md border border-hairline px-2 py-1.5">
+            <span key={name} className="rounded-md bg-subtle px-2 py-1">
               {name}
             </span>
           ))}
-          <span className="scan-line pointer-events-none absolute -inset-x-1 h-0.5 bg-accent shadow-[0_0_12px_rgb(var(--accent))]" />
         </div>
-        <div className="space-y-2">
-          {lines.map((line, index) => (
-            <p
-              key={line.tag}
-              className="enter-fly flex items-baseline gap-2.5 rounded-lg border border-hairline px-3 py-2 text-[13px] leading-5 text-ink"
-              style={delay(0.3 + index * 0.45)}
-            >
-              <span
-                className={`flex-none rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${
-                  index === 0 ? "bg-accent-soft text-accent-ink" : "bg-subtle text-ink"
-                }`}
+        <div>
+          <ul className="divide-y divide-hairline">
+            {lines.map((line, index) => (
+              <li
+                key={line.tag}
+                className="enter-fly flex items-baseline gap-2.5 py-2 text-[13px] leading-5 text-ink"
+                style={delay(0.3 + index * 0.45)}
               >
-                {line.tag}
-              </span>
-              {line.text}
-            </p>
-          ))}
-          <div className="enter-up mt-1.5 rounded-lg bg-subtle p-3 text-[13px] leading-5" style={delay(2.3)}>
+                <span
+                  className={`flex-none rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                    index === 0 ? "bg-accent-soft text-accent-ink" : "bg-subtle text-ink"
+                  }`}
+                >
+                  {line.tag}
+                </span>
+                {line.text}
+              </li>
+            ))}
+          </ul>
+          <div className="enter-up mt-3 rounded-lg bg-subtle p-3 text-[13px] leading-5" style={delay(2.3)}>
             <p lang="th" className="text-body">
               กำแพงกันคลื่นช่วยซื้อเวลา ระหว่างที่ป่าชายเลนเติบโต
             </p>
             <p className="mt-1.5 flex items-baseline gap-2 text-ink">
-              <span className="font-mono text-[10px] text-accent-ink">TH → EN</span>
+              <span className="flex-none whitespace-nowrap text-[11px] font-medium text-accent-ink">TH → EN</span>
               The wall buys time while the mangroves grow.
             </p>
           </div>
@@ -145,7 +157,7 @@ function FindWindow() {
   ];
   let marks = 0;
   return (
-    <Window name="stage 02 · find" tag="illustrative">
+    <Window tag="Illustrative">
       <div className="space-y-5 p-5">
         <p className="text-[14.5px] leading-7 text-body">
           {paragraph.map((part, index) =>
@@ -158,7 +170,7 @@ function FindWindow() {
             )
           )}
         </p>
-        <ul className="grid grid-cols-1 gap-1.5 border-t border-hairline pt-4 font-mono text-[12px] sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-1.5 border-t border-hairline pt-4 text-[12px] sm:grid-cols-2">
           {SAMPLE_PHRASES.map((item, index) => (
             <li
               key={item.phrase}
@@ -174,7 +186,7 @@ function FindWindow() {
           ))}
         </ul>
         <p className="enter-up flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12.5px] text-mute" style={delay(2.7)}>
-          <span className="font-mono text-body line-through">blue carbon</span>
+          <span className="text-body line-through">blue carbon</span>
           proposed by the model, not in the paper: dropped
         </p>
       </div>
@@ -184,12 +196,12 @@ function FindWindow() {
 
 function GroupWindow() {
   return (
-    <Window name="stage 03 · group" tag="illustrative">
+    <Window tag="Illustrative">
       <div className="space-y-4 p-5">
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {SAMPLE_TOPICS.map((topic, group) => (
-            <div key={topic.name} className="flex flex-col gap-1.5 rounded-xl border border-dashed border-hairline-strong p-3">
-              <p className="font-mono text-[10px] uppercase text-mute">{topic.kind === "method" ? "Method" : `Topic ${"ABC"[group]}`}</p>
+            <div key={topic.name} className="flex flex-col gap-1.5 border-t border-hairline pt-3">
+              <p className="text-[11px] font-medium text-mute">{topic.kind === "method" ? "Method" : `Topic ${"ABC"[group]}`}</p>
               <ul className="flex flex-wrap gap-1.5">
                 {topic.phrases.map((phrase, index) => (
                   <li
@@ -219,7 +231,7 @@ function GroupWindow() {
 
 function NameWindow() {
   return (
-    <Window name="stage 04 · name" tag="illustrative">
+    <Window tag="Illustrative">
       <div className="space-y-3 p-5">
         {SAMPLE_TOPICS.map((topic, index) => (
           <div key={topic.name} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] sm:gap-3">
@@ -235,16 +247,18 @@ function NameWindow() {
             </ul>
             <ArrowRightIcon className="hidden h-5 w-5 text-mute sm:block" />
             <p
-              className="enter-pop flex items-baseline justify-between gap-2 rounded-xl border border-ink px-3.5 py-2.5 text-[15px] font-semibold tracking-[-0.01em] text-ink"
+              className="enter-pop flex items-baseline justify-between gap-2 rounded-lg bg-subtle px-3.5 py-2.5 text-[15px] font-semibold tracking-[-0.01em] text-ink"
               style={delay(0.5 + index * 0.55)}
             >
               {topic.name}
-              {topic.kind === "method" ? <span className="font-mono text-[10px] font-normal text-mute">method</span> : null}
+              {topic.kind === "method" ? <span className="text-[11px] font-normal text-mute">method</span> : null}
             </p>
           </div>
         ))}
-        <p className="enter-up rounded-lg bg-subtle px-3 py-2.5 font-mono text-[12px] text-body" style={delay(2.9)}>
-          2 to 5 words · all different · {SAMPLE_TOPICS.length} topics
+        <p className="enter-up flex flex-wrap gap-x-4 gap-y-1 border-t border-hairline pt-3 text-[12px] text-body" style={delay(2.9)}>
+          <span>2 to 5 words</span>
+          <span>All different</span>
+          <span>{SAMPLE_TOPICS.length} topics</span>
         </p>
       </div>
     </Window>
@@ -261,7 +275,7 @@ const RULES = [
 
 function CheckWindow() {
   return (
-    <Window name="stage 05 · check" tag="rule-based · no model" live={false}>
+    <Window tag="Rule-based: no model">
       <ul className="px-5 pb-5 pt-2">
         {RULES.map((item, index) => {
           const at = 0.7 + index * 0.65;
@@ -277,7 +291,7 @@ function CheckWindow() {
                 </span>
               </span>
               <span className="flex-1">{item.rule}</span>
-              <span className="hidden font-mono text-[11px] text-mute sm:inline">{item.tag}</span>
+              <span className="hidden text-[11px] text-mute sm:inline">{item.tag}</span>
             </li>
           );
         })}
@@ -292,12 +306,12 @@ function CheckWindow() {
 
 function AgreeWindow() {
   return (
-    <Window name="stage 06 · agree" tag="illustrative">
+    <Window tag="Illustrative">
       <div className="p-5">
         {/* On a phone the pair takes a row of its own, and the votes and decision sit beneath it. */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-hairline pb-2 font-mono text-[10px] uppercase text-mute sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-hairline pb-2 text-[11px] font-medium text-mute sm:grid-cols-[minmax(0,1fr)_auto_auto]">
           <span className="col-span-2 sm:col-span-1">Topics from different papers</span>
-          <span className="hidden w-[76px] text-center sm:block">1 · 2 · 3</span>
+          <span className="hidden w-[76px] text-center sm:block">Groupings</span>
           <span className="hidden w-[84px] text-right sm:block">Decision</span>
         </div>
         <ul>
@@ -363,7 +377,7 @@ const PANELS: Record<TopicStageKey, { title: string; body: ReactNode; side: Reac
             ["TH → EN", "Translated part by part; a part that fails stays in Thai, with a note"],
           ].map(([term, detail]) => (
             <div key={term} className="flex gap-3">
-              <dt className="w-16 flex-none pt-px font-mono text-[12px] text-mute">{term}</dt>
+              <dt className="w-16 flex-none whitespace-nowrap pt-px text-[12px] font-medium text-mute">{term}</dt>
               <dd className="text-ink">{detail}</dd>
             </div>
           ))}
@@ -428,28 +442,28 @@ const PANELS: Record<TopicStageKey, { title: string; body: ReactNode; side: Reac
     ),
     side: (
       <>
-        <div className="mt-5 grid grid-cols-1 gap-2.5 text-[13.5px] sm:grid-cols-2">
-          <div className="rounded-xl border border-hairline p-3.5">
-            <p className="mb-2 font-mono text-[11px] uppercase text-ink">It is</p>
-            <p className="leading-6 text-ink">
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 text-[13.5px]">
+          <div className="border-t border-hairline pt-3">
+            <dt className="mb-1.5 text-xs font-medium text-ink">It is</dt>
+            <dd className="leading-6 text-ink">
               A naming step
               <br />
               Bound to its phrases
               <br />
               One call per paper
-            </p>
+            </dd>
           </div>
-          <div className="rounded-xl border border-hairline p-3.5">
-            <p className="mb-2 font-mono text-[11px] uppercase text-mute">It is not</p>
-            <p className="leading-6 text-body">
+          <div className="border-t border-hairline pt-3">
+            <dt className="mb-1.5 text-xs font-medium text-mute">It is not</dt>
+            <dd className="leading-6 text-body">
               A summary
               <br />
               A source of new ideas
               <br />
               An umbrella term
-            </p>
+            </dd>
           </div>
-        </div>
+        </dl>
         <Checked>
           A name shorter than two words, longer than five, or the same as another topic’s is replaced by the group’s best phrase,
           with a note.
@@ -512,6 +526,9 @@ export default function TopicStages() {
   const [shownAt, setShownAt] = useState(0);
   const begun = useRef(false);
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [held, hold] = useHold();
+  // What is left of the stage on show, kept across a hold.
+  const remaining = useRef(STAGE_MS);
 
   useEffect(() => {
     if (!onScreen || !motionOK || begun.current) return;
@@ -520,8 +537,15 @@ export default function TopicStages() {
     setPlaying(true);
   }, [onScreen, motionOK]);
 
+  // A new showing gets its full time. Declared before the timer, so it runs
+  // after the timer's cleanup has counted what the last showing used.
   useEffect(() => {
-    if (!playing) return;
+    remaining.current = STAGE_MS;
+  }, [shownAt]);
+
+  useEffect(() => {
+    if (!playing || held) return;
+    const began = Date.now();
     const timer = window.setTimeout(() => {
       if (stage >= TOPIC_STAGES.length - 1) {
         setPlaying(false);
@@ -530,9 +554,12 @@ export default function TopicStages() {
       }
       setStage(stage + 1);
       setShownAt((value) => value + 1);
-    }, STAGE_MS);
-    return () => window.clearTimeout(timer);
-  }, [playing, stage]);
+    }, remaining.current);
+    return () => {
+      window.clearTimeout(timer);
+      remaining.current = Math.max(0, remaining.current - (Date.now() - began));
+    };
+  }, [playing, held, stage]);
 
   const choose = (index: number) => {
     setPlaying(false);
@@ -573,88 +600,91 @@ export default function TopicStages() {
   return (
     <div>
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
-        <p className="font-mono text-[12px] uppercase tracking-[0.04em] text-mute">
-          Stage {stage + 1} of {TOPIC_STAGES.length} · one paper, then the whole repository
+        <p className="text-sm text-mute">
+          <span className="font-medium text-ink">
+            Stage {stage + 1} of {TOPIC_STAGES.length}.
+          </span>{" "}
+          The first five work on one paper; the sixth, across the whole repository.
         </p>
-        <button
-          type="button"
-          onClick={toggle}
-          className="inline-flex h-9 items-center gap-2 rounded-full border border-hairline bg-surface px-3.5 text-[13px] font-medium text-ink transition-colors hover:border-hairline-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
+        <button type="button" onClick={toggle} className={buttonClass("secondary", "md")}>
           {playing ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
           {playing ? "Pause" : ended ? "Play again" : "Play"}
         </button>
       </div>
 
-      <div ref={ref} role="tablist" aria-label="Stages" onKeyDown={onKey} className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+      <div {...hold}>
+        <div ref={ref} role="tablist" aria-label="Stages" onKeyDown={onKey} className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+          {TOPIC_STAGES.map((item, index) => {
+            const on = index === stage;
+            const done = index < stage;
+            return (
+              <button
+                key={item.key}
+                ref={(element) => {
+                  tabs.current[index] = element;
+                }}
+                type="button"
+                role="tab"
+                id={`${id}-tab-${item.key}`}
+                aria-selected={on}
+                aria-controls={`${id}-panel-${item.key}`}
+                tabIndex={on ? 0 : -1}
+                onClick={() => choose(index)}
+                className={`relative flex min-h-[44px] flex-col gap-1.5 overflow-hidden rounded-xl border bg-surface px-3.5 pb-4 pt-3.5 text-left transition-[border-color,transform] duration-300 ease-out-expo ${
+                  on ? "-translate-y-0.5 border-ink shadow-float" : "border-hairline hover:border-hairline-strong"
+                }`}
+              >
+                <span className="flex items-center justify-between text-[12px] tabular-nums text-mute">
+                  <span className={on ? "font-medium text-accent-ink" : ""}>{index + 1}</span>
+                  <CheckIcon className={`h-3.5 w-3.5 text-ink transition-opacity duration-300 ${done ? "opacity-100" : "opacity-0"}`} />
+                </span>
+                <span className="text-[14px] font-medium leading-5 text-ink">{item.name}</span>
+                <span className="hidden text-[12px] leading-[17px] text-mute sm:block">{item.role}</span>
+                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5">
+                  {on && playing ? (
+                    <span
+                      key={shownAt}
+                      className="stage-fill block h-full bg-accent"
+                      style={{ "--stage-ms": `${STAGE_MS}ms`, animationPlayState: held ? "paused" : "running" } as CSSProperties}
+                    />
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {TOPIC_STAGES.map((item, index) => {
           const on = index === stage;
-          const done = index < stage;
+          const panel = PANELS[item.key];
           return (
-            <button
+            <div
               key={item.key}
-              ref={(element) => {
-                tabs.current[index] = element;
-              }}
-              type="button"
-              role="tab"
-              id={`${id}-tab-${item.key}`}
-              aria-selected={on}
-              aria-controls={`${id}-panel-${item.key}`}
-              tabIndex={on ? 0 : -1}
-              onClick={() => choose(index)}
-              className={`relative flex min-h-[44px] flex-col gap-1.5 overflow-hidden rounded-xl border bg-surface px-3.5 pb-4 pt-3.5 text-left transition-[border-color,box-shadow,transform] duration-300 ease-out-expo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                on ? "-translate-y-0.5 border-ink shadow-float" : "border-hairline hover:border-hairline-strong"
-              }`}
+              role="tabpanel"
+              id={`${id}-panel-${item.key}`}
+              aria-labelledby={`${id}-tab-${item.key}`}
+              hidden={!on}
+              className="mt-10 lg:min-h-[480px]"
             >
-              <span className="flex items-center justify-between font-mono text-[12px] text-mute">
-                <span className={on ? "text-accent-ink" : ""}>{String(index + 1).padStart(2, "0")}</span>
-                <CheckIcon className={`h-3.5 w-3.5 text-ink transition-opacity duration-300 ${done ? "opacity-100" : "opacity-0"}`} />
-              </span>
-              <span className="text-[14px] font-medium leading-5 text-ink">{item.name}</span>
-              <span className="hidden text-[12px] leading-[17px] text-mute sm:block">{item.role}</span>
-              <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5">
-                {on && playing ? (
-                  <span key={shownAt} className="stage-fill block h-full bg-accent" style={{ "--stage-ms": `${STAGE_MS}ms` } as CSSProperties} />
-                ) : null}
-              </span>
-            </button>
+              <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12 lg:gap-12">
+                <div className="enter-up lg:col-span-5">
+                  <h3 className="text-[26px] font-semibold leading-[1.15] tracking-[-0.03em] text-ink sm:text-[28px]">{panel.title}</h3>
+                  <p className="mt-3.5 text-[15px] leading-[26px] text-body">{panel.body}</p>
+                  {panel.side}
+                </div>
+                <div key={on ? shownAt : undefined} className="lg:col-span-7">
+                  <panel.Win />
+                </div>
+              </div>
+            </div>
           );
         })}
       </div>
 
-      {TOPIC_STAGES.map((item, index) => {
-        const on = index === stage;
-        const panel = PANELS[item.key];
-        return (
-          <div
-            key={item.key}
-            role="tabpanel"
-            id={`${id}-panel-${item.key}`}
-            aria-labelledby={`${id}-tab-${item.key}`}
-            hidden={!on}
-            className="mt-7 rounded-2xl border border-hairline bg-surface p-5 sm:p-8 lg:min-h-[540px] lg:p-10"
-          >
-            <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12 lg:gap-12">
-              <div className="enter-up lg:col-span-5">
-                <Kicker>
-                  Stage {String(index + 1).padStart(2, "0")} · {item.name}
-                </Kicker>
-                <h3 className="mt-3 text-[26px] font-semibold leading-[1.15] tracking-[-0.03em] text-ink sm:text-[28px]">{panel.title}</h3>
-                <p className="mt-3.5 text-[15px] leading-[26px] text-body">{panel.body}</p>
-                {panel.side}
-              </div>
-              <div key={on ? shownAt : undefined} className="lg:col-span-7">
-                <panel.Win />
-              </div>
-            </div>
-          </div>
-        );
-      })}
-
-      <p className="mt-6 max-w-3xl text-[14.5px] leading-7 text-body">
+      <p className="mt-8 max-w-3xl text-[14.5px] leading-7 text-body">
         Alongside these stages, four more steps date the paper, find its aims and contributions, place it in your categories and
-        name the kind of study: {ANALYSIS_STEP_COUNT} steps for each paper, four at a time where they can run together. The sample
+        name the kind of study: {ANALYSIS_STEP_COUNT} steps for each paper (the progress tray groups them into ten), four at a time
+        where they can run together. The sample
         paper here is invented: “{DEMO_PAPER.title}”.
       </p>
     </div>

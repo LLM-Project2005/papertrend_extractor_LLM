@@ -270,9 +270,25 @@ function analysisOverview(runs: IngestionRunRow[]) {
     ] as Array<[number, string]>
   )
     .filter(([count]) => count > 0)
-    .map(([count, label]) => `${count} ${label}`)
-    .join(" · ");
+    .map(([count, label]) => `${count} ${label}`);
   return { summary, active, terminal, progress, tone, headline, counts };
+}
+
+/**
+ * The counts ("2 analyzing", "3 waiting") side by side with a gap, not joined
+ * by middle dots (UI audit #15); a screen reader hears them with commas.
+ */
+function Counts({ counts }: { counts: string[] }) {
+  return (
+    <>
+      {counts.map((count, index) => (
+        <span key={count}>
+          {index > 0 ? <span className="sr-only">, </span> : null}
+          {count}
+        </span>
+      ))}
+    </>
+  );
 }
 
 function formatSeconds(value: unknown): string {
@@ -653,12 +669,12 @@ function RunRow({
               ) : null}
             </div>
           </div>
-          <p className="mt-0.5 text-[13px] leading-5 text-body">
-            {getRunStageMessage(run)}
+          <p className="mt-0.5 flex flex-wrap gap-x-3 text-[13px] leading-5 text-body">
+            <span>{getRunStageMessage(run)}</span>
             {active ? (
               <span className="tabular-nums text-mute">
-                {" "}
-                · Step {getStageIndex(run) + 1} of {TIMELINE_STAGES.length}
+                <span className="sr-only">, </span>
+                Step {getStageIndex(run) + 1} of {TIMELINE_STAGES.length}
               </span>
             ) : null}
           </p>
@@ -912,8 +928,8 @@ export default function AnalysisStatusCard({
             <h2 id={headingId} className="truncate text-sm font-semibold text-ink">
               {headline}
             </h2>
-            <p className="truncate text-xs tabular-nums text-mute" aria-live="polite">
-              {loading ? "Refreshing status…" : counts || "Starting…"}
+            <p className="flex min-w-0 gap-x-3 overflow-hidden whitespace-nowrap text-xs tabular-nums text-mute" aria-live="polite">
+              {loading ? "Refreshing status…" : counts.length > 0 ? <Counts counts={counts} /> : "Starting…"}
             </p>
           </div>
           {onExpand ? (
@@ -1045,7 +1061,9 @@ export default function AnalysisStatusCard({
 
         <div className="mt-6">
           <div className="flex items-center justify-between gap-4 text-xs tabular-nums text-mute">
-            <span aria-live="polite">{loading && runs.length === 0 ? "Loading progress…" : counts || "Starting…"}</span>
+            <span aria-live="polite" className="flex flex-wrap gap-x-3">
+              {loading && runs.length === 0 ? "Loading progress…" : counts.length > 0 ? <Counts counts={counts} /> : "Starting…"}
+            </span>
             <span>{percent}%</span>
           </div>
           <div
@@ -1070,10 +1088,8 @@ export default function AnalysisStatusCard({
             {notices}
             {folderJob ? (
               <div className="rounded-lg bg-subtle px-3.5 py-3 text-[13px] leading-5">
-                <p className="font-medium text-ink">
-                  This upload
-                  <span className="font-normal text-body"> · {folderJob.progress_message || folderJob.status}</span>
-                </p>
+                <p className="font-medium text-ink">This upload</p>
+                <p className="mt-0.5 text-body">{folderJob.progress_message || folderJob.status}</p>
                 {folderJob.progress_detail ? (
                   <p className="mt-1 text-mute">{folderJob.progress_detail}</p>
                 ) : null}

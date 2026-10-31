@@ -110,7 +110,7 @@ export default function DocsSearchClient() {
         </p>
       </header>
 
-      <div className="sticky top-16 z-10 -mx-4 mt-8 border-b border-hairline bg-white/85 px-4 pb-4 pt-4 backdrop-blur-md dark:bg-black/80 sm:-mx-6 sm:px-6">
+      <div className="sticky top-16 z-10 -mx-4 mt-8 border-b border-hairline bg-canvas/85 px-4 pb-4 pt-4 backdrop-blur-md sm:-mx-6 sm:px-6">
         <form
           role="search"
           onSubmit={(event) => {
@@ -130,7 +130,7 @@ export default function DocsSearchClient() {
             enterKeyHint="search"
             autoComplete="off"
             placeholder="Upload failed, unknown year, deep research…"
-            className="h-12 w-full rounded-xl border border-hairline bg-surface pl-12 pr-4 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15"
+            className="h-12 w-full rounded-xl border border-hairline bg-surface pl-12 pr-4 text-base text-ink shadow-raise outline-none transition-colors duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-2 focus:ring-accent/40"
           />
         </label>
         </form>
@@ -161,9 +161,9 @@ export default function DocsSearchClient() {
             <li key={item.id}>
               <Link href={item.href} className="group flex items-start justify-between gap-4 py-4">
                 <span className="min-w-0">
-                  <span className="block text-[13px] text-mute">
-                    {item.category}
-                    {item.sectionId ? ` · ${item.description}` : ""}
+                  <span className="flex flex-wrap gap-x-3 text-[13px] text-mute">
+                    <span>{item.category}</span>
+                    {item.sectionId ? <span>{item.description}</span> : null}
                   </span>
                   <span className="mt-0.5 block text-[15px] font-medium text-ink">{item.title}</span>
                   {!item.sectionId ? (
