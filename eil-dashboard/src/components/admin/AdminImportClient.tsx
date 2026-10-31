@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import PdfDropTarget from "@/components/workspace/PdfDropTarget";
+import PdfThumbnail from "@/components/workspace/PdfThumbnail";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal, { type PaperExplorerTab } from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
@@ -40,6 +41,7 @@ import {
   ListViewIcon,
   MoreHorizontalIcon,
   PaperIcon,
+  PdfFileIcon,
   PencilSquareIcon,
   PlusIcon,
   RefreshIcon,
@@ -2149,11 +2151,17 @@ export default function AdminImportClient() {
                           aria-label={`Select ${item.name}`}
                           className="mt-3 h-4 w-4 flex-none cursor-pointer rounded border-field accent-[rgb(var(--ink))]"
                         />
-                        <span
-                          className={`mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-lg ${badgeToneForEntry(item)}`}
-                        >
-                          <Glyph className="h-5 w-5" />
-                        </span>
+                        {item.typeFilter === "pdf" ? (
+                          <span className="mt-0.5 flex h-10 w-10 flex-none items-center justify-center">
+                            <PdfFileIcon className="h-6 w-6" />
+                          </span>
+                        ) : (
+                          <span
+                            className={`mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-lg ${badgeToneForEntry(item)}`}
+                          >
+                            <Glyph className="h-5 w-5" />
+                          </span>
+                        )}
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
@@ -2164,9 +2172,11 @@ export default function AdminImportClient() {
                             >
                               {item.name}
                             </button>
-                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
-                              {extOf(item.run).toUpperCase()}
-                            </span>
+                            {item.typeFilter === "pdf" ? null : (
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
+                                {extOf(item.run).toUpperCase()}
+                              </span>
+                            )}
                             {item.favorite ? (
                               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                                 Favorite
@@ -2322,25 +2332,53 @@ export default function AdminImportClient() {
                           onClick={() => void handleOpenPrimaryFileAction(item.run!)}
                           className="flex w-full flex-col text-left"
                         >
-                          <div className="relative flex h-44 items-center justify-center overflow-hidden bg-slate-100 dark:bg-[#050505]">
-                            <span
-                              className={`flex h-14 w-14 items-center justify-center rounded-xl ${badgeToneForEntry(item)}`}
-                            >
-                              <Glyph className="h-7 w-7" />
-                            </span>
-                            <span className="absolute left-10 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#050505]/90 dark:text-[#d0d0d0]">
-                              {extOf(item.run!).toUpperCase()}
-                            </span>
-                            {item.favorite ? (
-                              <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-700 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
-                                <StarIcon className="h-4 w-4" weight="fill" />
+                          {item.typeFilter === "pdf" ? (
+                            // The paper's first page, as Drive shows a file; the
+                            // badge holds the place until it is drawn.
+                            <div className="relative h-44 overflow-hidden bg-slate-100 px-5 pt-5 dark:bg-[#0a0a0a]">
+                              {item.sourceFilter === "google-drive" || !item.run.source_path ? (
+                                <span className="flex h-full items-center justify-center">
+                                  <PdfFileIcon className="h-12 w-12" />
+                                </span>
+                              ) : (
+                                <PdfThumbnail
+                                  cacheKey={`${item.run.id}:${item.run.source_path}`}
+                                  getUrl={() => getRunOpenUrl(item.run)}
+                                  fallback={
+                                    <span className="flex h-full items-center justify-center">
+                                      <PdfFileIcon className="h-12 w-12" />
+                                    </span>
+                                  }
+                                />
+                              )}
+                              {item.favorite ? (
+                                <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-700 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
+                                  <StarIcon className="h-4 w-4" weight="fill" />
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="relative flex h-44 items-center justify-center overflow-hidden bg-slate-100 dark:bg-[#050505]">
+                              <span
+                                className={`flex h-14 w-14 items-center justify-center rounded-xl ${badgeToneForEntry(item)}`}
+                              >
+                                <Glyph className="h-7 w-7" />
                               </span>
-                            ) : null}
-                          </div>
+                              <span className="absolute left-10 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#050505]/90 dark:text-[#d0d0d0]">
+                                {extOf(item.run!).toUpperCase()}
+                              </span>
+                              {item.favorite ? (
+                                <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-700 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
+                                  <StarIcon className="h-4 w-4" weight="fill" />
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
                           <div className="space-y-3 px-4 py-4">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                                {item.name}
+                              <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                                {item.typeFilter === "pdf" ? <PdfFileIcon className="h-4 w-4 flex-none" /> : null}
+                                <span className="truncate">{item.name}</span>
                               </p>
                               <p
                                 title={item.subtitle}

@@ -257,6 +257,28 @@ export function SpinnerIcon({ className }: { className?: string }) {
   return createElement(SpinnerGlyph, { weight: "bold", className: `animate-spin motion-reduce:animate-none ${className ?? ""}` });
 }
 
+/* ------------------------------------------------------------- file types */
+
+/*
+ * A PDF in the Library, as file managers mark one (2026-10-31, the user's
+ * request, after Google Drive's list): a red tile lettered PDF. The letters
+ * are strokes, not text, so they stay sharp at 16 px and need no font.
+ */
+export function PdfFileIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" className={className}>
+      <rect x="1.5" y="1.5" width="21" height="21" rx="4" fill="#E5463A" />
+      <path
+        d="M4.9 15V9h2.6a1.6 1.6 0 0 1 0 3.2H4.9M10.2 9h1.3a3 3 0 0 1 0 6h-1.3ZM15.6 15V9h3.6M15.6 12h2.9"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /* ------------------------------------------------------------ brand marks */
 
 export function LogoMarkIcon({ className }: { className?: string }) {
