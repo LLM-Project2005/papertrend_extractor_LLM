@@ -29,6 +29,7 @@
 // React in scope: the test runner compiles JSX the classic way.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import UsageMeter from "@/components/chat/UsageMeter";
 import CellPanel from "@/components/table/CellPanel";
 import ColumnPicker from "@/components/table/ColumnPicker";
 import TableDownloadMenu, { type DownloadFormat } from "@/components/table/TableDownloadMenu";
@@ -381,6 +382,8 @@ function NewTableDialog({
 export default function PaperTableClient() {
   const { session } = useAuth();
   const token = session?.access_token ?? null;
+  // The day's AI allowance beside Fill table: filling spends it, as Chat does (2026-11-01).
+  const usageHeaders = useMemo((): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
   const { currentProject } = useWorkspaceProfile();
   const projectId = currentProject?.id ?? null;
   useTabTitleRepository(currentProject?.name);
@@ -945,6 +948,12 @@ export default function PaperTableClient() {
                 <CheckCircleIcon className="h-3.5 w-3.5" />
                 Screen
               </button>
+              <UsageMeter
+                requestHeaders={usageHeaders}
+                refreshKey={filling ? "filling" : "idle"}
+                placement="below"
+                note="Filling the table, screening papers and asking about a cell use this allowance, as Chat does."
+              />
               {filling ? (
                 <button type="button" onClick={() => fillRef.current?.abort()} className={buttonClass("secondary", "sm")}>
                   <StopIcon className="h-3.5 w-3.5" />

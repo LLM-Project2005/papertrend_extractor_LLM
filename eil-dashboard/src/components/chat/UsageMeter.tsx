@@ -56,7 +56,7 @@ function Ring({ share }: { share: number }) {
 }
 
 /** What the meter opens to; drawn on its own for the tests. */
-export function UsagePanel({ usage, resets }: { usage: Usage; resets: string }) {
+export function UsagePanel({ usage, resets, note }: { usage: Usage; resets: string; note?: string }) {
   const share = usageShare(usage.tokens);
   const warn = share >= 0.9;
   return (
@@ -79,11 +79,27 @@ export function UsagePanel({ usage, resets }: { usage: Usage; resets: string }) 
           <p className="mt-2 text-xs leading-5 text-body">Starts again at {resets}.</p>
         </>
       )}
+      {note ? <p className="mt-2 text-xs leading-5 text-mute">{note}</p> : null}
     </>
   );
 }
 
-export default function UsageMeter({ requestHeaders, refreshKey }: { requestHeaders: Record<string, string>; refreshKey: unknown }) {
+/**
+ * The day's AI allowance, beside whatever spends it: the chat composer, and the
+ * Table's Fill button (2026-11-01). `placement` says which way the panel opens;
+ * `note` says what on this page uses the allowance.
+ */
+export default function UsageMeter({
+  requestHeaders,
+  refreshKey,
+  placement = "above",
+  note,
+}: {
+  requestHeaders: Record<string, string>;
+  refreshKey: unknown;
+  placement?: "above" | "below";
+  note?: string;
+}) {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -155,9 +171,9 @@ export default function UsageMeter({ requestHeaders, refreshKey }: { requestHead
           id={`${id}-usage`}
           role="region"
           aria-label="Today's AI allowance"
-          className="absolute bottom-11 right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-overlay"
+          className={`absolute ${placement === "below" ? "top-11" : "bottom-11"} right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-overlay`}
         >
-          <UsagePanel usage={usage} resets={resets} />
+          <UsagePanel usage={usage} resets={resets} note={note} />
         </div>
       ) : null}
     </div>
