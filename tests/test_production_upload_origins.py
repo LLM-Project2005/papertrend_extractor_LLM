@@ -31,6 +31,15 @@ class ProductionUploadOriginsTests(unittest.TestCase):
         methods = {method for rule in cors for method in rule.get("method", [])}
         self.assertTrue({"PUT", "OPTIONS"} <= methods)
 
+    def test_the_browser_may_read_part_of_a_pdf(self) -> None:
+        # pdf.js reads only the byte ranges a page needs when it can send Range
+        # and see Accept-Ranges and Content-Range; the Library's page
+        # thumbnails depend on it (2026-10-31), or each one downloads the file.
+        for name in ("gcs-cors.papertrend-production.json", "gcs-cors.papertrend.json"):
+            cors = json.loads((ROOT / name).read_text(encoding="utf-8"))
+            headers = {header.lower() for rule in cors for header in rule.get("responseHeader", [])}
+            self.assertTrue({"range", "accept-ranges", "content-range", "content-length", "content-encoding"} <= headers, name)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,7 @@
       "https://papertrend.web.app"
     ],
     "method": ["PUT", "GET", "HEAD", "OPTIONS"],
-    "responseHeader": ["Content-Type", "x-goog-resumable"],
+    "responseHeader": ["Content-Type", "x-goog-resumable", "Range", "Accept-Ranges", "Content-Range", "Content-Length", "Content-Encoding"],
     "maxAgeSeconds": 3600
   }
 ]
