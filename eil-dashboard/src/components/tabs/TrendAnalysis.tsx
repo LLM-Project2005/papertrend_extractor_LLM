@@ -39,6 +39,7 @@ import { MAX_STACKED_SERIES, tooltipTheme } from "@/lib/chart-tooltip";
 import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { fieldClass, segmentClass, segmentedClass } from "@/components/ui/controls";
 import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { seriesTable } from "@/lib/chart-csv";
@@ -155,7 +156,7 @@ const TreemapCell = (props: {
           <text x={x + 8} y={y + 18} fill={textFill} fontSize={11} fontWeight={600}>
             {label}
           </text>
-          <text x={x + 8} y={y + 32} fill={textFill} fontSize={10} opacity={0.85}>
+          <text x={x + 8} y={y + 32} fill={textFill} fontSize={11} opacity={0.85}>
             {value} paper{value === 1 ? "" : "s"}
           </text>
         </>
@@ -418,18 +419,14 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
         <section className="app-surface px-5 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-base font-semibold text-ink">Themes over time</h3>
-            <div role="group" aria-label="Show as" className="inline-flex rounded-lg bg-subtle p-0.5">
+            <div role="group" aria-label="Show as" className={segmentedClass}>
               {TIME_VIEWS.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   aria-pressed={view === option.value}
                   onClick={() => setView(option.value)}
-                  className={`h-8 rounded-md px-3 text-xs font-semibold transition-colors ${
-                    view === option.value
-                      ? "bg-white text-ink shadow-sm dark:bg-[#292929]"
-                      : "text-body hover:text-ink"
-                  }`}
+                  className={segmentClass(view === option.value)}
                 >
                   {option.label}
                 </button>
@@ -453,8 +450,8 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
                     disabled={!on && shown.length >= MAX_STACKED_SERIES}
                     className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       on
-                        ? "border-slate-900 font-medium text-ink dark:border-white"
-                        : "border-hairline bg-surface text-ink hover:border-slate-300 dark:hover:border-[#3a3a3a]"
+                        ? "border-ink font-medium text-ink"
+                        : "border-hairline bg-surface text-ink hover:border-hairline-strong"
                     }`}
                     style={on ? { backgroundColor: tint(color, isDark ? 0.22 : 0.12) } : undefined}
                   >
@@ -623,7 +620,7 @@ export default function TrendAnalysis({ trends, themeColors = NO_THEME_COLORS, p
             onChange={(event) => setTableFilter(event.target.value)}
             placeholder="Filter themes"
             aria-label="Filter themes"
-            className="h-9 w-full rounded-lg border border-hairline-strong bg-surface px-3 text-base text-ink placeholder:text-mute focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 sm:w-56 sm:text-sm"
+            className={`${fieldClass} h-9 sm:w-56`}
           />
         </div>
         <div className="mt-4 max-h-[460px] overflow-auto rounded-xl border border-hairline">

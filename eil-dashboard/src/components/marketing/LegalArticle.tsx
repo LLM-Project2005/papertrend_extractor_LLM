@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { LEGAL_CONTACT_EMAIL, LEGAL_EFFECTIVE_DATE, type LegalDocument } from "@/lib/legal-content";
 
-const bodyClass = "text-base leading-7 text-body";
+/* Held to about 68 characters a line (2026-10-31 audit: lines ran to ~100). */
+const bodyClass = "max-w-[68ch] text-base leading-7 text-body";
 
 /** The contact address, wherever it appears in the text, becomes a mail link. */
 function LegalText({ text }: { text: string }) {
@@ -28,7 +29,7 @@ export default function LegalArticle({ document }: { document: LegalDocument }) 
     ? { href: "/terms", label: "Terms of Service" }
     : { href: "/privacy", label: "Privacy Policy" };
   return (
-    <article className="mx-auto max-w-3xl px-4 pb-24 pt-16 sm:px-6 sm:pt-20">
+    <article className="mx-auto max-w-3xl px-4 pb-24 pt-28 sm:px-6 sm:pt-32">
       <header>
         <h1 className="text-4xl font-semibold tracking-tight text-ink">{document.title}</h1>
         <p className="mt-3 text-sm text-mute">Effective {LEGAL_EFFECTIVE_DATE}</p>

@@ -3,6 +3,7 @@
 import { TRACK_COLORS, TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { selectedCategoryKeys, type CategoryOption } from "@/lib/category-options";
 import type { ResearchFolderRow } from "@/types/database";
+import { selectedClass } from "@/components/ui/controls";
 
 interface Props {
   allYears: string[];
@@ -116,14 +117,14 @@ export default function Sidebar({
 
       <div className="space-y-6 px-5 py-5">
         {useMock && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-[#6a3416] dark:bg-[#3a2618] dark:text-[#f4c97c]">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
             Showing preview data until Supabase is connected and populated.
           </div>
         )}
 
         {showFolders && onFolderChange ? (
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-mute">
+            <h3 className="mb-3 text-xs font-medium text-mute">
               Folders
             </h3>
             <div className="space-y-3">
@@ -132,8 +133,8 @@ export default function Sidebar({
                 onClick={() => onFolderChange([], true)}
                 className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                   allFoldersSelected
-                    ? "border-slate-900 bg-ink text-canvas dark:border-[#f3f3f3]"
-                    : "border-hairline bg-surface text-body hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]"
+                    ? "border-ink bg-subtle font-medium text-ink"
+                    : "border-hairline bg-surface text-body hover:border-hairline-strong hover:text-ink"
                 }`}
               >
                 All folders
@@ -149,8 +150,8 @@ export default function Sidebar({
                       onClick={() => toggleFolder(folder.id)}
                       className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                         active
-                          ? "border-slate-900 bg-ink text-canvas dark:border-[#f3f3f3]"
-                          : "border-hairline bg-surface text-body hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]"
+                          ? "border-ink bg-subtle font-medium text-ink"
+                          : "border-hairline bg-surface text-body hover:border-hairline-strong hover:text-ink"
                       }`}
                     >
                       {folder.name}
@@ -171,7 +172,7 @@ export default function Sidebar({
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-normal text-mute">
+            <h3 className="text-xs font-medium text-mute">
               Years
             </h3>
             <button
@@ -193,8 +194,8 @@ export default function Sidebar({
                   onClick={() => toggleYear(year)}
                   className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                     active
-                      ? "border-slate-900 bg-ink text-canvas dark:border-[#f3f3f3]"
-                      : "border-hairline bg-surface text-body hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]"
+                      ? "border-ink bg-subtle font-medium text-ink"
+                      : "border-hairline bg-surface text-body hover:border-hairline-strong hover:text-ink"
                   }`}
                 >
                   {year}
@@ -206,7 +207,7 @@ export default function Sidebar({
 
         {showCategories ? <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-normal text-mute">
+            <h3 className="text-xs font-medium text-mute">
               Research areas
             </h3>
             <button
@@ -229,8 +230,8 @@ export default function Sidebar({
                   onClick={() => toggleTrack(category.key)}
                   className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition-colors ${
                     active
-                      ? "border-slate-900 bg-ink text-canvas dark:border-[#f3f3f3]"
-                      : "border-hairline bg-surface text-ink hover:border-slate-300 dark:hover:border-[#3a3a3a]"
+                      ? `border-hairline ${selectedClass}`
+                      : "border-hairline bg-surface text-ink hover:border-hairline-strong"
                   }`}
                 >
                   <span>
@@ -248,7 +249,7 @@ export default function Sidebar({
                   <span
                     className="mt-0.5 h-2.5 w-2.5 rounded-full"
                     style={{
-                      backgroundColor: active ? category.color : "#d7dee8",
+                      backgroundColor: active ? category.color : "rgb(var(--hairline-strong))",
                     }}
                   />
                 </button>

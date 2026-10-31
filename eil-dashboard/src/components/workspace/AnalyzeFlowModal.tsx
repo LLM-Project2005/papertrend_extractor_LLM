@@ -8,14 +8,13 @@ import AnalysisProfileEditor, { profileSummary } from "@/components/workspace/An
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile, toIngestionAnalysisProfile } from "@/lib/project-analysis-profile";
 import Modal from "@/components/ui/Modal";
 import {
-  ArrowRightIcon,
   CheckCircleIcon,
   CloseIcon,
   DriveIcon,
   FileIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import { buttonClass } from "@/components/ui/controls";
+import { buttonClass, iconButtonClass } from "@/components/ui/controls";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 import { putWithFreshUrl } from "@/lib/upload-retry";
@@ -463,12 +462,11 @@ export default function AnalyzeFlowModal({
     }
   }
 
-  const secondaryButtonClass =
-    "inline-flex items-center justify-center rounded-lg border border-hairline bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:border-[#3a3a3a]";
-  const primaryButtonClass =
-    "inline-flex items-center justify-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-canvas transition-colors hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 dark:hover:bg-white dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]";
+  // The shared button recipes (2026-10-31, UI audit #22); this dialog had its own.
+  const secondaryButtonClass = buttonClass("secondary", "md");
+  const primaryButtonClass = buttonClass("primary", "md");
   const panelClass =
-    "flex max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-2xl sm:max-h-[calc(100dvh-3rem)]";
+    "flex max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay sm:max-h-[calc(100dvh-3rem)]";
 
   if (queuedSummary) {
     const { count, firstName, failedCount, warning, skipped: skippedFiles } = queuedSummary;
@@ -477,21 +475,20 @@ export default function AnalyzeFlowModal({
         <div className={panelClass}>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-6">
             <div className="flex items-start justify-between gap-4">
-              <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
-                <CheckCircleIcon className="h-6 w-6" />
-              </span>
+              {/* The check sits beside the heading, not in a tile above it (UI audit #18). */}
+              <h2 className="flex items-start gap-2.5 pt-1.5 text-xl font-semibold text-ink">
+                <CheckCircleIcon className="mt-0.5 h-6 w-6 flex-none text-accent" />
+                <span>{count === 1 ? "Your paper is being analyzed" : `${count} papers are being analyzed`}</span>
+              </h2>
               <button
                 type="button"
                 onClick={handleClose}
-                className="rounded-lg border border-hairline bg-surface p-2 text-body"
+                className={iconButtonClass("lg")}
                 aria-label="Close"
               >
                 <CloseIcon className="h-4 w-4" />
               </button>
             </div>
-            <h2 className="mt-5 text-xl font-semibold text-ink">
-              {count === 1 ? "Your paper is being analyzed" : `${count} papers are being analyzed`}
-            </h2>
             <p className="mt-2 break-words text-sm leading-6 text-body">
               {count === 1
                 ? `${firstName} was added to ${queuedSummary.projectName}.`
@@ -504,14 +501,14 @@ export default function AnalyzeFlowModal({
                 <span className="text-ink">Uploaded to private storage</span>
               </li>
               <li className="flex gap-3">
-                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-slate-900 motion-safe:animate-pulse dark:border-white" />
+                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-ink motion-safe:animate-pulse" />
                 <span className="text-ink">
                   Analysis: title, year, topics, methods and research area. This usually takes a few minutes
                   per paper, and larger batches run one paper after another.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-slate-300 dark:border-[#444]" />
+                <span className="mt-1 h-3 w-3 flex-none rounded-full border-2 border-hairline-strong" />
                 <span className="text-mute">
                   Ready: each paper appears in the Library and on the Dashboard as soon as it finishes.
                 </span>
@@ -524,7 +521,7 @@ export default function AnalyzeFlowModal({
             </p>
 
             {skippedFiles.length > 0 ? (
-              <div className="mt-4 rounded-lg border border-hairline bg-canvas px-4 py-3 text-sm">
+              <div className="mt-4 rounded-lg bg-subtle px-4 py-3 text-sm">
                 <p className="font-medium text-ink">
                   {plural(skippedFiles.length, "file")} left out
                 </p>
@@ -568,8 +565,7 @@ export default function AnalyzeFlowModal({
               }}
               className={primaryButtonClass}
             >
-              <span>Follow progress</span>
-              <ArrowRightIcon className="h-4 w-4" />
+              Follow progress
             </button>
           </div>
         </div>
@@ -587,15 +583,14 @@ export default function AnalyzeFlowModal({
       <div className={panelClass}>
         <div className="flex flex-none items-start justify-between gap-4 border-b border-hairline px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-mute">Add papers</p>
-            <h2 className="mt-1 break-words text-xl font-semibold text-ink">
+            <h2 className="break-words text-xl font-semibold text-ink">
               {targetProject ? `Add papers to ${targetProject.name}` : "Choose a repository first"}
             </h2>
           </div>
           <button
             type="button"
             onClick={handleClose}
-            className="flex-none rounded-lg border border-hairline bg-surface p-2 text-body"
+            className={iconButtonClass("lg", "-mr-2")}
             aria-label="Close"
           >
             <CloseIcon className="h-4 w-4" />
@@ -618,8 +613,8 @@ export default function AnalyzeFlowModal({
             }}
             className={`block cursor-pointer rounded-lg border border-dashed px-5 py-7 text-center transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[rgb(var(--focus))] has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-surface ${
               dragActive
-                ? "border-slate-900 bg-subtle dark:border-white"
-                : "border-slate-300 bg-canvas hover:border-slate-500 dark:border-[#3a3a3a] dark:hover:border-[#666]"
+                ? "border-ink bg-subtle"
+                : "border-hairline-strong bg-surface hover:border-ink/60 hover:bg-subtle"
             }`}
           >
             <input
@@ -634,10 +629,9 @@ export default function AnalyzeFlowModal({
               }}
               className="sr-only"
             />
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-white text-body shadow-sm dark:bg-[#111111]">
-              <UploadIcon className="h-5 w-5" />
-            </span>
-            <span className="mt-4 block text-base font-medium text-ink">
+            {/* The icon sits on the drop area itself, not in a raised tile of its own (UI audit #17). */}
+            <UploadIcon aria-hidden="true" className="mx-auto block h-6 w-6 text-mute" />
+            <span className="mt-3 block text-base font-medium text-ink">
               {files.length > 0 ? "Add more PDFs" : "Drop PDFs here, or click to choose"}
             </span>
             <span className="mt-1.5 block text-sm leading-6 text-mute">
@@ -676,7 +670,7 @@ export default function AnalyzeFlowModal({
                       setFiles([]);
                       setError(null);
                     }}
-                    className="rounded px-1 text-sm font-medium text-mute hover:text-ink"
+                    className={buttonClass("ghost", "sm")}
                   >
                     Clear all
                   </button>
@@ -724,7 +718,7 @@ export default function AnalyzeFlowModal({
                             setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
                             if (flagged) setError(null);
                           }}
-                          className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-mute hover:bg-subtle hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                          className={iconButtonClass("md")}
                           aria-label={`Remove ${file.name}`}
                           title="Remove file"
                         >
@@ -742,7 +736,7 @@ export default function AnalyzeFlowModal({
             <section className="rounded-lg border border-hairline px-4 py-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase text-mute">Analysis profile</p>
+                  <p className="text-xs font-medium text-mute">Analysis profile</p>
                   <p className="mt-1 text-sm font-medium leading-6 text-ink">{profileSummary(activeAnalysisProfile)}</p>
                   <p className="mt-0.5 text-xs leading-5 text-mute">
                     {activeAnalysisProfile.classificationEnabled
@@ -763,13 +757,14 @@ export default function AnalyzeFlowModal({
                     setProfileError(null);
                     setShowProfileEditor((visible) => !visible);
                   }}
-                  className="flex-none rounded-lg border border-slate-300 bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:border-[#333]"
+                  className={buttonClass("secondary", "sm", "flex-none")}
                 >
                   {showProfileEditor ? "Cancel" : "Change"}
                 </button>
               </div>
               {showProfileEditor ? (
-                <div className="mt-4 rounded-lg border border-hairline bg-canvas p-4">
+                // Divided from the summary above, not boxed inside it: one containment layer (UI audit #17).
+                <div className="mt-4 border-t border-hairline pt-4">
                   <AnalysisProfileEditor
                     value={profileDraft}
                     onChange={(next) => { setProfileDraft(next); setProfileError(null); }}
@@ -778,7 +773,7 @@ export default function AnalyzeFlowModal({
                     error={profileError}
                   />
                   <div className="mt-4 flex justify-end gap-2">
-                    <button type="button" onClick={() => { setProfileDraft(activeAnalysisProfile); setProfileError(null); setShowProfileEditor(false); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-[#333]">Discard</button>
+                    <button type="button" onClick={() => { setProfileDraft(activeAnalysisProfile); setProfileError(null); setShowProfileEditor(false); }} className={buttonClass("ghost", "sm")}>Discard</button>
                     <button
                       type="button"
                       disabled={savingProfile}
@@ -795,7 +790,8 @@ export default function AnalyzeFlowModal({
                           setProfileError(saveError instanceof Error ? saveError.message : "Could not save the analysis profile.");
                         } finally { setSavingProfile(false); }
                       }}
-                      className="rounded-lg bg-ink px-3 py-2 text-sm font-semibold text-canvas disabled:opacity-50"
+                      // Secondary: "Analyze" below is the dialog's one filled button (UI audit #22).
+                      className={buttonClass("secondary", "sm")}
                     >
                       {savingProfile ? "Saving…" : "Save for repository"}
                     </button>
@@ -842,9 +838,10 @@ export default function AnalyzeFlowModal({
                 ) : null}
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-subtle">
+                {/* Grows by transform, not width (UI audit #13). */}
                 <div
-                  className={`h-full rounded-full bg-ink transition-[width] ${progressPercent === null ? "w-1/3 motion-safe:animate-pulse" : ""}`}
-                  style={progressPercent === null ? undefined : { width: `${Math.max(4, progressPercent)}%` }}
+                  className={`h-full origin-left bg-ink ${progressPercent === null ? "w-1/3 rounded-full motion-safe:animate-pulse" : "w-full transition-transform duration-300 ease-out"}`}
+                  style={progressPercent === null ? undefined : { transform: `scaleX(${Math.max(4, progressPercent) / 100})` }}
                 />
               </div>
             </div>

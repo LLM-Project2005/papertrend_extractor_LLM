@@ -11,6 +11,8 @@ import InsightChart from "@/components/dashboard/InsightChart";
 import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import PaperLink from "@/components/workspace/PaperLink";
 import { insightCsv } from "@/lib/insights/csv";
+import { yearLabel } from "@/lib/paper-year";
+import { buttonClass } from "@/components/ui/controls";
 import type { Insight } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
@@ -32,7 +34,7 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
   const listed = open ? open.ids.map((id) => titles.get(id) ?? { id, title: "Untitled paper", year: "Unknown" }) : [];
 
   return (
-    <section className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-sm" data-chat-insight={insight.id}>
+    <section className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-raise" data-chat-insight={insight.id}>
       <div className="border-b border-hairline px-4 py-3">
         <p className="text-xs font-semibold text-body">Chart · {chart.scopeLabel}</p>
         <h3 className="mt-1 text-base font-semibold leading-6 text-ink">{chart.title}</h3>
@@ -45,12 +47,12 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
         <div className="border-t border-hairline px-4 py-3" aria-live="polite">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold text-ink">
-              {open.label} · {listed.length} paper{listed.length === 1 ? "" : "s"}
+              {open.label}: {listed.length} paper{listed.length === 1 ? "" : "s"}
             </p>
             <button
               type="button"
               onClick={() => setOpen(null)}
-              className="rounded-lg px-2 py-1 text-xs font-medium text-body hover:text-ink"
+              className={buttonClass("ghost", "sm")}
             >
               Close
             </button>
@@ -61,7 +63,7 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
                 <PaperLink paper={{ paperId: paper.id }} className="text-ink underline-offset-2 hover:underline">
                   {paper.title}
                 </PaperLink>
-                <span className="text-mute">{paper.year !== "Unknown" ? ` · ${paper.year}` : ""}</span>
+                <span className="text-mute">, {yearLabel(paper.year)}</span>
               </li>
             ))}
           </ul>
@@ -73,7 +75,7 @@ export default function ChatInsightCard({ chart }: { chart: ChatInsightChartView
         <button
           type="button"
           onClick={() => onOpen(insight.paperIds, chart.title)}
-          className="inline-flex min-h-9 items-center rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]"
+          className={buttonClass("secondary", "sm")}
         >
           The {insight.paperIds.length} paper{insight.paperIds.length === 1 ? "" : "s"} behind this
         </button>

@@ -63,11 +63,14 @@ export function ChatIntro({
       ) : null}
 
       <div className="w-full space-y-3">
-        <ul className="grid gap-2 sm:grid-cols-2">
+        {/* A plain list, one column: bordered tiles looked like the example
+            questions above, which are buttons, and five tiles in two columns
+            left one alone (UI audit #18). */}
+        <ul className="space-y-2.5 px-1">
           {CAPABILITIES.map((capability) => (
             <li
               key={capability.label}
-              className={`rounded-xl border border-hairline px-3 py-2 ${ANSWER_META_CLASS} text-body dark:border-[#1f1f1f]`}
+              className={`${ANSWER_META_CLASS} text-body`}
             >
               <span className="block font-semibold text-ink">
                 {capability.label}
@@ -81,17 +84,17 @@ export function ChatIntro({
           type="button"
           onClick={() => setShowLimits((previous) => !previous)}
           aria-expanded={showLimits}
-          className={`${ANSWER_META_CLASS} text-body underline underline-offset-4 transition-colors hover:text-ink`}
+          className={`px-1 ${ANSWER_META_CLASS} text-body underline underline-offset-4 transition-colors hover:text-ink`}
         >
           {showLimits ? "Hide what it cannot answer" : "What it cannot answer"}
         </button>
 
         {showLimits ? (
-          <ul className="space-y-2">
+          <ul className="space-y-2.5 px-1">
             {LIMITS.map((limit) => (
               <li
                 key={limit.label}
-                className={`rounded-xl border border-hairline px-3 py-2 ${ANSWER_META_CLASS} text-body dark:border-[#1f1f1f]`}
+                className={`${ANSWER_META_CLASS} text-body`}
               >
                 <span className="block font-semibold text-ink">
                   {limit.label}
@@ -127,7 +130,7 @@ export function FollowUpSuggestions({
           key={suggestion}
           type="button"
           onClick={() => onAsk(suggestion)}
-          className={`break-words rounded-full border border-hairline px-3 py-1.5 text-left ${ANSWER_META_CLASS} text-body transition-colors hover:border-hairline-strong hover:bg-subtle hover:text-ink dark:border-[#1f1f1f]`}
+          className={`break-words rounded-full border border-hairline px-3 py-1.5 text-left ${ANSWER_META_CLASS} text-body transition-colors hover:border-hairline-strong hover:bg-subtle hover:text-ink`}
         >
           {suggestion}
         </button>

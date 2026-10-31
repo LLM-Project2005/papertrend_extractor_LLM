@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/Icons";
 import { buttonClass, chipClass, panelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
+import ActionNotice from "@/components/ui/Notice";
+import { useAnalysisRunActions } from "@/components/workspace/useAnalysisRunActions";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { isDatedYear } from "@/lib/dated-year";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
@@ -131,7 +133,7 @@ export function ContinueRow({ chat, paper }: { chat: WorkspaceThreadSummary | nu
     "group flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-hairline bg-surface px-4 py-3 shadow-raise transition-[border-color,background-color] duration-150 hover:border-hairline-strong hover:bg-subtle";
   return (
     <section aria-labelledby="home-continue">
-      <h2 id="home-continue" className="text-xs font-medium uppercase tracking-[0.06em] text-mute">
+      <h2 id="home-continue" className="text-sm font-medium text-mute">
         Continue where you left off
       </h2>
       <div className="mt-2.5 flex flex-col gap-2.5 sm:flex-row">
@@ -139,24 +141,30 @@ export function ContinueRow({ chat, paper }: { chat: WorkspaceThreadSummary | nu
           <Link href={`/workspace/chat?thread=${encodeURIComponent(chat.id)}`} className={itemClass}>
             <ChatIcon className="h-4 w-4 flex-none text-mute" />
             <span className="min-w-0 flex-1">
-              <span className="block text-xs text-mute">Your last chat{chat.updated_at ? ` · ${formatTimestamp(chat.updated_at)}` : ""}</span>
+              <span className="flex flex-wrap gap-x-3 text-xs text-mute">
+                <span>Your last chat</span>
+                {chat.updated_at ? <span>{formatTimestamp(chat.updated_at)}</span> : null}
+              </span>
               <span className="mt-0.5 block truncate text-sm font-medium text-ink" title={chat.title}>
                 {chat.title || "Untitled chat"}
               </span>
             </span>
-            <ArrowRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
+            <ChevronRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
           </Link>
         ) : null}
         {paper ? (
           <PaperLink paper={{ runId: paper.runId }} className={itemClass}>
             <PaperIcon className="h-4 w-4 flex-none text-mute" />
             <span className="min-w-0 flex-1">
-              <span className="block text-xs text-mute">Last paper you opened · {formatTimestamp(paper.openedAt)}</span>
+              <span className="flex flex-wrap gap-x-3 text-xs text-mute">
+                <span>Last paper you opened</span>
+                <span>{formatTimestamp(paper.openedAt)}</span>
+              </span>
               <span className="mt-0.5 block truncate text-sm font-medium text-ink" title={paper.title}>
                 {paper.title}
               </span>
             </span>
-            <ArrowRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
+            <ChevronRightIcon className="h-4 w-4 flex-none text-mute transition-transform duration-150 group-hover:translate-x-0.5" />
           </PaperLink>
         ) : null}
       </div>
@@ -290,9 +298,9 @@ function RecentPaperRow({ run }: { run: IngestionRunRow }) {
           <span className="block truncate text-sm font-medium text-ink" title={runTitleOf(run)}>
             {runTitleOf(run)}
           </span>
-          <span className="mt-0.5 block truncate text-xs text-mute">
-            <span className={run.status === "failed" ? "text-red-700 dark:text-red-300" : ""}>{detail}</span>
-            {time ? <span> · {time}</span> : null}
+          <span className="mt-0.5 flex min-w-0 gap-x-3 text-xs text-mute">
+            <span className={`truncate ${run.status === "failed" ? "text-red-700 dark:text-red-300" : ""}`}>{detail}</span>
+            {time ? <span className="flex-none">{time}</span> : null}
           </span>
         </span>
         {run.status !== "succeeded" ? (
@@ -358,7 +366,6 @@ function GettingStarted({ onAdd }: { onAdd: () => void }) {
         </button>
         <Link href="/docs/getting-started" className={buttonClass("ghost", "lg")}>
           Read the guide
-          <ArrowRightIcon className="h-4 w-4" />
         </Link>
       </div>
     </section>
@@ -374,7 +381,6 @@ export default function WorkspaceHomeClient() {
     analysisSession,
     startAnalysisSession,
     setAnalysisMinimized,
-    removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
   useTabTitleRepository(currentProject?.name);
@@ -417,6 +423,8 @@ export default function WorkspaceHomeClient() {
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  // Try again on a failed load of the recent papers reads them afresh.
+  const [libraryAttempt, setLibraryAttempt] = useState(0);
   const [question, setQuestion] = useState("");
 
   const summary = useMemo(() => {
@@ -548,7 +556,8 @@ export default function WorkspaceHomeClient() {
     Boolean(analysisSession?.runIds.length) && !analysisSession?.minimized;
   const statsLoading = loading && !data;
   const isEmpty =
-    !statsLoading && !libraryLoading && summary.paperCount === 0 && workspaceRuns.length === 0;
+    // Not under a load error: the papers may be there and just not read yet.
+    !statsLoading && !libraryLoading && !libraryError && summary.paperCount === 0 && workspaceRuns.length === 0;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -614,7 +623,7 @@ export default function WorkspaceHomeClient() {
     void loadLibraryRuns();
 
     return () => controller.abort();
-  }, [currentProject?.id, session?.access_token]);
+  }, [currentProject?.id, libraryAttempt, session?.access_token]);
 
   function handleAnalyzeCreated(
     createdRuns: IngestionRunRow[],
@@ -636,69 +645,12 @@ export default function WorkspaceHomeClient() {
     void refreshFolders();
   }
 
-  async function handleCancelRun(runId: string) {
-    try {
-      const canceledRuns = await cancelRuns([runId]);
-      if (canceledRuns.length > 0) {
-        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
-      }
-    } catch (error) {
-      console.error("[workspace.home] failed to cancel run", {
-        runId,
-        error: error instanceof Error ? error.message : "unknown_error",
-      });
-    }
-  }
-
-  async function handleCancelAllRuns() {
-    try {
-      const canceledRuns = await cancelAllActiveRuns({
-        folderJobId: analysisSession?.folderJobId ?? undefined,
-        runIds: analysisSession?.runIds,
-      });
-      if (canceledRuns.length > 0) {
-        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
-      }
-    } catch (error) {
-      console.error("[workspace.home] failed to cancel all runs", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: error instanceof Error ? error.message : "unknown_error",
-      });
-    }
-  }
-
-  async function handleRetryQueue() {
-    try {
-      await retryActiveProcessing(analysisSession?.folderJobId ?? undefined);
-      await refresh();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to retry processing.";
-      console.error("[workspace.home] failed to retry processing", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: message,
-      });
-      if (typeof window !== "undefined") {
-        window.alert(message);
-      }
-    }
-  }
-
-  async function handleStartProcessing() {
-    try {
-      await startQueuedProcessing(analysisSession?.folderJobId ?? undefined);
-      await refresh();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to start queued processing.";
-      console.error("[workspace.home] failed to start queued processing", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: message,
-      });
-      if (typeof window !== "undefined") {
-        window.alert(message);
-      }
-    }
-  }
+  // The same handlers as the tray in the shell: a failure shows beside the
+  // card, with Try again, instead of in the console or an alert() (UI audit #7).
+  const runActions = useAnalysisRunActions(
+    { cancelRuns, cancelAllActiveRuns, retryActiveProcessing, startQueuedProcessing, refresh },
+    "workspace.home"
+  );
 
   function handleAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -710,7 +662,8 @@ export default function WorkspaceHomeClient() {
   const plural = (count: number, word: string) => `${word}${count === 1 ? "" : "s"}`;
 
   return (
-    <div className="mx-auto max-w-[1180px] space-y-8 pb-16 pt-2 sm:pt-4">
+    // One container for every workspace page (UI audit #26).
+    <div className="mx-auto w-full max-w-[1500px] space-y-8 pb-16 pt-2 sm:pt-4">
       <header className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 max-w-3xl">
           <h1 className="truncate text-3xl font-semibold tracking-tight text-ink sm:text-[2.5rem] sm:leading-[1.1]">
@@ -746,6 +699,7 @@ export default function WorkspaceHomeClient() {
         </div>
       </header>
 
+      {hasLiveAnalysisSession ? runActions.notice : null}
       {hasLiveAnalysisSession ? (
         <AnalysisStatusCard
           runs={activeRuns}
@@ -753,20 +707,17 @@ export default function WorkspaceHomeClient() {
           loading={loading && activeRuns.length === 0}
           onMinimize={() => setAnalysisMinimized(true)}
           onClear={clearAnalysisSession}
-          onCancelRun={handleCancelRun}
-          onCancelAll={handleCancelAllRuns}
-          onRetryQueue={handleRetryQueue}
-          onStartProcessing={handleStartProcessing}
+          onCancelRun={runActions.onCancelRun}
+          onCancelAll={runActions.onCancelAll}
+          onRetryQueue={runActions.onRetryQueue}
+          onStartProcessing={runActions.onStartProcessing}
         />
       ) : null}
 
       {liveDataError ? (
-        <Notice tone="danger">
-          This repository&apos;s results could not be loaded just now ({liveDataError}).{" "}
-          <button type="button" onClick={() => void refreshDashboardData()} className="font-medium underline underline-offset-2">
-            Try again
-          </button>
-        </Notice>
+        <ActionNotice tone="error" actionLabel="Try again" onAction={() => void refreshDashboardData()}>
+          This repository&apos;s results could not be loaded just now ({liveDataError}).
+        </ActionNotice>
       ) : null}
 
       {isPreviewMode ? (
@@ -777,7 +728,7 @@ export default function WorkspaceHomeClient() {
 
       {data?.diagnostics?.recoveredFromLegacyScope ? (
         <Notice tone="info">
-          Showing recovered historical analyses because this repository has older canonical rows available.
+          Some of these results come from an earlier analysis of this repository&apos;s papers.
         </Notice>
       ) : null}
 
@@ -792,7 +743,6 @@ export default function WorkspaceHomeClient() {
             </p>
             <Link href="/workspace/library" className={buttonClass("secondary", "sm", "flex-none")}>
               Review in Library
-              <ArrowRightIcon className="h-3.5 w-3.5" />
             </Link>
           </div>
         </Notice>
@@ -812,7 +762,9 @@ export default function WorkspaceHomeClient() {
             </div>
             <form
               onSubmit={handleAsk}
-              className="mt-4 flex items-center gap-2 rounded-xl border border-hairline bg-canvas p-1.5 pl-3.5 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15"
+              // The field's edge and focus, as fieldClass draws them: the hairline it
+              // rested on was about 1.2:1 (UI audit C3). The ring shows at once.
+              className="mt-4 flex items-center gap-2 rounded-xl border border-field bg-surface p-1.5 pl-3.5 shadow-raise transition-[border-color] duration-150 hover:border-ink/60 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15"
             >
               <SparkIcon className="h-4 w-4 flex-none text-mute" />
               <label htmlFor="home-question" className="sr-only">
@@ -822,8 +774,11 @@ export default function WorkspaceHomeClient() {
                 id="home-question"
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                placeholder="What do these papers find about...?"
+                // Short enough to show whole in the field on a 390px phone.
+                placeholder="What do they say about…?"
                 autoComplete="off"
+                // The form's ring above is the focus mark; the input's own
+                // outline would draw a second box inside it.
                 className="min-w-0 flex-1 bg-transparent py-2 text-base text-ink outline-none placeholder:text-mute focus-visible:outline-none"
               />
               <button
@@ -831,8 +786,10 @@ export default function WorkspaceHomeClient() {
                 disabled={!question.trim()}
                 className={buttonClass("primary", "md", "flex-none")}
               >
+                {/* The word on a wide screen; on a phone the arrow alone is the
+                    control, named for a screen reader. */}
                 <span className="hidden sm:inline">Ask</span>
-                <ArrowRightIcon className="h-4 w-4" />
+                <ArrowRightIcon className="h-4 w-4 sm:hidden" aria-hidden />
                 <span className="sr-only sm:hidden">Ask</span>
               </button>
             </form>
@@ -867,8 +824,7 @@ export default function WorkspaceHomeClient() {
                   href="/workspace/dashboard"
                   className="inline-flex items-center gap-1 text-[13px] font-medium text-body transition-colors hover:text-ink"
                 >
-                  Dashboard
-                  <ArrowRightIcon className="h-3.5 w-3.5" />
+                  Open dashboard
                 </Link>
               </div>
               <div className="mt-5 grid grid-cols-1 gap-8 md:grid-cols-2">
@@ -898,8 +854,7 @@ export default function WorkspaceHomeClient() {
                   href="/workspace/library"
                   className="inline-flex items-center gap-1 text-[13px] font-medium text-body transition-colors hover:text-ink"
                 >
-                  Library
-                  <ArrowRightIcon className="h-3.5 w-3.5" />
+                  Open library
                 </Link>
               </div>
               <div className="mt-3">
@@ -916,9 +871,9 @@ export default function WorkspaceHomeClient() {
                     ))}
                   </ul>
                 ) : libraryError ? (
-                  <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-200">
+                  <ActionNotice tone="error" actionLabel="Try again" onAction={() => setLibraryAttempt((attempt) => attempt + 1)}>
                     {libraryError}
-                  </p>
+                  </ActionNotice>
                 ) : recentRuns.length > 0 ? (
                   <ul data-paper-list="">
                     {recentRuns.map((run) => (

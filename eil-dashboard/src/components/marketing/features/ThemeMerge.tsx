@@ -105,7 +105,7 @@ export default function ThemeMerge() {
                 >
                   <p className="text-[15px] font-medium text-ink">{theme.theme}</p>
                   <p className="mt-0.5 text-[12.5px] text-mute">
-                    {theme.papers} papers{theme.method ? " · a method, kept apart" : ""}
+                    {theme.papers} papers{theme.method ? ", a method, kept apart" : ""}
                   </p>
                   <ul className="mt-4 flex flex-col items-start gap-2">{theme.spellings.map(chip)}</ul>
                 </motion.section>

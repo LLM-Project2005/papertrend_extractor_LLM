@@ -322,7 +322,8 @@ test("the map offers the picture, and over the map the wheel zooms instead of sc
   const map = read("src/components/workspace/RepositorySemanticMap.tsx");
   assert.match(map, /await downloadSemanticMapPng\(/);
   assert.match(map, /const live = layoutMode === "force" \? positionsRef\.current\?\.\(\) \?\? \{\} : \{\};/, "the free graph's positions as they are now");
-  assert.match(map, /Scroll to zoom · drag to move/);
+  // A comma, not a middle dot, joins the two hints (UI audit #15, 2026-10-31).
+  assert.match(map, /Scroll to zoom, drag to move/);
   const graph = read("src/components/workspace/ForceDirectedSemanticGraph.tsx");
   assert.match(graph, /event\.preventDefault\(\);\n\s+const focus = graphPoint\(event\.clientX, event\.clientY\);/);
   assert.doesNotMatch(graph, /Drag nodes \/ drag canvas \/ scroll to zoom/);
@@ -400,7 +401,7 @@ test("every passage is marked in the scan's text, one in focus, with the same pa
   assert.match(html, /1 passage not found in the text/);
   assert.match(html, />Page 7</);
   const css = read("src/app/globals.css");
-  assert.match(css, /\.dark \.text-evidence-mark \{\n\s+background: rgb\(250 204 21 \/ 0\.32\);/, "no multiply blend, so the mark shows on the dark page");
+  assert.match(css, /\.dark \.text-evidence-mark \{\n\s+background: rgb\(var\(--highlight\) \/ 0\.32\);/, "no multiply blend, so the mark shows on the dark page");
 });
 
 test("the paper window shows a scan's evidence in its text, and the keyword button says so", async () => {

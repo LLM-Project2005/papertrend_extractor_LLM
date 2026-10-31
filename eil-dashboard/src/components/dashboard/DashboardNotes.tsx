@@ -35,7 +35,7 @@ export function CategoriesOffNotice({ compact = false }: { compact?: boolean }) 
       </p>
       <Link
         href="/workspace/settings?section=analysis"
-        className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-hairline bg-surface px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]"
+        className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-hairline bg-surface px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink"
       >
         Choose research areas in Settings
       </Link>

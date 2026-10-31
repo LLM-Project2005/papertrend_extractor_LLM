@@ -44,7 +44,7 @@ export default function MarkdownActions({
 
   const buttonClass = compact
     ? "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70"
-    : "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]";
+    : "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink";
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={label}>

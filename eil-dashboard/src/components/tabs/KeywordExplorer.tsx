@@ -17,6 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import { Takeaway } from "@/components/dashboard/DashboardNotes";
+import { fieldClass } from "@/components/ui/controls";
 import { NEUTRAL_MARK } from "@/lib/chart-palette";
 import { keywordPaperCounts, listOf, plural, subjectRows } from "@/lib/dashboard-analytics";
 import type { CorpusTopicFamily, TrendRow } from "@/types/database";
@@ -194,7 +195,7 @@ export default function KeywordExplorer({
             placeholder="Search a concept, e.g. intelligibility / comprehensibility…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded-xl border border-hairline-strong bg-surface px-4 py-3 text-base text-ink transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-ink/30 focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
+            className={`${fieldClass} h-11`}
           />
         </div>
       </section>
@@ -220,10 +221,7 @@ export default function KeywordExplorer({
               <section className="app-surface px-5 py-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-mute">
-                      Concept
-                    </p>
-                    <h3 className="mt-2 text-2xl font-semibold text-ink">
+                    <h3 className="text-2xl font-semibold text-ink">
                       {conceptResult.canonicalConcept || query}
                     </h3>
                   </div>
@@ -251,7 +249,7 @@ export default function KeywordExplorer({
 
                 {conceptResult.notFound && conceptResult.suggestedConcepts.length > 0 ? (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <p className="text-xs font-medium text-mute">
                       Nearby grounded concepts
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -260,7 +258,7 @@ export default function KeywordExplorer({
                           key={term}
                           type="button"
                           onClick={() => setQuery(term)}
-                          className="rounded-full border border-hairline bg-surface px-3 py-1.5 text-xs text-body transition-colors hover:border-slate-300 dark:hover:border-[#3a3a3a]"
+                          className="rounded-full border border-hairline bg-surface px-3 py-1.5 text-xs text-body transition-colors hover:border-hairline-strong"
                         >
                           {term}
                         </button>
@@ -279,14 +277,15 @@ export default function KeywordExplorer({
                   }`}
                 >
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <p className="text-xs font-medium text-mute">
                       First appearance
                     </p>
                     <h4 className="mt-3 text-lg font-semibold text-ink">
                       {conceptResult.firstAppearance.title}
                     </h4>
-                    <p className="mt-2 text-sm text-mute">
-                      {conceptResult.firstAppearance.year} • {conceptResult.firstAppearance.section}
+                    <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-mute">
+                      <span>{conceptResult.firstAppearance.year}</span>
+                      <span>{conceptResult.firstAppearance.section}</span>
                     </p>
                     <p className="mt-3 text-sm leading-6 text-body">
                       {conceptResult.firstAppearance.snippet}
@@ -311,7 +310,7 @@ export default function KeywordExplorer({
 
                   {conceptResult.objectiveVerbs.length > 0 ? (
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <p className="text-xs font-medium text-mute">
                       Objective verbs
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -335,7 +334,7 @@ export default function KeywordExplorer({
 
                   {conceptResult.contributionTypes.length > 0 ? (
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <p className="text-xs font-medium text-mute">
                       Contribution groups
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -471,8 +470,9 @@ export default function KeywordExplorer({
                           key={`${item.paperId}-${index}`}
                           className="rounded-xl border border-hairline bg-canvas px-4 py-4"
                         >
-                          <p className="text-xs font-semibold uppercase tracking-normal text-mute">
-                            {item.year} • {item.section}
+                          <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium text-mute">
+                            <span>{item.year}</span>
+                            <span>{item.section}</span>
                           </p>
                           <p className="mt-2 text-sm font-medium text-ink">
                             {item.title}
@@ -585,7 +585,7 @@ export default function KeywordExplorer({
                     formatter={(value, _name, item) => {
                       const payload = (item as { payload?: { occurrences?: number; theme?: string } })?.payload;
                       return [
-                        `${value} papers (${payload?.occurrences ?? 0} mentions)${payload?.theme ? ` · ${payload.theme}` : ""}`,
+                        `${value} papers (${payload?.occurrences ?? 0} mentions)${payload?.theme ? `, ${payload.theme}` : ""}`,
                         "Used by",
                       ];
                     }}

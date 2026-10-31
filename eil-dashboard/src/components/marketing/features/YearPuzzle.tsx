@@ -61,9 +61,9 @@ export default function YearPuzzle() {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:gap-10">
-      <div className="rounded-[20px] border border-hairline bg-surface p-3 shadow-float">
-        <div className="rounded-[14px] border border-hairline px-5 py-7 text-center sm:px-10 sm:py-9">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-mute">A thesis submitted for the degree of Master of Arts</p>
+      <div className="rounded-xl border border-hairline bg-surface px-5 py-7 text-center shadow-float sm:px-10 sm:py-9">
+        <div>
+          <p className="text-xs text-mute">A thesis submitted for the degree of Master of Arts</p>
           <ul className="mt-6 space-y-2">
             {LINES.map((line) => {
               const active = picked === line.id;
@@ -78,7 +78,7 @@ export default function YearPuzzle() {
                       setTries((count) => count + 1);
                     }}
                     lang={line.thai ? "th" : undefined}
-                    className={`w-full rounded-xl px-3 py-2.5 text-[14px] leading-6 text-body transition-[background-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                    className={`w-full rounded-xl px-3 py-2.5 text-[14px] leading-6 text-body transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                       active
                         ? line.right
                           ? "bg-[rgb(250_204_21/0.18)] ring-1 ring-[rgb(234_179_8/0.55)]"
@@ -93,7 +93,10 @@ export default function YearPuzzle() {
               );
             })}
           </ul>
-          <p className="mt-6 text-[11px] uppercase tracking-[0.16em] text-mute">Faculty of Arts · sample cover</p>
+          <p className="mt-6 flex flex-wrap justify-center gap-x-3 text-xs text-mute">
+            <span>Faculty of Arts</span>
+            <span>Sample cover</span>
+          </p>
         </div>
       </div>
 

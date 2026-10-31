@@ -20,7 +20,7 @@ import { RefreshIcon } from "@/components/ui/Icons";
 const FIELDS = [
   { key: "title", label: "Title", value: DEMO_PAPER.title, from: "The title block" },
   { key: "year", label: "Year", value: "2022", from: "The journal issue line" },
-  { key: "keywords", label: "The paper’s own keywords", value: DEMO_PAPER.authorKeywords.join(" · "), from: "Its keyword list" },
+  { key: "keywords", label: "The paper’s own keywords", value: DEMO_PAPER.authorKeywords.join(", "), from: "Its keyword list" },
   { key: "method", label: "Method", value: "Household survey (412 households) and interviews", from: "The methods section" },
   { key: "finding", label: "A key finding", value: "38% less flood damage near restored mangroves", from: "The results section" },
   { key: "category", label: "Research area", value: DEMO_PAPER.category, from: "With a written reason" },

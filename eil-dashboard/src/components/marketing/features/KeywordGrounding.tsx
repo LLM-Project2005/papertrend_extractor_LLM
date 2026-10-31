@@ -54,8 +54,9 @@ export default function KeywordGrounding() {
         <p className="text-[14px] text-body">
           Proposed by the model: <span className="font-medium tabular-nums text-ink">{TERMS.length}</span>
         </p>
-        <p className="font-mono text-[12.5px] tabular-nums text-mute" aria-live="polite">
-          kept {kept} · dropped {dropped}
+        <p className="flex gap-x-3 font-mono text-[12.5px] tabular-nums text-mute" aria-live="polite">
+          <span>kept {kept}</span>
+          <span>dropped {dropped}</span>
         </p>
       </div>
       <ul className="mt-5 flex flex-wrap gap-2.5">
@@ -66,7 +67,7 @@ export default function KeywordGrounding() {
               <li key={item.term}>
                 <Hotspot
                   label={item.term}
-                  title={`“${item.term}”, ${item.count} times${item.kind === "method" ? " · a method" : ""}`}
+                  title={`“${item.term}”, ${item.count} times${item.kind === "method" ? ", a method" : ""}`}
                   side="top"
                   align={index % 4 === 3 ? "end" : "start"}
                   buttonClassName={(open) =>

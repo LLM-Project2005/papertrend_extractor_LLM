@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
-  ArrowRightIcon,
   BookOpenIcon,
   ChartIcon,
   ChatIcon,
@@ -16,6 +15,7 @@ import {
   LogoMarkIcon,
   MenuIcon,
   SettingsIcon,
+  StackIcon,
   TableIcon,
   UserIcon,
 } from "@/components/ui/Icons";
@@ -37,6 +37,8 @@ import WorkspaceTabTitle from "@/components/workspace/WorkspaceTabTitle";
 import KeyboardShortcuts, { openKeyboardShortcuts } from "@/components/workspace/KeyboardShortcuts";
 import { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
+import { buttonClass, selectedClass } from "@/components/ui/controls";
+import { useAnalysisRunActions } from "@/components/workspace/useAnalysisRunActions";
 
 type WorkspaceNavItem = {
   href: string;
@@ -88,7 +90,8 @@ const SEARCH_PAGE_ITEMS = [
     label: "Switch repository",
     description: "Switch between research repositories",
     href: "/workspaces",
-    icon: HomeIcon,
+    // Not Home's icon: the picker and Home are different places (UI audit C19).
+    icon: StackIcon,
     keywords: ["switch repository", "change repository", "repository picker", "switch project", "change project", "project picker", "projects", "start"],
     featured: true,
   },
@@ -190,14 +193,16 @@ function WorkspaceBreadcrumb({
           aria-label="All repositories"
           className="-my-2 flex flex-none items-center rounded px-2 py-2 font-medium text-ink transition-colors hover:text-ink"
         >
-          <ArrowRightIcon className="h-4 w-4 rotate-180 sm:hidden" />
+          {/* The repositories icon, as on the switcher's "All repositories": a
+              back arrow here read as "back a page" (UI audit C18). */}
+          <StackIcon className="h-4 w-4 sm:hidden" />
           <span className="hidden sm:inline">Repositories</span>
         </Link>
         {/* A separator glyph, not content: a screen reader should step over it
             rather than announce "greater than" between the two names. Marking it
             decorative is also what exempts it from the text-contrast rule it
             would otherwise fail at 1.48:1. */}
-        <span aria-hidden="true" className="hidden flex-none text-slate-300 dark:text-[#4f4f4f] sm:inline">
+        <span aria-hidden="true" className="hidden flex-none text-hairline-strong sm:inline">
           &gt;
         </span>
         {/* The name opens the list of repositories, to switch without going to /workspaces. */}
@@ -215,7 +220,9 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-hairline bg-surface transition-[width,box-shadow] duration-250 ease-out-expo hover:w-[216px] hover:shadow-float has-[:focus-visible]:w-[216px] has-[:focus-visible]:shadow-float lg:block">
+    // The rail opens at once rather than animating its width (UI audit #13: no
+    // width/margin/padding animation); its section names still fade in.
+    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-hairline bg-surface transition-shadow duration-150 ease-out hover:w-[216px] hover:shadow-float has-[:focus-visible]:w-[216px] has-[:focus-visible]:shadow-float lg:block">
       <div className="flex h-full flex-col py-2">
         <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
@@ -237,12 +244,12 @@ function DesktopSidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={() => onNavigate(item.href)}
-                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-[background-color,color,width,margin,padding] duration-200 ease-out-quart group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 group-has-[:focus-visible]:mx-0 group-has-[:focus-visible]:w-full group-has-[:focus-visible]:justify-start group-has-[:focus-visible]:px-3 ${
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-colors duration-150 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 group-has-[:focus-visible]:mx-0 group-has-[:focus-visible]:w-full group-has-[:focus-visible]:justify-start group-has-[:focus-visible]:px-3 ${
                         isActive
-                          // #111111 on the rail's #050505 surface is 1.08:1 - the
-                          // chip was there in the markup and absent to the eye.
-                          // #1f1f1f is the brand's own raised tone and reads.
-                          ? "bg-slate-900 text-white dark:bg-[#1f1f1f]"
+                          // "You are here", not the primary button's ink fill: a
+                          // soft fill and an ink bar, which carries it in dark mode
+                          // (UI audit #22).
+                          ? selectedClass
                           : "text-mute hover:bg-subtle hover:text-ink"
                       }`}
                       aria-current={isActive ? "page" : undefined}
@@ -322,10 +329,8 @@ function MobileSidebar({
                     aria-current={isActive ? "page" : undefined}
                     className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        // #030303 is darker than the drawer's own #050505 surface,
-                        // so the "you are here" chip was not merely invisible, it
-                        // was inverted. Matches the rail's active tone.
-                        ? "bg-slate-900 text-white dark:bg-[#1f1f1f]"
+                        // Matches the rail: the selected look, not the ink fill.
+                        ? selectedClass
                         : "text-body hover:bg-subtle hover:text-ink"
                     }`}
                   >
@@ -357,7 +362,6 @@ export default function WorkspaceShell({
     workspaceLoading,
     analysisSession,
     setAnalysisMinimized,
-    removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -419,15 +423,7 @@ export default function WorkspaceShell({
     pollIntervalMs: 3000,
     onUnauthorized: handleAnalysisUnauthorized,
   });
-  const {
-    runs,
-    folderJob,
-    cancelRuns,
-    cancelAllActiveRuns,
-    retryActiveProcessing,
-    startQueuedProcessing,
-    refresh,
-  } = analysisRuns;
+  const { runs, folderJob } = analysisRuns;
 
   useEffect(() => {
     persistWorkspaceRoute(pathname);
@@ -466,70 +462,9 @@ export default function WorkspaceShell({
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
     : [];
 
-  async function handleCancelRun(runId: string) {
-    try {
-      const canceledRuns = await cancelRuns([runId]);
-      if (canceledRuns.length > 0) {
-        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
-      }
-    } catch (error) {
-      console.error("[workspace] failed to cancel run", {
-        runId,
-        error: error instanceof Error ? error.message : "unknown_error",
-      });
-    }
-  }
-
-  async function handleCancelAllRuns() {
-    try {
-      const canceledRuns = await cancelAllActiveRuns({
-        folderJobId: analysisSession?.folderJobId ?? undefined,
-        runIds: analysisSession?.runIds,
-      });
-      if (canceledRuns.length > 0) {
-        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
-      }
-    } catch (error) {
-      console.error("[workspace] failed to cancel all runs", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: error instanceof Error ? error.message : "unknown_error",
-      });
-    }
-  }
-
-  async function handleRetryQueue() {
-    try {
-      await retryActiveProcessing(analysisSession?.folderJobId ?? undefined);
-      await refresh();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to retry processing.";
-      console.error("[workspace] failed to retry processing", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: message,
-      });
-      if (typeof window !== "undefined") {
-        window.alert(message);
-      }
-    }
-  }
-
-  async function handleStartProcessing() {
-    try {
-      await startQueuedProcessing(analysisSession?.folderJobId ?? undefined);
-      await refresh();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to start queued processing.";
-      console.error("[workspace] failed to start queued processing", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: message,
-      });
-      if (typeof window !== "undefined") {
-        window.alert(message);
-      }
-    }
-  }
-
+  // Cancel, retry and start: one set of handlers with Home, and a failure
+  // shows beside the tray instead of in the console or an alert() (UI audit #7).
+  const runActions = useAnalysisRunActions(analysisRuns, "workspace");
 
   return (
     <div className="min-h-[100dvh] bg-canvas text-ink">
@@ -635,9 +570,7 @@ export default function WorkspaceShell({
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-xl items-center justify-center">
               <div className="w-full text-center">
-                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-subtle text-body">
-                  <FolderIcon className="h-5 w-5" />
-                </span>
+                <FolderIcon className="mx-auto h-7 w-7 text-mute" />
                 <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">
                   Choose a repository
                 </h1>
@@ -645,12 +578,8 @@ export default function WorkspaceShell({
                   Each repository keeps its own papers, dashboard and chat. Pick one to open, or
                   create a new one.
                 </p>
-                <Link
-                  href="/workspaces"
-                  className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
-                >
+                <Link href="/workspaces" className={buttonClass("primary", "md", "mt-6")}>
                   Open repositories
-                  <ArrowRightIcon className="h-4 w-4" />
                 </Link>
               </div>
             </div>
@@ -667,7 +596,8 @@ export default function WorkspaceShell({
           // tray-dock: above the chat composer on the chat page, in the corner elsewhere.
           <div className="tray-dock pointer-events-none fixed inset-x-3 z-40 flex justify-end sm:inset-x-auto sm:right-5">
             {statusPanelOpen ? (
-              <div className="w-full sm:w-[400px]">
+              <div className="w-full space-y-2 sm:w-[400px]">
+                {runActions.notice ? <div className="pointer-events-auto shadow-float">{runActions.notice}</div> : null}
                 <AnalysisStatusCard
                   runs={activeRuns}
                   folderJob={folderJob}
@@ -681,10 +611,10 @@ export default function WorkspaceShell({
                   }}
                   onCollapse={() => setStatusPanelOpen(false)}
                   onClear={clearAnalysisSession}
-                  onCancelRun={handleCancelRun}
-                  onCancelAll={handleCancelAllRuns}
-                  onRetryQueue={handleRetryQueue}
-                  onStartProcessing={handleStartProcessing}
+                  onCancelRun={runActions.onCancelRun}
+                  onCancelAll={runActions.onCancelAll}
+                  onRetryQueue={runActions.onRetryQueue}
+                  onStartProcessing={runActions.onStartProcessing}
                 />
               </div>
             ) : (

@@ -19,6 +19,7 @@ import { insightCsv } from "@/lib/insights/csv";
 import { ChartIcon, CloseIcon, RefreshIcon, SearchIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
 import type { Insight, InsightNotice, InsightPlan, InsightReport } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
+import { buttonClass, fieldClass } from "@/components/ui/controls";
 
 interface InsightsResponse {
   report: InsightReport;
@@ -79,7 +80,7 @@ function InsightCard({
     <section className="app-surface px-4 py-5 sm:px-6" aria-labelledby={`insight-${insight.id}-${index}`} data-insight={insight.id}>
       {index >= 0 ? (
         <p className="text-xs font-medium text-mute">
-          {index + 1} · {title === insight.question ? FAMILY[insight.family] : insight.question}
+          {index + 1}. {title === insight.question ? FAMILY[insight.family] : insight.question}
         </p>
       ) : null}
       <h3 id={`insight-${insight.id}-${index}`} className={`${index >= 0 ? "mt-1.5 " : ""}text-base font-semibold leading-6 text-ink`}>
@@ -104,7 +105,7 @@ function InsightCard({
           <button
             type="button"
             onClick={() => onOpen(insight.paperIds, title)}
-            className="inline-flex min-h-9 items-center rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink dark:hover:border-[#3a3a3a]"
+            className="inline-flex min-h-9 items-center rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink"
           >
             The {insight.paperIds.length} paper{insight.paperIds.length === 1 ? "" : "s"} behind this
           </button>
@@ -437,7 +438,7 @@ export default function InsightsTab({
                 }`}
                 title={written ? "A model chose and worded these; every number was checked against the computed data." : "Computed from the papers; no model was used."}
               >
-                {written ? "Written by AI · numbers checked" : "Computed"}
+                {written ? "Written by AI, numbers checked" : "Computed"}
               </span>
               {written && result.cached ? <span>Saved {timeAgo(plan.generatedAt)}</span> : null}
               {loading ? <SpinnerIcon className="h-3.5 w-3.5" /> : null}
@@ -460,7 +461,7 @@ export default function InsightsTab({
                     type="button"
                     onClick={() => void generate()}
                     disabled={generating}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-canvas transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-[#e8e8e8]"
+                    className={buttonClass("primary", "md")}
                   >
                     {generating ? <SpinnerIcon className="h-4 w-4" /> : <ChartIcon className="h-4 w-4" />}
                     {generating ? "Generating…" : "Generate views"}
@@ -471,7 +472,7 @@ export default function InsightsTab({
                     type="button"
                     onClick={() => void load("write", written)}
                     disabled={writing || loading}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-hairline px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 dark:hover:border-[#3a3a3a]"
+                    className={buttonClass("secondary", "md")}
                   >
                     {writing ? <SpinnerIcon className="h-4 w-4" /> : <SparkIcon className="h-4 w-4" />}
                     {writing ? "Writing…" : written ? "Rewrite with AI" : "Write up with AI"}
@@ -513,13 +514,13 @@ export default function InsightsTab({
                 onChange={(event) => setQuestion(event.target.value)}
                 maxLength={300}
                 placeholder="Ask about these papers, e.g. which methods are used for which themes?"
-                className="h-10 w-full rounded-lg border border-hairline bg-surface pl-9 pr-3 text-sm text-ink placeholder:text-mute focus:border-slate-400 focus:outline-none dark:focus:border-[#4a4a4a]"
+                className={`${fieldClass} h-10 pl-9`}
               />
             </div>
             <button
               type="submit"
               disabled={asking || question.trim().length < 3}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:border-slate-300 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 dark:hover:border-[#3a3a3a]"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-hairline px-4 text-sm font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
             >
               {asking ? <SpinnerIcon className="h-4 w-4" /> : null}
               {asking ? "Working it out…" : "Ask"}
@@ -551,7 +552,7 @@ export default function InsightsTab({
                       type="button"
                       onClick={() => askSuggestion(suggestion)}
                       disabled={asking}
-                      className="inline-flex min-h-9 items-center rounded-full border border-hairline bg-surface px-3.5 text-left text-xs font-medium text-ink transition-colors hover:border-slate-400 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 dark:hover:border-[#4a4a4a]"
+                      className="inline-flex min-h-9 items-center rounded-full border border-hairline bg-surface px-3.5 text-left text-xs font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {suggestion.question}
                     </button>

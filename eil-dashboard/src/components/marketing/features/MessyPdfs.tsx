@@ -27,7 +27,7 @@ function Tile({
 }) {
   return (
     <div className={`flex flex-col overflow-hidden rounded-[22px] border border-hairline bg-surface ${className}`}>
-      <div className="relative flex-1 border-b border-hairline bg-canvas/60 p-5 dark:bg-black/30" aria-hidden="true">
+      <div className="relative flex-1 border-b border-hairline bg-canvas/60 p-5" aria-hidden="true">
         {children}
       </div>
       <div className="p-6">
@@ -84,7 +84,7 @@ export default function MessyPdfs() {
             </motion.p>
           ))}
         </div>
-        <span className="absolute right-4 top-4 rounded-full bg-surface px-2.5 py-1 font-mono text-[11px] text-mute shadow-raise">page 1 · image only</span>
+        <span className="absolute right-4 top-4 rounded-full bg-surface px-2.5 py-1 font-mono text-[11px] text-mute shadow-raise">page 1, image only</span>
       </Tile>
 
       <Tile
@@ -152,7 +152,7 @@ export default function MessyPdfs() {
         <div className="relative mx-auto h-[150px] max-w-[300px]">
           {/* The first copy, behind: only its file name shows. */}
           <div className="absolute inset-x-6 top-1 rounded-xl border border-hairline bg-surface px-3 pb-10 pt-2 shadow-raise">
-            <p className="font-mono text-[10.5px] text-mute">semarang-final.pdf</p>
+            <p className="font-mono text-[11px] text-mute">semarang-final.pdf</p>
           </div>
           {/* The second copy slides over it. */}
           <motion.div
@@ -162,7 +162,7 @@ export default function MessyPdfs() {
             className="absolute inset-x-3 top-7 rounded-xl border border-hairline-strong bg-surface p-3 shadow-float"
           >
             <p className="text-[12.5px] font-medium leading-snug text-ink">Mangroves and seawalls: household choices in Semarang</p>
-            <p className="mt-1 font-mono text-[10.5px] text-mute">semarang-final (1).pdf</p>
+            <p className="mt-1 font-mono text-[11px] text-mute">semarang-final (1).pdf</p>
           </motion.div>
           <motion.span
             initial={motionOK ? { opacity: 0, scale: 0.9 } : false}
@@ -170,7 +170,7 @@ export default function MessyPdfs() {
             transition={{ duration: 0.4, delay: motionOK ? 1.1 : 0, ease: EASE }}
             className="absolute bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[rgb(250_204_21/0.22)] px-3 py-1 text-[12px] font-medium text-ink ring-1 ring-[rgb(234_179_8/0.5)]"
           >
-            A second copy · flagged
+            A second copy, flagged
           </motion.span>
         </div>
       </Tile>

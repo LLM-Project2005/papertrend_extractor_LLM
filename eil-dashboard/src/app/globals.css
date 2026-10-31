@@ -428,50 +428,13 @@ html:focus-within {
 }
 
 /*
- * The How it works and Team pages. A dotted field behind the hero, a dot that
- * breathes beside a live label, pulses that travel a connector while its
- * figure plays, a ring of light, and entrances that replay each time a stage
- * is shown (an element leaving display:none restarts its animation). Each
- * moving part stops with its figure; the global reduced-motion rule leaves
- * every one at its end state.
+ * How it works: pulses that travel a connector while its figure plays, and
+ * entrances that replay each time a stage is shown (an element leaving
+ * display:none restarts its animation). Each moving part stops with its
+ * figure; the global reduced-motion rule leaves every one at its end state.
+ * (The dotted field, the breathing dot, the ring of light and the scan line
+ * went with the UI audit, 2026-10-31.)
  */
-.dot-field {
-  background-image: radial-gradient(rgb(var(--hairline-strong)) 1px, transparent 1px);
-  background-size: 22px 22px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
-}
-
-.live-dot {
-  position: relative;
-  display: inline-block;
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: rgb(var(--accent));
-}
-
-.live-dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: inherit;
-  animation: live-ping 1.8s var(--ease-out-expo) infinite;
-}
-
-@keyframes live-ping {
-  0% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(2.6);
-  }
-}
-
 .flow-line {
   position: relative;
 }
@@ -547,70 +510,6 @@ html:focus-within {
   }
 }
 
-@property --sweep {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-
-@property --arc {
-  syntax: "<number>";
-  initial-value: 0;
-  inherits: false;
-}
-
-/* A 1.5px frame: the element's padding shows a conic arc over a hairline. */
-.glow-ring {
-  --arc: 1;
-  padding: 1.5px;
-  background:
-    conic-gradient(
-      from var(--sweep),
-      transparent 0deg,
-      rgb(var(--accent) / var(--arc)) 60deg,
-      rgb(var(--evidence) / calc(var(--arc) * 0.8)) 110deg,
-      transparent 170deg,
-      transparent 360deg
-    ),
-    rgb(var(--hairline-strong));
-}
-
-.glow-ring[data-on="true"] {
-  animation: sweep-turn 3.2s linear infinite;
-}
-
-/* The team's cards: the arc goes round once, then fades to a hairline. */
-.ring-once {
-  --arc: 0;
-  animation: ring-once 2.8s var(--ease-out-expo) both;
-}
-
-.ring-once:hover {
-  --arc: 1;
-  animation: sweep-turn 3.2s linear infinite;
-}
-
-@keyframes sweep-turn {
-  to {
-    --sweep: 360deg;
-  }
-}
-
-@keyframes ring-once {
-  0% {
-    --sweep: 0deg;
-    --arc: 0;
-  }
-  15%,
-  70% {
-    --arc: 1;
-  }
-  100% {
-    --sweep: 360deg;
-    --arc: 0;
-  }
-}
-
 .mark-sweep {
   padding: 0 2px;
   border-radius: 3px;
@@ -674,20 +573,6 @@ html:focus-within {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-/* A reading line that passes over a page three times, then rests at its foot. */
-.scan-line {
-  animation: scan-line 1.6s ease-in-out 3 alternate both;
-}
-
-@keyframes scan-line {
-  from {
-    top: 0;
-  }
-  to {
-    top: calc(100% - 2px);
   }
 }
 

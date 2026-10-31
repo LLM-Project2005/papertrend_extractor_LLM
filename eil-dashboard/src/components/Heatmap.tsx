@@ -116,7 +116,7 @@ export default function Heatmap({
                       title={`${r} × ${c}: ${v}`}
                     >
                       <div
-                        className="flex h-8 w-full items-center justify-center border border-white/50 text-[10px] font-medium tabular-nums dark:border-black/50"
+                        className="flex h-8 w-full items-center justify-center border border-white/50 text-[11px] font-medium tabular-nums dark:border-black/50"
                         style={{
                           backgroundColor: interpolate(colorScale[0], colorScale[1], t),
                           color: textOn(interpolate(colorScale[0], colorScale[1], t)),

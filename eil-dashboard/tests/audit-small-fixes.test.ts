@@ -93,7 +93,8 @@ test("Home reloads its figures as each followed paper finishes, and on Try again
   // An effect and a click handler, which a static render never runs; the Try again button is rendered in audit-fixes-behaviour-workspace.
   const home = read("src/components/workspace/WorkspaceHomeClient.tsx");
   assert.match(home, /if \(finishedRunCount > finishedRunCountRef\.current\) void refreshDashboardData\(\)/);
-  assert.match(home, /onClick=\{\(\) => void refreshDashboardData\(\)\}[\s\S]{0,120}Try again/);
+  // 2026-10-31 UI audit #7: Try again is the shared Notice's action now, still calling refreshDashboardData.
+  assert.match(home, /actionLabel="Try again" onAction=\{\(\) => void refreshDashboardData\(\)\}/);
 });
 
 // SHELL-7: search shows what the Library shows.

@@ -128,7 +128,7 @@ function LifecyclesChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPa
             </p>
             <Sparkline series={row.series} max={max} />
             <p className="text-xs tabular-nums text-body sm:text-right">
-              {row.first === row.last ? row.first : `${row.first}–${row.last}`} · {row.papers} papers
+              {row.first === row.last ? row.first : `${row.first}–${row.last}`}, {row.papers} papers
             </p>
           </li>
         ))}

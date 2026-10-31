@@ -18,6 +18,7 @@ export default function HowItWorksPage() {
   return (
     <MarketingShell activeSlug="how-it-works">
       <HowItWorks />
+      {/* The page ends on its safeguards; this is the shared quiet way to start, not a closing box. */}
       <FeatureEnd
         title="Follow your own papers through it."
         copy="Make a repository, add a few PDFs, and open any topic or answer at the sentence it came from."

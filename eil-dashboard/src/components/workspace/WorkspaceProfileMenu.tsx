@@ -6,10 +6,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   BookOpenIcon,
-  HomeIcon,
   KeyboardIcon,
   LogoutIcon,
   SettingsIcon,
+  StackIcon,
   UserIcon,
 } from "@/components/ui/Icons";
 
@@ -151,7 +151,7 @@ export default function WorkspaceProfileMenu({
               <span>Account settings</span>
             </Link>
             <Link href="/workspaces" onClick={() => setOpen(false)} className={itemClass}>
-              <HomeIcon className="h-4 w-4" />
+              <StackIcon className="h-4 w-4" />
               <span>Repositories</span>
             </Link>
             <Link href="/docs/getting-started" onClick={() => setOpen(false)} className={itemClass}>
@@ -169,7 +169,7 @@ export default function WorkspaceProfileMenu({
               >
                 <KeyboardIcon className="h-4 w-4" />
                 <span>Keyboard shortcuts</span>
-                <kbd className="ml-auto rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-mute">?</kbd>
+                <kbd className="ml-auto rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-mute">?</kbd>
               </button>
             ) : null}
           </div>

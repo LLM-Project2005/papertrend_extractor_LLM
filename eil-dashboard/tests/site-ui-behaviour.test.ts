@@ -484,10 +484,11 @@ test("the rail marks the page you are on with a tone that shows in both themes",
   const current = [...html.matchAll(/<a\b[^>]*aria-current="page"[^>]*>/g)].map((match) => match[0]);
   assert.equal(current.length, 1, "one page is current");
   assert.equal(attribute(current[0], "href"), "/workspace/dashboard");
-  for (const name of ["bg-slate-900", "text-white", "dark:bg-[#1f1f1f]"]) assert.ok(classesOf(current[0]).includes(name), name);
+  // 2026-10-31 UI audit #22: the shared selected look (soft fill + ink bar, which carries it in dark mode), not the ink fill.
+  for (const name of ["bg-subtle", "text-ink", "shadow-[inset_3px_0_0_rgb(var(--ink))]"]) assert.ok(classesOf(current[0]).includes(name), name);
   const home = [...html.matchAll(/<a\b[^>]*href="\/workspace\/home"[^>]*>/g)].map((match) => classesOf(match[0]));
   assert.ok(home.length > 0);
-  for (const classes of home) assert.equal(classes.includes("bg-slate-900"), false, "a page you are not on is not marked");
+  for (const classes of home) assert.equal(classes.includes("shadow-[inset_3px_0_0_rgb(var(--ink))]"), false, "a page you are not on is not marked");
   assert.equal(classNames(html).some((name) => name === "dark:bg-[#111111]" || name === "dark:bg-[#030303]"), false);
 });
 
@@ -507,7 +508,8 @@ test("on a phone the header keeps a named way back to the repository picker, and
   const [, open, inner] = back[0];
   assert.equal(attribute(open, "href"), "/workspaces");
   assert.equal(classesOf(open).includes("hidden"), false, "the link itself is never hidden");
-  assert.match(inner, /<svg\b[^>]*class="[^"]*\brotate-180 sm:hidden\b/, "below sm it is a back arrow");
+  // 2026-10-31 UI audit C18: the repositories icon, not a back arrow ("back a page").
+  assert.match(inner, /<svg\b[^>]*class="[^"]*\bh-4 w-4 sm:hidden\b/, "below sm it is an icon");
   assert.match(inner, /<span class="hidden sm:inline">Repositories<\/span>/, "from sm it reads Repositories");
   const name = elementsLabelled(html, "span", PROJECT.name).find((span) => text(span.inner).trim() === PROJECT.name);
   assert.ok(name);

@@ -5,6 +5,8 @@ import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import PdfViewer, { prefetchPdf, type PdfMark } from "@/components/workspace/PdfViewer";
 import EvidenceText from "@/components/workspace/EvidenceText";
 import Modal from "@/components/ui/Modal";
+import Notice from "@/components/ui/Notice";
+import { buttonClass, chipClass, fieldClass, labelClass, wellClass } from "@/components/ui/controls";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
   ChartIcon,
@@ -45,6 +47,8 @@ type Props = {
   onOpenDashboard: () => void;
   /** Save a corrected title or year; kept when the paper is analysed again. */
   onCorrect?: (correction: { title?: string; year?: string }) => Promise<void>;
+  /** Load the paper again after an error; the error offers "Try again" when this is given. */
+  onRetry?: () => void;
   /** The tab to open on, from the address (?tab=evidence). */
   initialTab?: PaperExplorerTab;
   /** Told when the reader changes tab, so the address can follow. */
@@ -102,6 +106,11 @@ function cleanDisplayText(value: string | null | undefined): string {
     .replace(/\s+([,.;:!?])/g, "$1")
     .replace(/â€¢/g, " | ")
     .trim();
+}
+
+/** "research method" → "Research method": labels in sentence case, not capitals (UI audit #14). */
+function sentenceCase(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
 function splitIntoBullets(value: string | null | undefined, maxItems = 3): string[] {
@@ -435,13 +444,13 @@ function TopicsTab({
       })}
       {facets.length > 0 ? (
         <section aria-label="Also found" className="overflow-hidden rounded-xl border border-hairline bg-surface">
-          <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-normal text-mute">Also found</p>
+          <p className="px-4 pt-3 text-xs font-medium text-mute">Also found</p>
           <ul className="mt-2">
             {facets.map((facet, index) => (
               <li key={`${facet.facetType}-${facet.label}-${index}`} className="grid gap-x-4 gap-y-1 border-t border-hairline px-4 py-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-ink">{facet.label}</p>
-                  <p className="text-xs capitalize text-mute">{facet.facetType.replace(/_/g, " ")}</p>
+                  <p className="text-xs text-mute">{sentenceCase(facet.facetType.replace(/_/g, " "))}</p>
                 </div>
                 <p className="line-clamp-3 text-sm leading-6 text-body">{cleanDisplayText(facet.evidence) || "No evidence sentence was stored."}</p>
               </li>
@@ -468,15 +477,15 @@ function SectionSummaryCard({
   const fullText = cleanDisplayText(value);
 
   return (
-    <article className="rounded-xl border border-hairline bg-canvas px-5 py-5">
-      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+    <article className="rounded-xl border border-hairline bg-surface px-5 py-5">
+      <p className="text-xs font-medium text-mute">
         {label}
       </p>
       {bullets.length > 0 ? (
         <ul className="mt-3 space-y-2 text-sm leading-6 text-ink">
           {bullets.map((bullet, index) => (
             <li key={`${label}-${index}`} className="flex gap-2">
-              <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-[#8e8e8e]" />
+              <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-mute" />
               <span>{bullet}</span>
             </li>
           ))}
@@ -489,7 +498,7 @@ function SectionSummaryCard({
 
       {fullText ? (
         <details className="mt-4 border-t border-hairline pt-4">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-normal text-mute">
+          <summary className="cursor-pointer text-xs font-medium text-mute">
             View full extracted text
           </summary>
           <p className="mt-3 text-sm leading-7 text-body">
@@ -521,7 +530,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
   return (
     <section className="grid gap-4 rounded-lg border border-hairline bg-surface px-4 py-4 lg:grid-cols-2">
       <div>
-        <p className="text-xs font-semibold uppercase text-mute">Publication year</p>
+        <p className="text-xs font-medium text-mute">Publication year</p>
         <p className="mt-2 text-sm text-ink">
           {hasYear ? (
             <>
@@ -537,7 +546,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
         ) : null}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-mute">Research type</p>
+        <p className="text-xs font-medium text-mute">Research type</p>
         {extracted.typology ? (
           <>
             <p className="mt-2 text-sm font-semibold text-ink">
@@ -551,7 +560,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
         )}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-mute">The paper&rsquo;s own keywords</p>
+        <p className="text-xs font-medium text-mute">The paper&rsquo;s own keywords</p>
         {extracted.authorKeywords.length ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {extracted.authorKeywords.map((keyword) => (
@@ -565,7 +574,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
         )}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-mute">Methods found</p>
+        <p className="text-xs font-medium text-mute">Methods found</p>
         <p className="mt-2 text-sm text-ink">
           {extracted.methodTopics.length ? extracted.methodTopics.join(", ") : "None identified as separate topics."}
         </p>
@@ -578,7 +587,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
       ) : null}
       {extracted.analysisNotes.length ? (
         <div className="lg:col-span-2">
-          <p className="text-xs font-semibold uppercase text-mute">Analysis notes</p>
+          <p className="text-xs font-medium text-mute">Analysis notes</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5 text-body">
             {extracted.analysisNotes.map((note) => (
               <li key={note}>{note}</li>
@@ -634,6 +643,7 @@ export function PaperExplorerPanel({
   onRename,
   onOpenDashboard,
   onCorrect,
+  onRetry,
   initialTab,
   onTabChange,
   quote,
@@ -833,7 +843,7 @@ export function PaperExplorerPanel({
                     void saveCorrection();
                   }}
                 >
-                  <label className="text-xs text-mute">
+                  <label className={labelClass}>
                     Title
                     <input
                       autoFocus
@@ -842,10 +852,10 @@ export function PaperExplorerPanel({
                       value={titleDraft}
                       onChange={(event) => setTitleDraft(event.target.value)}
                       aria-describedby={correctionError ? "correction-error" : undefined}
-                      className="mt-1 w-full rounded-lg border border-hairline-strong bg-surface px-3 py-2 text-base text-ink sm:text-sm"
+                      className={`${fieldClass} mt-1 font-normal`}
                     />
                   </label>
-                  <label className="text-xs text-mute">
+                  <label className={labelClass}>
                     Year
                     <input
                       name="year"
@@ -856,27 +866,28 @@ export function PaperExplorerPanel({
                       placeholder="Unknown"
                       inputMode="numeric"
                       maxLength={4}
-                      className="mt-1 w-full rounded-lg border border-hairline-strong bg-surface px-3 py-2 text-base text-ink sm:text-sm"
+                      className={`${fieldClass} mt-1 font-normal`}
                     />
                   </label>
                   <div className="flex items-end gap-2">
+                    {/* Secondary: "Download report" is this window's one filled button (UI audit #22, #23). */}
                     <button
                       type="submit"
                       disabled={correctionSaving}
-                      className="rounded-lg bg-ink px-3 py-2 text-sm font-medium text-canvas disabled:opacity-60"
+                      className={buttonClass("secondary", "md")}
                     >
                       {correctionSaving ? "Saving…" : "Save"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setCorrecting(false)}
-                      className="rounded-lg border border-hairline px-3 py-2 text-sm text-body"
+                      className={buttonClass("ghost", "md")}
                     >
                       Cancel
                     </button>
                   </div>
                   <p className="text-xs text-mute sm:col-span-3">
-                    Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
+                    Your correction is kept when the paper is analyzed again. Leave the year empty if the paper has none.
                   </p>
                   {correctionError ? (
                     <p id="correction-error" role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-3">{correctionError}</p>
@@ -888,7 +899,7 @@ export function PaperExplorerPanel({
                 </h2>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body tabular-nums">
+                <span className={chipClass("neutral", "tabular-nums")}>
                   {detail?.year || "Year unavailable"}
                 </span>
                 {onCorrect && !correcting && run.status === "succeeded" ? (
@@ -896,13 +907,18 @@ export function PaperExplorerPanel({
                     type="button"
                     ref={correctButtonRef}
                     onClick={startCorrection}
-                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-body ring-1 ring-inset ring-hairline transition-colors hover:bg-subtle hover:text-ink"
+                    // A button, not a chip: the static chips beside it are flat pills (UI audit #6).
+                    className={buttonClass("secondary", "sm")}
                   >
                     <PencilSquareIcon className="h-3.5 w-3.5" />
                     <span>Correct title or year</span>
                   </button>
                 ) : null}
-                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                {/* Toned by status: it was green for a failed or queued paper too (UI audit #6). */}
+                <span
+                  data-run-status={run.status}
+                  className={chipClass(run.status === "succeeded" ? "success" : run.status === "failed" ? "danger" : "warning")}
+                >
                   {run.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(run)}
                 </span>
                 {/* A scan has no text to mark evidence on; saying so here
@@ -911,7 +927,7 @@ export function PaperExplorerPanel({
                   <span
                     data-text-kind=""
                     title={textChip === "Scanned PDF" ? "Its pages are pictures of text, read with OCR, so evidence can't be highlighted on them." : "Some pages are pictures of text, read with OCR, so evidence on them can't be highlighted."}
-                    className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body ring-1 ring-inset ring-hairline"
+                    className={chipClass("neutral")}
                   >
                     {textChip}
                   </span>
@@ -920,7 +936,7 @@ export function PaperExplorerPanel({
                     paper's own finished analysis; the old chip named pipeline
                     internals, which told a reader nothing. */}
                 {detail?.diagnostics?.dataSource !== "canonical" ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  <span className={chipClass("warning")}>
                     <ChartIcon className="h-3.5 w-3.5" />
                     <span>{detail?.available ? "Recovered from an earlier analysis" : "Not analyzed yet"}</span>
                   </span>
@@ -931,7 +947,7 @@ export function PaperExplorerPanel({
                   {trackBadges.map((track) => (
                     <span
                       key={track}
-                      className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body"
+                      className={chipClass("neutral")}
                     >
                       {track}
                     </span>
@@ -986,12 +1002,14 @@ export function PaperExplorerPanel({
           ) : null}
 
           {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
-              looked like two buttons with a third cut off. */}
+              looked like two buttons with a third cut off. Six equal buttons
+              gave no lead: the report is the one filled action, the PDF the
+              second, and the rest are quiet (UI audit #23). */}
           <div className="mt-5 flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={onDownloadReport}
-              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              className={buttonClass("primary", "sm", "flex-none")}
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download report</span>
@@ -999,7 +1017,7 @@ export function PaperExplorerPanel({
             <button
               type="button"
               onClick={onDownload}
-              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              className={buttonClass("secondary", "sm", "flex-none")}
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download PDF</span>
@@ -1007,7 +1025,7 @@ export function PaperExplorerPanel({
             <button
               type="button"
               onClick={onToggleFavorite}
-              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              className={buttonClass("ghost", "sm", "flex-none")}
             >
               <StarIcon className="h-4 w-4" weight={run.is_favorite ? "fill" : "regular"} />
               <span>{run.is_favorite ? "Favorited" : "Favorite"}</span>
@@ -1015,7 +1033,7 @@ export function PaperExplorerPanel({
             <button
               type="button"
               onClick={onRename}
-              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              className={buttonClass("ghost", "sm", "flex-none")}
             >
               <PencilSquareIcon className="h-4 w-4" />
               <span>Rename</span>
@@ -1023,7 +1041,7 @@ export function PaperExplorerPanel({
             <button
               type="button"
               onClick={onOpenDashboard}
-              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              className={buttonClass("ghost", "sm", "flex-none")}
             >
               <ChartIcon className="h-4 w-4" />
               Open dashboard charts
@@ -1031,7 +1049,7 @@ export function PaperExplorerPanel({
             <button
               type="button"
               onClick={() => void onOpenInNewTab()}
-              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
+              className={buttonClass("ghost", "sm", "flex-none")}
             >
               <ExternalLinkIcon className="h-4 w-4" />
               Open in new tab
@@ -1108,20 +1126,25 @@ export function PaperExplorerPanel({
             </div>
           ) : null}
 
+          {/* The error offers its way forward when the page that opened this
+              window can load the paper again (UI audit #7). */}
           {!loading && error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <Notice tone="error" actionLabel={onRetry ? "Try again" : undefined} onAction={onRetry}>
               {error}
-            </div>
+            </Notice>
           ) : null}
 
           {!loading && !error && !detail?.available ? (
-            <div className="rounded-xl border border-hairline bg-canvas px-5 py-8">
+            <div className={`${wellClass} px-5 py-8`}>
               <p className="text-base font-medium text-ink">
-                Pipeline analysis is not ready yet for this file.
+                {run.status === "failed"
+                  ? "The analysis of this paper did not finish."
+                  : run.status === "succeeded"
+                    ? "This paper's analysis is not available yet."
+                    : "This paper is still being analyzed."}
               </p>
               <p className="mt-2 text-sm leading-6 text-mute">
-                The PDF is still available, but the extracted node outputs have not been written
-                back for this run yet.
+                Its PDF is ready to read: open it in a new tab or download it with the buttons above.
               </p>
             </div>
           ) : null}
@@ -1130,8 +1153,8 @@ export function PaperExplorerPanel({
             <>
               {detail.warnings && detail.warnings.length > 0 ? (
                 <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
-                  <p className="text-xs font-semibold uppercase tracking-normal text-amber-800 dark:text-amber-200">
-                    Pipeline warnings
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                    Analysis warnings
                   </p>
                   <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-800 dark:text-amber-100">
                     {detail.warnings.map((warning, index) => (
@@ -1150,10 +1173,10 @@ export function PaperExplorerPanel({
                     <section className="rounded-lg border border-hairline bg-surface px-4 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase text-mute">{detail.classification.taxonomyName}</p>
+                          <p className="text-xs font-medium text-mute">{detail.classification.taxonomyName}</p>
                           <p className="mt-2 text-lg font-semibold text-ink">{detail.classification.primaryCategory}</p>
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${detail.classification.status === "current" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>
+                        <span className={chipClass(detail.classification.status === "current" ? "success" : "warning")}>
                           {detail.classification.status === "current" ? "Current profile" : "Needs reclassification"}
                         </span>
                       </div>
@@ -1164,8 +1187,8 @@ export function PaperExplorerPanel({
                   ) : null}
                   {detail.extracted ? <ExtractedDetails extracted={detail.extracted} year={detail.year} /> : null}
                   <section className="grid gap-4 lg:grid-cols-3">
-                    <article className="rounded-xl border border-hairline bg-canvas px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <article className="rounded-xl border border-hairline bg-surface px-4 py-4">
+                      <p className="text-xs font-medium text-mute">
                         Topical coverage
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1173,7 +1196,7 @@ export function PaperExplorerPanel({
                           detail.topics.slice(0, 8).map((topic) => (
                             <span
                               key={topic}
-                              className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-xs font-medium text-ink"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-subtle px-3 py-1.5 text-xs font-medium text-ink"
                             >
                               {themes ? <ThemeDot color={themes.get(topicKey(topic))?.color ?? OTHER_THEME_COLOR} /> : null}
                               {topic}
@@ -1187,16 +1210,16 @@ export function PaperExplorerPanel({
                       </div>
                     </article>
 
-                    <article className="rounded-xl border border-hairline bg-canvas px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <article className="rounded-xl border border-hairline bg-surface px-4 py-4">
+                      <p className="text-xs font-medium text-mute">
                         Grounded keywords
                       </p>
-                      <div className="mt-3 space-y-2">
+                      <div className="mt-2 divide-y divide-hairline">
                         {detail.keywords.length > 0 ? (
                           detail.keywords.slice(0, 5).map((keyword, index) => (
                             <div
                               key={`${keyword.keyword}-${index}`}
-                              className="flex items-start justify-between gap-3 rounded-lg border border-hairline bg-surface px-3 py-3"
+                              className="flex items-start justify-between gap-3 py-2.5"
                             >
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-ink">
@@ -1207,35 +1230,35 @@ export function PaperExplorerPanel({
                                   {keyword.topic || "Unclassified topic"}
                                 </p>
                               </div>
-                              <span className="rounded-full bg-subtle px-2.5 py-1 text-[11px] font-semibold text-body">
+                              <span className="rounded-full bg-subtle px-2 py-0.5 text-xs font-medium tabular-nums text-body">
                                 {keyword.frequency}
                               </span>
                             </div>
                           ))
                         ) : (
                           <p className="text-sm text-mute">
-                            No grounded keyword rows were available.
+                            No keywords with evidence were stored.
                           </p>
                         )}
                       </div>
                     </article>
 
-                    <article className="rounded-xl border border-hairline bg-canvas px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-mute">
+                    <article className="rounded-xl border border-hairline bg-surface px-4 py-4">
+                      <p className="text-xs font-medium text-mute">
                         Facet highlights
                       </p>
                       <div className="mt-3 space-y-3">
                         {facetGroups.length > 0 ? (
                           facetGroups.map((group) => (
                             <div key={group.label}>
-                              <p className="text-xs uppercase tracking-normal text-mute">
-                                {group.label}
+                              <p className="text-xs font-medium text-mute">
+                                {sentenceCase(group.label)}
                               </p>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {group.items.map((item) => (
                                   <span
                                     key={`${group.label}-${item}`}
-                                    className="rounded-full bg-surface px-3 py-1.5 text-xs font-medium text-ink"
+                                    className="rounded-full bg-subtle px-3 py-1.5 text-xs font-medium text-ink"
                                   >
                                     {item}
                                   </span>
@@ -1274,9 +1297,9 @@ export function PaperExplorerPanel({
                   {scanText ? (
                     <EvidenceText text={scanText} marks={evidenceMarks} focusMark={focusMark} heightClass="h-[62vh] lg:h-[68vh]" />
                   ) : previewError ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                    <Notice tone="error" actionLabel="Try again" onAction={() => setPreviewAttempt((attempt) => attempt + 1)}>
                       {previewError}
-                    </div>
+                    </Notice>
                   ) : (
                     <PdfViewer
                       cacheKey={run.id}
@@ -1298,28 +1321,18 @@ export function PaperExplorerPanel({
 
               {activeTab === "preview" ? (
                 <section className="space-y-4">
+                  {/* "Open in new tab" is in the window's header; it was offered twice (UI audit #23). */}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setPreviewAttempt((attempt) => attempt + 1)}
-                      className="rounded-lg border border-hairline px-3 py-2 text-sm font-medium text-ink"
+                      className={buttonClass("secondary", "sm")}
                     >
                       Refresh preview
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void onOpenInNewTab()}
-                      className="rounded-lg border border-hairline px-3 py-2 text-sm font-medium text-ink"
-                    >
-                      Open in new tab
-                    </button>
                   </div>
 
-                  {previewError ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-                      {previewError}
-                    </div>
-                  ) : null}
+                  {previewError ? <Notice tone="error">{previewError}</Notice> : null}
 
                   {!previewError ? (
                     <PdfViewer

@@ -21,11 +21,11 @@ import {
   ChatIcon,
   CloudIcon,
   FileIcon,
-  HomeIcon,
   PaperIcon,
   SearchIcon,
   SettingsIcon,
   SparkIcon,
+  StackIcon,
   UploadIcon,
   UserIcon,
 } from "@/components/ui/Icons";
@@ -310,8 +310,9 @@ export default function WorkspaceGlobalSearch({
     return () => controller.abort();
   }, [open, selectedProjectId, session?.access_token]);
 
+  // A repository wears the picker's icon, not Home's (UI audit C19).
   const projectIcon =
-    pageItems.find((item) => item.id === "project-overview")?.icon ?? HomeIcon;
+    pageItems.find((item) => item.id === "projects")?.icon ?? StackIcon;
 
   // The papers the search showed, in order: an opened one steps through them.
   const shownPapersRef = useRef<PaperTarget[]>([]);
@@ -497,7 +498,7 @@ export default function WorkspaceGlobalSearch({
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>
-        <kbd className="ml-auto hidden rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-mute xl:block">
+        <kbd className="ml-auto hidden rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-mute xl:block">
           /
         </kbd>
       </button>
@@ -527,7 +528,9 @@ export default function WorkspaceGlobalSearch({
                 onKeyDown={handleInputKeyDown}
                 placeholder="Search actions, papers, repositories, docs…"
                 aria-label="Search actions, papers, repositories, and documentation"
-                className="h-11 w-full rounded-xl border border-transparent bg-canvas py-2.5 pl-10 pr-4 text-base text-ink sm:text-sm outline-none transition-colors placeholder:text-mute focus:border-slate-300 dark:focus:border-[#3a3a3a]"
+                // The site's focus outline shows here; outline-none hid it, leaving a
+                // border change too faint to see (UI audit C2).
+                className="h-11 w-full rounded-xl border border-transparent bg-canvas py-2.5 pl-10 pr-4 text-base text-ink placeholder:text-mute sm:text-sm"
               />
             </label>
           </form>
@@ -539,7 +542,7 @@ export default function WorkspaceGlobalSearch({
             <div id={listboxId} role="listbox" aria-label="Search results" className="max-h-[min(460px,calc(100dvh-9rem))] overflow-y-auto p-2">
               {groupedResults.map((group) => (
                 <div key={group.category} role="group" aria-labelledby={`${listboxId}-${group.category}`} className="py-1">
-                  <p id={`${listboxId}-${group.category}`} className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-mute">
+                  <p id={`${listboxId}-${group.category}`} className="px-3 py-2 text-xs font-medium text-mute">
                     {group.category}
                   </p>
                   <div className="space-y-1">

@@ -12,9 +12,10 @@ import { displayClass, leadClass, secondaryPillClass, sectionTitleClass } from "
 
 /*
  * Paper analysis, told as reading (facts: graphs.py and nodes/*, checked
- * 2026-10-09). The page opens on one paper being read, then shows the steps
- * in time, then lets the reader try the hardest small judgement (a year), then
- * the keyword rule, the messy PDFs, the categories, and the real viewer.
+ * 2026-10-09). The page opens on the real viewer, then one paper being read,
+ * then shows the steps in time, then lets the reader try the hardest small
+ * judgement (a year), then the keyword rule, the messy PDFs, the categories,
+ * and what the viewer lets you do.
  */
 
 const INSIDE = [
@@ -29,35 +30,44 @@ const INSIDE = [
 export default function AnalysisFeature() {
   return (
     <>
-      {/* Hero: one paper, being read */}
-      <section className="relative isolate px-4 pt-28 sm:px-6 sm:pt-36">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[620px] bg-[radial-gradient(50%_45%_at_50%_0%,rgb(var(--ink)/0.06),transparent_72%)]"
-        />
-        <div className="mx-auto max-w-6xl">
-          <div className="mx-auto max-w-3xl text-center">
-            <div className="flex justify-center">
-              <Crumb label="Analysis" />
-            </div>
+      {/* Hero: the words beside the real viewer (2026-10-31 audit: the real capture leads, the drawing follows) */}
+      <section className="px-4 pt-28 sm:px-6 sm:pt-36">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-10">
+          <div className="lg:col-span-5">
+            <Crumb label="Analysis" />
             <h1 className={`mt-4 ${displayClass} text-[2.6rem] leading-[1.04] sm:text-6xl [text-wrap:balance]`}>
               Every paper, read the same careful way.
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-body">
+            <p className="mt-6 max-w-xl text-lg leading-8 text-body">
               Upload a PDF and Papertrend finds its title, year, methods, topics and research area, and keeps the sentence each one
               came from. Like a careful research assistant, with the notes to show for it.
             </p>
-            <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
               <MarketingCTA size="lg" />
               <Link href="/docs/analysis-pipeline" className={secondaryPillClass}>
                 How a paper is analysed
               </Link>
             </div>
           </div>
-          <div className="mt-16 pb-12 sm:mt-20">
+          <div className="lg:col-span-7">
+            <ProductShot
+              name="paper"
+              priority
+              sizes="(min-width: 1024px) 680px, 100vw"
+              alt="The paper viewer for a 2022 sample paper on mangroves and seawalls in Semarang: its research area and the reason for it, the line its year was read from, its own keywords, methods and topics."
+            />
+            <p className="mt-3 text-[13px] text-mute">The real paper viewer, with a sample paper from an invented collection.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* One paper, being read: a drawing of what the viewer's values come from */}
+      <section className="px-4 pt-24 sm:px-6 sm:pt-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="pb-12">
             <PaperReadingDemo />
           </div>
-          <p className="mt-4 text-center text-[13px] text-mute">A sample paper from an invented collection.</p>
+          <p className="mt-4 text-[13px] text-mute">An illustration: a sample paper from an invented collection, read value by value.</p>
         </div>
       </section>
 
@@ -130,7 +140,7 @@ export default function AnalysisFeature() {
       {/* Messy PDFs */}
       <section className="px-4 pb-28 sm:px-6 sm:pb-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className={`max-w-2xl ${sectionTitleClass}`}>Built for the PDFs you actually have.</h2>
+          <h2 className={`max-w-2xl ${sectionTitleClass}`}>When the PDF is not tidy.</h2>
           <p className={`mt-5 max-w-2xl ${leadClass}`}>Scanned, in Thai, three hundred pages long, or uploaded twice by mistake.</p>
           <div className="mt-12">
             <MessyPdfs />
@@ -164,12 +174,7 @@ export default function AnalysisFeature() {
               finding is one click from the page it came from.
             </p>
           </div>
-          <div className="reveal mt-12">
-            <ProductShot
-              name="paper"
-              alt="The paper viewer for a 2022 sample paper on mangroves and seawalls in Semarang: its research area and the reason for it, the line its year was read from, its own keywords, methods and topics."
-            />
-          </div>
+          {/* The viewer itself leads the page, at the top. */}
           <ul className="mt-12 grid grid-cols-1 gap-x-10 gap-y-6 text-[15px] leading-7 text-body sm:grid-cols-2 lg:grid-cols-4">
             <li>
               <span className="block font-medium text-ink">Correct it</span>

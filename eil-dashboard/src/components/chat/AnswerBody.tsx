@@ -32,6 +32,8 @@ import {
   ANSWER_MEASURE_CLASS,
   ANSWER_META_CLASS,
 } from "@/lib/answer-typography";
+import { paperYear, yearLabel } from "@/lib/paper-year";
+import { buttonClass } from "@/components/ui/controls";
 
 export interface AnswerCitation extends CitationPassageFields {
   paperId: number | string;
@@ -86,7 +88,7 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
     .filter((source): source is CitationSource => Boolean(source));
   if (referenced.length === 0) return null;
   const label = referenced
-    .map((source) => `${source.title}${source.year && source.year !== "Unknown" ? ` (${source.year})` : ""}`)
+    .map((source) => `${source.title}${paperYear(source.year) ? ` (${paperYear(source.year)})` : ""}`)
     .join("; ");
   const passages = new Map(
     referenced.map((source) => [source.paperId, isWebSource(source) ? null : passageForMarker(source, at)])
@@ -103,7 +105,7 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
           place();
           setPinned((current) => !current);
         }}
-        className="ml-0.5 cursor-pointer rounded align-super text-[0.68em] font-semibold text-sky-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200"
+        className="ml-0.5 cursor-pointer rounded align-super text-[11px] font-semibold text-sky-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200"
       >
         {numbers.join(",")}
       </button>
@@ -111,7 +113,7 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
         role={pinned ? "group" : "tooltip"}
         aria-label={pinned ? "Cited papers" : undefined}
         // A quote needs a wider card to read as prose; pinned, a long one scrolls.
-        className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-1/2 z-30 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-hairline bg-white p-3 text-left ${ANSWER_META_CLASS} text-ink shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] ${
+        className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-1/2 z-30 ${quoted ? "w-[min(22rem,85vw)]" : "w-72"} -translate-x-1/2 rounded-xl border border-hairline bg-surface p-3 text-left ${ANSWER_META_CLASS} text-ink shadow-float ${
           pinned ? "block max-h-[60vh] overflow-y-auto" : "pointer-events-none hidden group-focus-within:block group-hover:block"
         }`}
       >
@@ -120,10 +122,10 @@ export function CitationMarker({ numbers, sources, at }: { numbers: number[]; so
           const passage = passages.get(source.paperId) ?? null;
           const inPaper = passage ? passageTarget(source.href, passage) : null;
           return (
-          <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
+          <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-hairline [&+&]:pt-2">
             <span className="block font-semibold text-ink">{source.title}</span>
             <span className="block text-body">
-              {webPage ? `Web page · ${webHost(source.href)}` : source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
+              {webPage ? `Web page · ${webHost(source.href)}` : yearLabel(source.year)}
             </span>
             {passage ? <PassageQuote passage={passage} clamp={!pinned} /> : null}
             {pinned && webPage ? (
@@ -279,7 +281,7 @@ export function renderInlineMarkdown(
       nodes.push(
         <code
           key={`${keyPrefix}-code-${match.index}`}
-          className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.95em] text-ink dark:bg-white/10"
+          className="rounded bg-subtle px-1.5 py-0.5 font-mono text-[0.95em] text-ink"
         >
           {token.slice(1, -1)}
         </code>
@@ -474,7 +476,7 @@ export function renderRichMessage(
               key={`${keyPrefix}-codeblock-${blockIndex}`}
               className="overflow-hidden rounded-xl border border-hairline bg-subtle"
             >
-              <div className="flex items-center justify-between border-b border-hairline px-4 py-2 text-xs uppercase tracking-normal text-body">
+              <div className="flex items-center justify-between border-b border-hairline px-4 py-2 text-xs font-medium text-mute">
                 <span>{language || "Code"}</span>
               </div>
               <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-ink">
@@ -496,12 +498,12 @@ export function renderRichMessage(
                     className="overflow-x-auto rounded-xl border border-hairline bg-surface"
                   >
                     <table className="min-w-full border-collapse text-left text-sm text-ink">
-                      <thead className="bg-slate-100 dark:bg-white/5">
+                      <thead className="bg-subtle">
                         <tr>
                           {header.map((cell, cellIndex) => (
                             <th
                               key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
-                              className={`border-b border-hairline px-4 py-3 font-semibold ${ANSWER_CELL_CLASS} dark:border-[#1f1f1f]`}
+                              className={`border-b border-hairline px-4 py-3 font-semibold ${ANSWER_CELL_CLASS}`}
                             >
                               {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`, sources)}
                             </th>
@@ -536,7 +538,7 @@ export function renderRichMessage(
                   >
                     {bulletLines.map((line, lineIndex) => (
                       <li key={`${keyPrefix}-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-white/60" />
+                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-mute" />
                         <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`, sources)}</span>
                       </li>
                     ))}
@@ -568,7 +570,7 @@ export function renderRichMessage(
                 return (
                   <blockquote
                     key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
-                    className={`rounded-lg border border-hairline bg-canvas px-4 py-3 ${ANSWER_BODY_CLASS} text-ink dark:border-[#2a2a2a] dark:bg-[#0a0a0a]`}
+                    className={`rounded-lg border border-hairline bg-canvas px-4 py-3 ${ANSWER_BODY_CLASS} text-ink`}
                   >
                     <div className="space-y-2">
                       {quoteLines.map((line, lineIndex) => (
@@ -675,7 +677,7 @@ export function AssistantAnswer({
           type="button"
           onClick={() => setExpanded((previous) => !previous)}
           aria-expanded={expanded}
-          className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-3 py-1.5 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink"
+          className={buttonClass("secondary", "sm")}
         >
           {expanded
             ? "Show less"

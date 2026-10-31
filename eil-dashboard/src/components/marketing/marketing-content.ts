@@ -66,7 +66,8 @@ export const marketingFeatures: MarketingFeature[] = [
     title: "Ask your papers. Check every answer.",
     description:
       "Chat answers from the papers in your repository, in English or Thai, with a numbered source on every claim. Deep research writes a checked report; Chart mode counts.",
-    homeSummary: "Answers drawn from your papers, with a numbered source for every claim.",
+    // The hero already says "a source for every claim" (2026-10-31 audit: it was said about nine times).
+    homeSummary: "Ask your papers in English or Thai. Open a number in the answer and you are in the paper, at the sentence.",
     inside: "What happens after you press Enter, the models behind each step, and a chance to be the auditor.",
     shot: "chat",
     shotAlt:

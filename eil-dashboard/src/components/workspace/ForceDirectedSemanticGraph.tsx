@@ -390,7 +390,7 @@ export default function ForceDirectedSemanticGraph({
                 <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#707070"} stroke={selected ? "white" : colors[point.paperId] ?? "#707070"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
                 {showLabels ? (
                   <foreignObject x={-84} y={labelY} width={168} height={48} pointerEvents="none" overflow="visible">
-                    <div className="mx-auto w-fit max-w-[180px] rounded-md bg-white/92 px-2 py-1 text-center text-[10px] font-semibold leading-[14px] text-ink shadow-sm backdrop-blur-sm dark:bg-black/92">
+                    <div className="mx-auto w-fit max-w-[180px] rounded-md bg-surface/90 px-2 py-1 text-center text-[11px] font-semibold leading-[14px] text-ink shadow-raise backdrop-blur-sm">
                       {nodeLabel(point.title)}
                     </div>
                   </foreignObject>
@@ -401,7 +401,7 @@ export default function ForceDirectedSemanticGraph({
           })}
         </g>
       </svg>
-      <div className="absolute bottom-3 left-3 flex overflow-hidden rounded-md border border-hairline bg-white/95 shadow-sm dark:bg-[#080808]/95">
+      <div className="absolute bottom-3 left-3 flex overflow-hidden rounded-md border border-hairline bg-surface/95 shadow-raise">
         <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomAt(0.82)} className="flex h-9 w-9 items-center justify-center border-r border-hairline text-lg font-medium text-ink hover:bg-subtle">+</button>
         <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAt(1.2)} className="flex h-9 w-9 items-center justify-center border-r border-hairline text-lg font-medium text-ink hover:bg-subtle">-</button>
         <button type="button" title="Reset view" onClick={() => setViewBox(DEFAULT_VIEW)} className="h-9 px-3 text-xs font-semibold text-ink hover:bg-subtle">Fit</button>

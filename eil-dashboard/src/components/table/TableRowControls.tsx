@@ -288,8 +288,9 @@ export function LeftOutList({
                 <PaperLink paper={{ paperId: row.paperId }} className="line-clamp-2 text-sm font-medium leading-6 text-ink hover:underline">
                   {row.title}
                 </PaperLink>
-                <p className="text-[13px] leading-5 text-mute">
-                  {[row.year && row.year !== "Unknown" ? row.year : null, reason || "No reason given"].filter(Boolean).join(" · ")}
+                <p className="flex flex-wrap gap-x-3 text-[13px] leading-5 text-mute">
+                  {row.year && row.year !== "Unknown" ? <span>{row.year}</span> : null}
+                  <span>{reason || "No reason given"}</span>
                 </p>
                 {cell?.status === "found" && cell.quote ? (
                   <blockquote className="mt-1 line-clamp-3 border-l-2 border-hairline-strong pl-3 text-[13px] leading-5 text-body">{cell.quote}</blockquote>

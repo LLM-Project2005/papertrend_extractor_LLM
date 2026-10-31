@@ -24,6 +24,7 @@ import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import { categoricalColor } from "@/lib/chart-palette";
 import { chatChartCsv } from "@/lib/chart-csv";
 import PaperLink from "@/components/workspace/PaperLink";
+import { yearLabel } from "@/lib/paper-year";
 import type { ChatChartPayload } from "@/components/chat/ChatClient";
 
 /** Splits a label into at most `maxLines` lines of `chars` characters; a cut label ends in an ellipsis. */
@@ -76,7 +77,7 @@ function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sour
             <p className="text-ink">
               <span className="font-semibold">{source.value}</span>
               {source.note ? <span className="text-body"> ({source.note})</span> : null}
-              <span className="text-mute"> · </span>
+              <span className="text-mute"> from </span>
               {/* With its sentence, the paper opens on its PDF with that sentence marked, as a citation does. */}
               <PaperLink
                 paper={source.quote ? { paperId: source.paperId, tab: "preview", quote: source.quote } : { paperId: source.paperId }}
@@ -84,10 +85,11 @@ function ChartSources({ sources }: { sources: NonNullable<ChatChartPayload["sour
               >
                 {source.title}
               </PaperLink>
-              {source.year && source.year !== "Unknown" ? <span className="text-mute"> · {source.year}</span> : null}
+              {/* A missing year is said, not hidden, in the site's one wording (UI audit #12). */}
+              <span className="text-mute">, {yearLabel(source.year)}</span>
             </p>
             {source.quote ? (
-              <blockquote className="mt-1 border-l-2 border-slate-300 pl-3 text-body dark:border-[#3a3a3a]">
+              <blockquote className="mt-1 border-l-2 border-hairline-strong pl-3 text-body">
                 {source.quote}
               </blockquote>
             ) : null}
@@ -179,7 +181,7 @@ function Plot({ chart }: { chart: ChatChartPayload }) {
 
 export default function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-sm" data-chat-chart={chart.metric}>
+    <div className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-raise" data-chat-chart={chart.metric}>
       <div className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-body">Chart · {chart.scopeLabel}</p>

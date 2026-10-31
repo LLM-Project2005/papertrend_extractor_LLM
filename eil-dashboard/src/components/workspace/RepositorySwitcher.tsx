@@ -16,7 +16,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { menuItemClass, menuLabelClass } from "@/components/ui/controls";
-import { CheckIcon, ChevronDownIcon, HomeIcon, SearchIcon } from "@/components/ui/Icons";
+import { CheckIcon, ChevronDownIcon, SearchIcon, StackIcon } from "@/components/ui/Icons";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { WorkspaceOrganizationRow, WorkspaceProjectRow } from "@/types/database";
 
@@ -154,7 +154,7 @@ export function RepositoryMenu({ projects, organizations = [], currentId, curren
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-label={currentName ? `Repository: ${currentName}. Switch repository` : "Select a repository"}
-        className="-my-1 flex min-w-0 max-w-[13rem] items-center gap-1 rounded-md px-1.5 py-1 text-ink transition-colors hover:bg-subtle hover:text-ink sm:max-w-[22rem] dark:hover:text-white"
+        className="-my-1 flex min-w-0 max-w-[13rem] items-center gap-1 rounded-md px-1.5 py-1 text-ink transition-colors hover:bg-subtle hover:text-ink sm:max-w-[22rem]"
       >
         <span className="min-w-0 truncate font-medium">{currentName || "Select repository"}</span>
         <ChevronDownIcon className={`h-3.5 w-3.5 flex-none text-mute transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
@@ -178,7 +178,9 @@ export function RepositoryMenu({ projects, organizations = [], currentId, curren
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
                 placeholder="Find a repository"
-                className="h-9 w-full rounded-lg border border-hairline bg-canvas pl-8 pr-2.5 text-base text-ink placeholder:text-mute focus:border-hairline-strong focus:outline-none sm:text-sm"
+                // The field border, and the site's focus outline: outline-none
+                // left a hairline change no one could see (UI audit C2).
+                className="h-9 w-full rounded-lg border border-field bg-canvas pl-8 pr-2.5 text-base text-ink placeholder:text-mute sm:text-sm"
               />
             </label>
           ) : null}
@@ -221,7 +223,8 @@ export function RepositoryMenu({ projects, organizations = [], currentId, curren
               }}
               className={menuItemClass()}
             >
-              <HomeIcon className="h-4 w-4" />
+              {/* Not Home's icon: this is the repository picker (UI audit C19). */}
+              <StackIcon className="h-4 w-4" />
               <span>All repositories</span>
             </Link>
           </div>

@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import ThinkingOrb from "@/components/ui/ThinkingOrb";
 import { ChevronDownIcon } from "@/components/ui/Icons";
+import { buttonClass } from "@/components/ui/controls";
 import type { DeepResearchSessionRecord, DeepResearchStepRecord } from "@/types/research";
 
 const RUNNING: ReadonlySet<DeepResearchSessionRecord["status"]> = new Set(["planned", "queued", "waiting_on_analysis", "processing"]);
@@ -61,10 +62,10 @@ export function ThinkingSteps({ steps }: { steps: DeepResearchStepRecord[] }) {
                 done
                   ? "bg-ink"
                   : working
-                    ? "animate-pulse bg-slate-500 dark:bg-[#a3a3a3]"
+                    ? "animate-pulse bg-mute"
                     : failed
                       ? "bg-red-600 dark:bg-red-400"
-                      : "border border-slate-400 bg-transparent dark:border-[#666]"
+                      : "border border-field bg-transparent"
               }`}
             />
             <p className="text-[13px] font-medium leading-6 text-ink">
@@ -141,7 +142,7 @@ export function ThinkingLive({
             <button
               type="button"
               onClick={onStop}
-              className="rounded-md text-xs font-medium text-body underline decoration-slate-300 underline-offset-2 transition-colors hover:text-ink dark:decoration-[#444]"
+              className="rounded-md text-xs font-medium text-body underline decoration-hairline-strong underline-offset-2 transition-colors hover:text-ink"
             >
               Stop
             </button>
@@ -151,7 +152,7 @@ export function ThinkingLive({
               type="button"
               onClick={onRetry}
               disabled={busy}
-              className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-canvas transition-colors hover:bg-slate-800 disabled:opacity-60 dark:hover:bg-[#e8e8e8]"
+              className={buttonClass("primary", "sm")}
             >
               {failed ? "Try again" : "Resume"}
             </button>
@@ -160,7 +161,7 @@ export function ThinkingLive({
             <button
               type="button"
               onClick={onEdit}
-              className="rounded-md text-xs font-medium text-body underline decoration-slate-300 underline-offset-2 transition-colors hover:text-ink dark:decoration-[#444]"
+              className="rounded-md text-xs font-medium text-body underline decoration-hairline-strong underline-offset-2 transition-colors hover:text-ink"
             >
               Edit the question
             </button>
@@ -195,7 +196,7 @@ export function thoughtLine(metadata: ThoughtMetadata | null | undefined): strin
   const audit = metadata?.audit && typeof metadata.audit === "object" ? (metadata.audit as { checked?: unknown }) : null;
   const checked = Number(audit?.checked);
   if (metadata?.auditRan && Number.isFinite(checked) && checked > 0) parts.push(`${checked} claim${checked === 1 ? "" : "s"} checked`);
-  return parts.join(" · ");
+  return parts.join(", ");
 }
 
 /** The line above a Max answer; the steps unfold from it when this page has them. */

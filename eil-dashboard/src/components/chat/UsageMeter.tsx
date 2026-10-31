@@ -74,9 +74,9 @@ export function UsagePanel({ usage, resets }: { usage: Usage; resets: string }) 
       ) : (
         <>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-subtle" aria-hidden="true">
-            <div className={`h-full rounded-full ${warn ? "bg-amber-500" : "bg-slate-700 dark:bg-[#d4d4d4]"}`} style={{ width: `${(1 - share) * 100}%` }} />
+            <div className={`h-full rounded-full ${warn ? "bg-amber-500" : "bg-ink"}`} style={{ width: `${(1 - share) * 100}%` }} />
           </div>
-          <p className="mt-2 text-[11px] leading-4 text-body">Starts again at {resets}.</p>
+          <p className="mt-2 text-xs leading-5 text-body">Starts again at {resets}.</p>
         </>
       )}
     </>
@@ -144,7 +144,9 @@ export default function UsageMeter({ requestHeaders, refreshKey }: { requestHead
         }`}
         title="Today's AI allowance"
       >
-        <Ring share={usage.exempt ? 0 : 1 - share} />
+        {/* An account with no limit has nothing to fill: an empty ring beside
+            "Usage" looked like a spinner (UI audit D19). */}
+        {usage.exempt ? null : <Ring share={1 - share} />}
         <span className="tabular-nums" aria-hidden="true">{usage.exempt ? "Usage" : `${left}% left`}</span>
         <span className="sr-only">{label}. Show today’s AI use.</span>
       </button>
@@ -153,7 +155,7 @@ export default function UsageMeter({ requestHeaders, refreshKey }: { requestHead
           id={`${id}-usage`}
           role="region"
           aria-label="Today's AI allowance"
-          className="absolute bottom-11 right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-lg"
+          className="absolute bottom-11 right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-overlay"
         >
           <UsagePanel usage={usage} resets={resets} />
         </div>
