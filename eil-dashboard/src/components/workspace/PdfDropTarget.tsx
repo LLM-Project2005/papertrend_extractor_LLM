@@ -94,8 +94,8 @@ export default function PdfDropTarget({
 
   if (!dragging || !active) return null;
   return (
-    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-canvas/70 p-6 backdrop-blur-[2px]" aria-hidden>
-      <div className="flex w-[min(440px,92vw)] flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-hairline-strong bg-surface px-8 py-10 text-center shadow-overlay">
+    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-canvas/70 p-6 backdrop-blur-[2px] motion-safe:animate-fade-in" aria-hidden>
+      <div className="flex w-[min(440px,92vw)] flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-hairline-strong bg-surface px-8 py-10 text-center shadow-overlay motion-safe:animate-scale-in">
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-subtle text-ink">
           <UploadIcon className="h-5 w-5" />
         </span>

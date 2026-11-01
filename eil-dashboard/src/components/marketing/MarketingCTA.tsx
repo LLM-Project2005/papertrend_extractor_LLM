@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { buttonClass } from "@/components/ui/controls";
 import { ArrowRightIcon } from "@/components/ui/Icons";
 import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
 
@@ -15,29 +16,27 @@ interface MarketingCTAProps {
   showArrow?: boolean;
 }
 
-const variantClasses = {
-  primary: "bg-ink text-canvas shadow-raise hover:bg-ink/85",
-  secondary: "border border-hairline bg-surface text-ink hover:border-hairline-strong hover:bg-subtle",
-  ghost: "text-body hover:bg-subtle hover:text-ink",
-};
-
-const sizeClasses = {
-  sm: "h-9 px-4 text-sm",
-  lg: "h-12 px-6 text-[15px]",
-};
+/*
+ * The product's one button recipe (controls.ts), not a pill of its own: the
+ * public pages had a second primary style beside the app's (2026-10-31 audit).
+ */
+const SIZES = { sm: "md", lg: "lg" } as const;
 
 /**
  * The one call to action on the public pages. A signed-out visitor is sent to
  * sign in; a signed-in one goes straight back to the workspace page they last
  * had open.
+ *
+ * The label says what to do (2026-10-31 audit: "Get started" was the stock
+ * phrase), and no arrow is glued after it unless a caller asks for one.
  */
 export default function MarketingCTA({
   variant = "primary",
   size = "sm",
-  label = "Get started",
+  label = "Start with your papers",
   loggedInLabel = "Open workspace",
   className = "",
-  showArrow = true,
+  showArrow = false,
 }: MarketingCTAProps) {
   const { hydrated, user } = useAuth();
 
@@ -54,7 +53,7 @@ export default function MarketingCTA({
   return (
     <Link
       href={href}
-      className={`group inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium transition-[background-color,border-color,color,transform] duration-150 ease-out-quart active:scale-[0.98] ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
+      className={buttonClass(variant, SIZES[size], `group ${className}`.trim())}
     >
       <span>{copy}</span>
       {showArrow ? (

@@ -114,19 +114,19 @@ export const CHAT_TRACE: Array<{
     title: "Check the request",
     detail: "Signed in, within the daily limit, fewer than two answers in progress.",
     model: "code",
-    log: { tag: "gate", text: "signed in · within today’s limit · 0 of 2 answers in progress" },
+    log: { tag: "gate", text: "signed in, within today’s limit, 0 of 2 answers in progress" },
   },
   {
     title: "Load the papers, check for a repeat",
     detail: "Only papers whose analysis finished. The same question about the same papers within 30 minutes comes back at once.",
     model: "code",
-    log: { tag: "scope", text: "41 analysed papers · not asked in the last 30 minutes" },
+    log: { tag: "scope", text: "41 analyzed papers, not asked in the last 30 minutes" },
   },
   {
     title: "Plan",
     detail: "One to four operations, the search phrases, and the language to answer in.",
-    model: "GPT-6 Luna · brief",
-    log: { tag: "plan", text: "search_evidence · phrases: mangroves, seawalls, flood damage · answer in English" },
+    model: "GPT-6 Luna (brief)",
+    log: { tag: "plan", text: "search_evidence; phrases: mangroves, seawalls, flood damage; answer in English" },
   },
   {
     title: "Two searches at once",
@@ -137,28 +137,28 @@ export const CHAT_TRACE: Array<{
   {
     title: "Choose the papers",
     detail: "The merged ranking’s strongest candidates are read side by side; up to 10 papers are kept.",
-    model: "GPT-6 Luna · brief",
-    log: { tag: "choose", text: "48 candidates · 24 read closely · 6 kept" },
+    model: "GPT-6 Luna (brief)",
+    log: { tag: "choose", text: "48 candidates, 24 read closely, 6 kept" },
   },
   {
     title: "Is it enough?",
     detail: "Checked before any writing starts.",
     loop: true,
-    model: "GPT-6 Luna · brief",
-    log: { tag: "enough", text: "yes · no second search needed" },
+    model: "GPT-6 Luna (brief)",
+    log: { tag: "enough", text: "yes, no second search needed" },
   },
   {
     title: "Write from the passages",
     detail: "Only from the chosen passages, with a numbered source on every claim. Code confirms each source is a paper that was read.",
     model: "GPT-6 Luna",
-    log: { tag: "write", text: "draft cites [1]–[3] · each one a paper that was read" },
+    log: { tag: "write", text: "draft cites [1]–[3], each one a paper that was read" },
   },
   {
     title: "Check the draft, when in doubt",
     detail:
       "Runs on every whole-repository answer and on any draft that is less than certain. A claim that says more than its source is corrected or removed.",
     model: "GPT-6 Luna",
-    log: { tag: "check", text: "draft less than certain → read beside its sources · 1 sentence narrowed" },
+    log: { tag: "check", text: "draft less than certain → read beside its sources; 1 sentence narrowed" },
   },
   {
     title: "Deliver",
@@ -174,7 +174,7 @@ export const PLANNER_OPERATIONS: Array<{ key: string; when: string; how: string;
   { key: "list_documents", when: "Which papers, the oldest, the newest", how: "Listed from the stored analysis, every paper cited.", model: "no model" },
   { key: "analyze_text", when: "How often a word or phrase appears", how: "Counted in the stored text.", model: "no model" },
   { key: "search_evidence", when: "A focused question", how: "Search, choose, write from the passages, check when in doubt.", model: "model" },
-  { key: "analyze_each_document", when: "“Summarise each paper”", how: "A short analysis of every paper, a batch at a time.", model: "model" },
+  { key: "analyze_each_document", when: "“Summarize each paper”", how: "A short analysis of every paper, a batch at a time.", model: "model" },
   { key: "screen_papers", when: "Which papers, or how many, meet a condition", how: "Every paper checked, twelve at a time; each match quoted from the paper.", model: "model" },
   { key: "aggregate_corpus", when: "A question about the whole repository", how: "One answer from every paper, with exact counts.", model: "model" },
   { key: "visualize", when: "A chart, in Chart mode", how: "A small model picks the measures; code computes every number.", model: "small model" },
@@ -182,7 +182,7 @@ export const PLANNER_OPERATIONS: Array<{ key: string; when: string; how: string;
 
 /** A whole-repository question, split and combined (docs/33, section 5). */
 export const SPLIT_COMBINE: Array<{ title: string; detail: string }> = [
-  { title: "Every analysed paper", detail: "Title, year, topics, abstract, methods, results and conclusion." },
+  { title: "Every analyzed paper", detail: "Title, year, topics, abstract, methods, results and conclusion." },
   { title: "Groups of ten", detail: "So each call stays well within what a model can read at once." },
   { title: "A summary per group", detail: "Written side by side, one for each group." },
   { title: "Exact counts, by code", detail: "Themes, methods and keywords, grouped as the dashboard groups them." },

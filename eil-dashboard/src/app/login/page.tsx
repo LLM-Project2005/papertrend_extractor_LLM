@@ -78,6 +78,8 @@ function LoginPageContent() {
             alt="The Area Analysis view of the dashboard, showing themes by year."
             sizes="880px"
           />
+          {/* Said plainly, so the sample is not taken for anyone's real papers. */}
+          <p className="mt-3 text-[13px] text-mute">The real dashboard, with a sample collection of 41 invented papers.</p>
         </div>
       </aside>
     </main>

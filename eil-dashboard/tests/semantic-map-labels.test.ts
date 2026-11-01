@@ -152,7 +152,8 @@ test("one neighborhood is explained rather than left looking broken", () => {
   const map = source("components/workspace/RepositorySemanticMap.tsx");
   const colours = source("lib/semantic-map-colors.ts");
   assert.match(map, /chosenColorMode \?\? defaultColorMode\(map\)/);
-  assert.match(map, /These papers form one neighborhood, so the map is coloured by/);
+  // US spelling, as the "Color:" control has it (UI audit #20, 2026-10-31).
+  assert.match(map, /These papers form one neighborhood, so the map is colored by/);
   assert.match(colours, /these papers form one: they are too close in meaning to split into groups/);
 });
 

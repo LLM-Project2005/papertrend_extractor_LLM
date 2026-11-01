@@ -19,7 +19,7 @@ export default function AreaAnalysis(props: TrackProps & Pick<TrendProps, "trend
   return (
     <div className="space-y-12">
       <TrendAnalysis trends={props.trends} themeColors={props.themeColors} onDrilldown={props.onDrilldown} />
-      <div className="border-t border-slate-200 pt-10 dark:border-[#1f1f1f]">
+      <div className="border-t border-hairline pt-10">
         <TrackAnalysis {...props} />
       </div>
     </div>

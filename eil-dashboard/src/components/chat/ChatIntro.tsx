@@ -39,10 +39,10 @@ export function ChatIntro({
     <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-8 py-10">
       <div className="flex flex-col items-center gap-3 text-center">
         <Mascot size={52} className="mb-2 text-ink" />
-        <h1 className="text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.5rem]">
+        <h1 className="text-[2rem] font-semibold tracking-normal text-ink sm:text-[2.5rem]">
           Ask your papers
         </h1>
-        <p className={`${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>
+        <p className={`${ANSWER_META_CLASS} text-body`}>
           {scopeDescription(scopeLabel, eligiblePaperCount)}
         </p>
       </div>
@@ -54,7 +54,7 @@ export function ChatIntro({
               key={example.text}
               type="button"
               onClick={() => onAsk(example.text)}
-              className="block w-full break-words rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-[15px] leading-8 text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:hover:border-[#2a2a2a] dark:hover:bg-[#121212] dark:hover:text-white"
+              className="block w-full break-words rounded-xl border border-hairline bg-surface px-4 py-3 text-left text-[15px] leading-8 text-ink transition-colors hover:border-hairline-strong hover:bg-subtle hover:text-ink"
             >
               {example.text}
             </button>
@@ -63,13 +63,16 @@ export function ChatIntro({
       ) : null}
 
       <div className="w-full space-y-3">
-        <ul className="grid gap-2 sm:grid-cols-2">
+        {/* A plain list, one column: bordered tiles looked like the example
+            questions above, which are buttons, and five tiles in two columns
+            left one alone (UI audit #18). */}
+        <ul className="space-y-2.5 px-1">
           {CAPABILITIES.map((capability) => (
             <li
               key={capability.label}
-              className={`rounded-xl border border-slate-200 px-3 py-2 ${ANSWER_META_CLASS} text-slate-600 dark:border-[#1f1f1f] dark:text-[#8e8e8e]`}
+              className={`${ANSWER_META_CLASS} text-body`}
             >
-              <span className="block font-semibold text-slate-800 dark:text-[#ececec]">
+              <span className="block font-semibold text-ink">
                 {capability.label}
               </span>
               {capability.detail}
@@ -81,19 +84,19 @@ export function ChatIntro({
           type="button"
           onClick={() => setShowLimits((previous) => !previous)}
           aria-expanded={showLimits}
-          className={`${ANSWER_META_CLASS} text-slate-600 underline underline-offset-4 transition-colors hover:text-slate-800 dark:text-[#8e8e8e] dark:hover:text-[#ececec]`}
+          className={`px-1 ${ANSWER_META_CLASS} text-body underline underline-offset-4 transition-colors hover:text-ink`}
         >
           {showLimits ? "Hide what it cannot answer" : "What it cannot answer"}
         </button>
 
         {showLimits ? (
-          <ul className="space-y-2">
+          <ul className="space-y-2.5 px-1">
             {LIMITS.map((limit) => (
               <li
                 key={limit.label}
-                className={`rounded-xl border border-slate-200 px-3 py-2 ${ANSWER_META_CLASS} text-slate-600 dark:border-[#1f1f1f] dark:text-[#8e8e8e]`}
+                className={`${ANSWER_META_CLASS} text-body`}
               >
-                <span className="block font-semibold text-slate-800 dark:text-[#ececec]">
+                <span className="block font-semibold text-ink">
                   {limit.label}
                 </span>
                 {limit.detail}
@@ -127,7 +130,7 @@ export function FollowUpSuggestions({
           key={suggestion}
           type="button"
           onClick={() => onAsk(suggestion)}
-          className={`break-words rounded-full border border-slate-200 px-3 py-1.5 text-left ${ANSWER_META_CLASS} text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:border-[#2a2a2a] dark:hover:bg-[#121212] dark:hover:text-white`}
+          className={`break-words rounded-full border border-hairline px-3 py-1.5 text-left ${ANSWER_META_CLASS} text-body transition-colors hover:border-hairline-strong hover:bg-subtle hover:text-ink`}
         >
           {suggestion}
         </button>

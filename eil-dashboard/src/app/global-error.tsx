@@ -32,27 +32,27 @@ export default function GlobalError({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-slate-900 dark:bg-black dark:text-white">
-          <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="text-sm font-medium text-slate-500 dark:text-[#9b9b9b]">Error</p>
+        <main className="flex min-h-screen items-center justify-center bg-canvas px-6 text-ink">
+          <section className="w-full max-w-md rounded-xl border border-hairline bg-surface p-6 shadow-sm">
+            <p className="text-sm font-medium text-mute">Error</p>
             <h1 className="mt-2 text-2xl font-semibold">Papertrend hit a problem</h1>
             {/*
               This used to end "check the status logs". Readers do not have status
               logs - that sentence was written for whoever was on call.
             */}
-            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+            <p className="mt-3 text-sm leading-6 text-mute">
               The page stopped before it could load. Reloading usually clears it.
               Nothing you had saved is affected.
             </p>
             <button
               type="button"
               onClick={reset}
-              className="mt-5 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+              className="mt-5 inline-flex rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-canvas transition-colors hover:bg-slate-800 dark:hover:bg-[#e5e5e5]"
             >
               Try again
             </button>
             {error?.digest ? (
-              <p className="mt-5 border-t border-slate-200 pt-4 font-mono text-xs text-slate-500 dark:border-[#1f1f1f] dark:text-[#8f8f8f]">
+              <p className="mt-5 border-t border-hairline pt-4 font-mono text-xs text-mute">
                 Reference {error.digest}
               </p>
             ) : null}

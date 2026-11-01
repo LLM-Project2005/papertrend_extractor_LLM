@@ -94,6 +94,8 @@ export default function DashboardFeature() {
             <ProductShot
               name="dashboard-trends"
               still
+              // The notes are pinned to places on the whole screen, so phones see it whole too.
+              crop={false}
               priority
               alt="The Area Analysis view of a 41-paper sample repository: a sentence on which themes are gaining ground, above themes by year from 2011 to 2025."
               sizes="(min-width: 1152px) 1152px, 100vw"

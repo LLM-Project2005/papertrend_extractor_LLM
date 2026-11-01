@@ -13,8 +13,9 @@ import { GeminiIcon, OpenAIIcon } from "@/components/ui/Icons";
 /*
  * Research chat, told as what happens to a question (facts: docs/33, docs/34,
  * src/lib/repository-chat.ts and the deep research and chart code). The page
- * moves from the answer you see, to the stages behind it, to the modes, to a
- * puzzle that makes the reader do the check, to the models and the limits.
+ * opens on the real chat (2026-10-31 audit: the recording leads, the drawing
+ * follows), then the stages behind it, the modes, a puzzle that makes the
+ * reader do the check, the models, and the limits.
  */
 
 const MODELS = [
@@ -54,8 +55,8 @@ export default function ChatFeature() {
   return (
     <>
       {/* Hero: the answer itself, beside what it is */}
-      <section className="relative isolate px-4 pt-28 sm:px-6 sm:pt-36">
-        <div className="mx-auto grid grid-cols-1 max-w-6xl items-center gap-14 lg:grid-cols-12 lg:gap-12">
+      <section className="px-4 pt-28 sm:px-6 sm:pt-36">
+        <div className="mx-auto grid grid-cols-1 max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-10">
           <div className="lg:col-span-5">
             <Crumb label="Chat" />
             <h1 className={`mt-4 ${displayClass} text-[2.6rem] leading-[1.04] sm:text-6xl [text-wrap:balance]`}>
@@ -72,18 +73,32 @@ export default function ChatFeature() {
               </Link>
             </div>
           </div>
-          <div className="pb-10 lg:col-span-7">
-            <ChatAnswerDemo />
+          <div className="lg:col-span-7">
+            <ProductShot
+              name="chat"
+              priority
+              sizes="(min-width: 1024px) 680px, 100vw"
+              alt="Chat answering “Do mangroves or seawalls reduce flood damage more?” from a 41-paper sample repository, with four numbered citations, Copy and Download (.md), and GPT-6 Luna named under the composer."
+            />
+            <p className="mt-3 text-[13px] text-mute">Recorded from Papertrend itself, with a sample collection so no one’s papers appear.</p>
           </div>
         </div>
+        {/* "A source on every claim" is said once, in the lede above (2026-10-31 audit). */}
         <ul className="mx-auto mt-14 flex max-w-6xl flex-wrap gap-x-8 gap-y-3 border-t border-hairline pt-6 text-[14px] text-body">
-          {["Answers only from the papers you choose", "A source on every claim", "Says so when the papers don’t say", "English or Thai"].map((item) => (
-            <li key={item} className="flex items-center gap-2.5">
-              <span aria-hidden="true" className="h-1 w-1 rounded-full bg-ink/50" />
-              {item}
-            </li>
+          {["Answers only from the papers you choose", "Says so when the papers don’t say", "English or Thai"].map((item) => (
+            <li key={item}>{item}</li>
           ))}
         </ul>
+      </section>
+
+      {/* One answer, drawn: the real capture leads above; this shows what a number opens */}
+      <section className="px-4 pt-24 sm:px-6 sm:pt-28">
+        <div className="mx-auto max-w-3xl">
+          <div className="pb-12">
+            <ChatAnswerDemo />
+          </div>
+          <p className="mt-4 text-[13px] text-mute">An illustration: one answer from the sample collection, with its numbered sources.</p>
+        </div>
       </section>
 
       {/* The stages */}
@@ -176,10 +191,8 @@ export default function ChatFeature() {
                 {MODELS.map((model) => (
                   <tr key={model.name} className="block bg-surface px-5 py-5 transition-colors hover:bg-subtle/40 md:table-row md:p-0">
                     <th scope="row" className="block pb-2 font-normal md:table-cell md:w-[26%] md:px-6 md:py-6 md:align-top">
-                      <span className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl border border-hairline bg-canvas text-ink">
-                          <model.Mark className="h-[18px] w-[18px]" />
-                        </span>
+                      <span className="flex items-start gap-3">
+                        <model.Mark className="mt-0.5 h-[18px] w-[18px] flex-none text-ink" />
                         <span>
                           <span className="block text-[15px] font-medium text-ink">{model.name}</span>
                           <span className="block text-[12.5px] text-mute">{model.maker}</span>
@@ -203,15 +216,11 @@ export default function ChatFeature() {
         </div>
       </section>
 
-      {/* The real thing, and the small things */}
+      {/* The small things (the real capture, once here, now leads the page) */}
       <section className="px-4 pb-28 sm:px-6 sm:pb-36">
         <div className="mx-auto max-w-6xl">
-          <h2 className={`max-w-2xl ${sectionTitleClass}`}>And this is the real thing.</h2>
-          <p className={`mt-5 max-w-2xl ${leadClass}`}>Recorded from Papertrend itself, with a sample collection so no one’s papers appear.</p>
-          <div className="reveal mt-12">
-            <ProductShot name="chat" alt="Chat answering “Do mangroves or seawalls reduce flood damage more?” from a 41-paper sample repository, with four numbered citations, Copy and Download (.md), and GPT-6 Luna named under the composer." />
-          </div>
-          <dl className="mt-20 grid grid-cols-1 gap-x-12 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
+          <h2 className={`max-w-2xl ${sectionTitleClass}`}>The small things.</h2>
+          <dl className="mt-12 grid grid-cols-1 gap-x-12 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
             {SMALL_THINGS.map(([term, detail]) => (
               <div key={term}>
                 <dt className="text-[15px] font-medium text-ink">{term}</dt>

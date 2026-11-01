@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import { PLANNER_OPERATIONS } from "@/components/marketing/how-it-works-content";
 import { useMotionOK, useOnScreen, useSequence } from "@/components/marketing/kit/motion";
+import { chipClass } from "@/components/ui/controls";
 
 /*
  * The operations a plan can choose from, lit one after another once when the
- * grid is seen, then left at rest. Those answered by code alone say so.
+ * grid is seen, then left at rest. Those answered by code alone say so. The
+ * nine fill three rows of three; the note on questions the papers cannot
+ * answer takes the whole last row (2026-10-31, UI audit: no tile left alone).
  */
 
 const DURATIONS = [300, ...PLANNER_OPERATIONS.map(() => 750), 99999];
@@ -34,11 +37,7 @@ export default function PlannerOps() {
         >
           <p className="flex items-center justify-between gap-2">
             <code className="font-mono text-[12.5px] font-medium text-ink">{operation.key}</code>
-            <span
-              className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] ${
-                operation.model === "no model" ? "bg-ink text-canvas" : "border border-hairline text-body"
-              }`}
-            >
+            <span className={chipClass(operation.model === "no model" ? "accent" : "neutral", "whitespace-nowrap")}>
               {operation.model}
             </span>
           </p>
@@ -46,7 +45,7 @@ export default function PlannerOps() {
           <p className="text-[12.5px] leading-[18px] text-body">{operation.how}</p>
         </li>
       ))}
-      <li className="flex flex-col justify-center gap-2 rounded-xl border border-dashed border-hairline-strong p-4">
+      <li className="flex flex-col justify-center gap-2 rounded-xl border border-dashed border-hairline-strong p-4 lg:col-span-3">
         <p className="text-[13.5px] font-medium text-ink">Questions the papers can’t answer</p>
         <p className="text-[12.5px] leading-[18px] text-body">
           Citation counts, h-index or impact factor are not in your PDFs, so they are pointed to Scopus, Web of Science or Google

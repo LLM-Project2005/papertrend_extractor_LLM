@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { segmentClass, segmentedClass } from "@/components/ui/controls";
 import Hotspot from "@/components/marketing/kit/Hotspot";
 import { EASE, useMotionOK } from "@/components/marketing/kit/motion";
 
@@ -81,7 +82,7 @@ function PaperChip({ paper, index, side = "top" }: { paper: Placed; index: numbe
         className="!flex w-full"
         buttonClassName={(open) =>
           `w-full rounded-xl border px-3 py-2.5 text-left text-[13px] leading-snug transition-colors duration-200 ${
-            open ? "border-ink bg-ink text-canvas" : "border-hairline bg-surface text-ink shadow-raise hover:border-hairline-strong"
+            open ? "border-ink bg-subtle text-ink" : "border-hairline bg-surface text-ink shadow-raise hover:border-hairline-strong"
           }`
         }
         trigger={<span>{paper.title}</span>}
@@ -108,7 +109,7 @@ export default function ProfileSwitch() {
 
   return (
     <div>
-      <div role="tablist" aria-label="Analysis profile" onKeyDown={onKey} className="inline-flex rounded-full border border-hairline bg-surface p-1">
+      <div role="tablist" aria-label="Analysis profile" onKeyDown={onKey} className={segmentedClass}>
         {PROFILES.map((item, index) => {
           const on = item.key === profile;
           return (
@@ -123,7 +124,7 @@ export default function ProfileSwitch() {
               aria-controls={`${id}-${item.key}-panel`}
               tabIndex={on ? 0 : -1}
               onClick={() => setProfile(item.key)}
-              className={`h-9 rounded-full px-4 text-[14px] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${on ? "bg-ink text-canvas" : "text-body hover:text-ink"}`}
+              className={segmentClass(on, "px-4 text-[14px]")}
             >
               {item.label}
             </button>

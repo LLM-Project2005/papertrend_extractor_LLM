@@ -14,6 +14,7 @@ import {
   type PdfTextKind,
 } from "@/lib/pdf-text-kind";
 import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, MinusIcon, PlusIcon } from "@/components/ui/Icons";
+import { loadPdfJs } from "@/lib/pdfjs-loader";
 
 /*
  * The paper itself, drawn with pdf.js, with the evidence marked on the page.
@@ -37,35 +38,6 @@ import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, MinusIcon, PlusIcon } from
  * If pdf.js cannot load the file at all, the browser's own viewer takes over,
  * so a preview is never lost to this component.
  */
-
-const WORKER_SRC = "/pdfjs/pdf.worker.min.mjs";
-
-type PdfJs = typeof import("pdfjs-dist");
-
-let pdfjsPromise: Promise<PdfJs> | null = null;
-
-function loadPdfJs(): Promise<PdfJs> {
-  if (!pdfjsPromise) {
-    // pdf.js 4 uses Promise.withResolvers, which Safari added only in 17.4.
-    const promiseStatics = Promise as unknown as { withResolvers?: () => unknown };
-    if (typeof promiseStatics.withResolvers !== "function") {
-      promiseStatics.withResolvers = () => {
-        let resolve: (value: unknown) => void = () => undefined;
-        let reject: (reason?: unknown) => void = () => undefined;
-        const promise = new Promise((res, rej) => {
-          resolve = res;
-          reject = rej;
-        });
-        return { promise, resolve, reject };
-      };
-    }
-    pdfjsPromise = import("pdfjs-dist").then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = WORKER_SRC;
-      return pdfjs;
-    });
-  }
-  return pdfjsPromise;
-}
 
 /** A few documents stay loaded, so moving between recent papers is instant. */
 const documentCache = new Map<string, Promise<PDFDocumentProxy>>();
@@ -784,8 +756,8 @@ export default function PdfViewer({
           <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3 text-center">
             <div className="h-1 w-48 overflow-hidden rounded-full bg-hairline">
               <div
-                className="h-full rounded-full bg-ink transition-[width] duration-200"
-                style={{ width: `${Math.max(8, Math.round(progress * 100))}%` }}
+                className="h-full w-full origin-left rounded-full bg-ink transition-transform duration-200"
+                style={{ transform: `scaleX(${Math.max(8, Math.round(progress * 100)) / 100})` }}
               />
             </div>
             <p className="text-xs text-mute">Loading the PDF…</p>

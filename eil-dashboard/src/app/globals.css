@@ -35,6 +35,11 @@
   --accent-ink: 29 78 216;
   --focus: 37 99 235;
 
+  /* Evidence, the one yellow: the highlighter and its edge. Not themed: a
+     highlighter is the same yellow on white paper and on black. */
+  --highlight: 250 204 21;
+  --evidence: 234 179 8;
+
   /* Stacked, offset shadows - a near layer and a far one - that sit under a
      1px hairline border rather than replacing it. */
   --shadow-raise: 0 1px 1px rgb(0 0 0 / 0.02), 0 1px 3px rgb(0 0 0 / 0.04);
@@ -171,6 +176,12 @@ dd {
 input,
 textarea {
   caret-color: rgb(var(--accent));
+}
+
+/* Checkboxes and radios in ink, as the Library's are, rather than the
+   browser's own blue (2026-10-31, UI audit). */
+:where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: rgb(var(--ink));
 }
 
 /* Scrollbars: thin, on a clear track, in the theme's hairline colour. */
@@ -399,7 +410,7 @@ html:focus-within {
 
 /* Text a model read a value from: the PDF viewer's warm marker, as a sweep. */
 .evidence-mark {
-  background-image: linear-gradient(rgb(250 204 21 / 0.42), rgb(250 204 21 / 0.42));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.42), rgb(var(--highlight) / 0.42));
   background-repeat: no-repeat;
   background-size: 0% 100%;
   border-radius: 3px;
@@ -413,67 +424,34 @@ html:focus-within {
 }
 
 .dark .evidence-mark {
-  background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.28), rgb(var(--highlight) / 0.28));
 }
 
 /*
- * The How it works and Team pages. A dotted field behind the hero, a dot that
- * breathes beside a live label, pulses that travel a connector while its
- * figure plays, a ring of light, and entrances that replay each time a stage
- * is shown (an element leaving display:none restarts its animation). Each
- * moving part stops with its figure; the global reduced-motion rule leaves
- * every one at its end state.
+ * How it works: pulses that travel a connector while its figure plays, and
+ * entrances that replay each time a stage is shown (an element leaving
+ * display:none restarts its animation). Each moving part stops with its
+ * figure; the global reduced-motion rule leaves every one at its end state.
+ * (The dotted field, the breathing dot, the ring of light and the scan line
+ * went with the UI audit, 2026-10-31.)
  */
-.dot-field {
-  background-image: radial-gradient(rgb(var(--hairline-strong)) 1px, transparent 1px);
-  background-size: 22px 22px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
-}
-
-.live-dot {
-  position: relative;
-  display: inline-block;
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: rgb(var(--accent));
-}
-
-.live-dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: inherit;
-  animation: live-ping 1.8s var(--ease-out-expo) infinite;
-}
-
-@keyframes live-ping {
-  0% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(2.6);
-  }
-}
-
 .flow-line {
   position: relative;
 }
 
+/* Each dot's box runs the length of the line with the dot drawn at its start,
+   so it travels by transform alone: translate's percentages are the box's own
+   length, which is the line's (Hallmark 10a: never animate top or left). */
 .flow-line > i {
+  --dot: rgb(var(--accent));
   position: absolute;
   top: -3px;
   left: 0;
-  width: 7px;
+  width: 100%;
   height: 7px;
-  border-radius: 9999px;
-  background: rgb(var(--accent));
+  background: radial-gradient(circle 3.5px at 3.5px 50%, var(--dot) 96%, transparent 100%);
   opacity: 0;
+  pointer-events: none;
 }
 
 .flow-line[data-on="true"] > i {
@@ -485,14 +463,17 @@ html:focus-within {
 }
 
 .flow-line > i:nth-child(3) {
+  --dot: rgb(var(--evidence));
   animation-delay: 1.6s;
-  background: rgb(234 179 8);
 }
 
 @media (max-width: 1023.98px) {
   .flow-line > i {
     top: 0;
     left: -3px;
+    width: 7px;
+    height: 100%;
+    background: radial-gradient(circle 3.5px at 50% 3.5px, var(--dot) 96%, transparent 100%);
   }
   .flow-line[data-on="true"] > i {
     animation-name: flow-y;
@@ -501,7 +482,7 @@ html:focus-within {
 
 @keyframes flow-x {
   0% {
-    left: 0;
+    transform: translateX(0);
     opacity: 0;
   }
   12%,
@@ -509,14 +490,14 @@ html:focus-within {
     opacity: 1;
   }
   100% {
-    left: calc(100% - 7px);
+    transform: translateX(calc(100% - 7px));
     opacity: 0;
   }
 }
 
 @keyframes flow-y {
   0% {
-    top: 0;
+    transform: translateY(0);
     opacity: 0;
   }
   12%,
@@ -524,79 +505,15 @@ html:focus-within {
     opacity: 1;
   }
   100% {
-    top: calc(100% - 7px);
+    transform: translateY(calc(100% - 7px));
     opacity: 0;
-  }
-}
-
-@property --sweep {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-
-@property --arc {
-  syntax: "<number>";
-  initial-value: 0;
-  inherits: false;
-}
-
-/* A 1.5px frame: the element's padding shows a conic arc over a hairline. */
-.glow-ring {
-  --arc: 1;
-  padding: 1.5px;
-  background:
-    conic-gradient(
-      from var(--sweep),
-      transparent 0deg,
-      rgb(var(--accent) / var(--arc)) 60deg,
-      rgb(234 179 8 / calc(var(--arc) * 0.8)) 110deg,
-      transparent 170deg,
-      transparent 360deg
-    ),
-    rgb(var(--hairline-strong));
-}
-
-.glow-ring[data-on="true"] {
-  animation: sweep-turn 3.2s linear infinite;
-}
-
-/* The team's cards: the arc goes round once, then fades to a hairline. */
-.ring-once {
-  --arc: 0;
-  animation: ring-once 2.8s var(--ease-out-expo) both;
-}
-
-.ring-once:hover {
-  --arc: 1;
-  animation: sweep-turn 3.2s linear infinite;
-}
-
-@keyframes sweep-turn {
-  to {
-    --sweep: 360deg;
-  }
-}
-
-@keyframes ring-once {
-  0% {
-    --sweep: 0deg;
-    --arc: 0;
-  }
-  15%,
-  70% {
-    --arc: 1;
-  }
-  100% {
-    --sweep: 360deg;
-    --arc: 0;
   }
 }
 
 .mark-sweep {
   padding: 0 2px;
   border-radius: 3px;
-  background-image: linear-gradient(rgb(250 204 21 / 0.42), rgb(250 204 21 / 0.42));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.42), rgb(var(--highlight) / 0.42));
   background-repeat: no-repeat;
   background-size: 0% 100%;
   box-decoration-break: clone;
@@ -605,7 +522,7 @@ html:focus-within {
 }
 
 .dark .mark-sweep {
-  background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+  background-image: linear-gradient(rgb(var(--highlight) / 0.28), rgb(var(--highlight) / 0.28));
 }
 
 @keyframes mark-sweep {
@@ -656,20 +573,6 @@ html:focus-within {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-/* A reading line that passes over a page three times, then rests at its foot. */
-.scan-line {
-  animation: scan-line 1.6s ease-in-out 3 alternate both;
-}
-
-@keyframes scan-line {
-  from {
-    top: 0;
-  }
-  to {
-    top: calc(100% - 2px);
   }
 }
 
@@ -752,15 +655,15 @@ html:focus-within {
  * readable through it, arriving with one short pulse.
  */
 .pdf-evidence-mark {
-  background: rgb(250 204 21 / 0.42);
+  background: rgb(var(--highlight) / 0.42);
   mix-blend-mode: multiply;
-  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.35);
+  box-shadow: 0 0 0 1px rgb(var(--evidence) / 0.35);
   animation: pdf-evidence-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* The Evidence tab's other passages: marked, lighter than the one in focus. */
 .pdf-evidence-mark-soft {
-  background: rgb(250 204 21 / 0.14);
+  background: rgb(var(--highlight) / 0.14);
   mix-blend-mode: multiply;
 }
 
@@ -772,7 +675,7 @@ html:focus-within {
   }
   60% {
     opacity: 1;
-    box-shadow: 0 0 0 4px rgb(234 179 8 / 0.25);
+    box-shadow: 0 0 0 4px rgb(var(--evidence) / 0.25);
   }
   100% {
     opacity: 1;
@@ -786,22 +689,22 @@ html:focus-within {
  * dark page.
  */
 .text-evidence-mark {
-  background: rgb(250 204 21 / 0.5);
+  background: rgb(var(--highlight) / 0.5);
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.45);
+  box-shadow: 0 0 0 1px rgb(var(--evidence) / 0.45);
 }
 
 .text-evidence-mark-soft {
-  background: rgb(250 204 21 / 0.18);
+  background: rgb(var(--highlight) / 0.18);
   border-radius: 2px;
 }
 
 .dark .text-evidence-mark {
-  background: rgb(250 204 21 / 0.32);
+  background: rgb(var(--highlight) / 0.32);
 }
 
 .dark .text-evidence-mark-soft {
-  background: rgb(250 204 21 / 0.12);
+  background: rgb(var(--highlight) / 0.12);
 }
 
 /*
@@ -811,6 +714,59 @@ html:focus-within {
  */
 .status-swap {
   animation: status-swap 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+ * A chat answer that has just arrived (2026-11-01): after the wait, its blocks
+ * rise in a few hundredths of a second apart, then whatever follows the text
+ * (sources, charts, actions), so the answer settles in about half a second
+ * instead of appearing in one frame. Answers already in a conversation that is
+ * opened do not move (ChatClient's shownBeforeAskRef).
+ */
+.answer-arrive > :not([data-testid="assistant-message"]),
+.answer-arrive [data-testid="assistant-message"] > div > * {
+  animation: answer-rise 320ms var(--ease-out-expo) both;
+}
+
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(2) { animation-delay: 35ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(3) { animation-delay: 70ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(4) { animation-delay: 105ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(5) { animation-delay: 140ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(n + 6) { animation-delay: 175ms; }
+.answer-arrive > :not([data-testid="assistant-message"]) { animation-delay: 200ms; }
+
+@keyframes answer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * A table cell the reading has just filled (2026-11-01): the value fades in
+ * over a faint wash that clears in about a second, so the reader sees where
+ * the table is filling.
+ */
+.cell-arrive {
+  animation: cell-arrive 1100ms var(--ease-out-expo) both;
+}
+
+@keyframes cell-arrive {
+  from {
+    opacity: 0;
+    background-color: rgb(var(--ink) / 0.07);
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    background-color: transparent;
+  }
 }
 
 @keyframes status-swap {

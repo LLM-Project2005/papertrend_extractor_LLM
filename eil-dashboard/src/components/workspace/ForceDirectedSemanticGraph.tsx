@@ -8,6 +8,8 @@ import {
   forceLink,
   forceManyBody,
   forceSimulation,
+  forceX,
+  forceY,
   type Simulation,
   type SimulationLinkDatum,
   type SimulationNodeDatum,
@@ -49,10 +51,39 @@ interface Props {
 }
 
 const DEFAULT_VIEW: ViewBox = { x: 55, y: 65, width: 890, height: 670 };
-const GRAPH_BOUNDS = { minX: 28, maxX: 972, minY: 28, maxY: 772 };
+const VIEW_RATIO = DEFAULT_VIEW.height / DEFAULT_VIEW.width;
+// Zoomed all the way out, the view holds a whole large map (99 papers settle
+// about 2,000 units across).
+const WIDEST_VIEW = 3600;
+// Room around the outermost papers for their labels (168 wide, centred).
+const FIT_MARGIN = 110;
+// The map's toolbar floats over about the top tenth of the graph; a fitted
+// view keeps the papers below it.
+const TOOLBAR_SHARE = 0.1;
+const GLIDE_MS = 450;
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+/*
+ * The view that holds every paper (2026-11-01: papers are no longer kept in a
+ * square, so the map can be wider than the default view). Never closer than
+ * the default view, so a small map is not blown up.
+ */
+export function fittedView(nodes: Array<{ x?: number; y?: number }>): ViewBox {
+  const placed = nodes.filter((node) => Number.isFinite(node.x) && Number.isFinite(node.y));
+  if (!placed.length) return DEFAULT_VIEW;
+  const xs = placed.map((node) => Number(node.x));
+  const ys = placed.map((node) => Number(node.y));
+  const minX = Math.min(...xs) - FIT_MARGIN;
+  const maxX = Math.max(...xs) + FIT_MARGIN;
+  const minY = Math.min(...ys) - FIT_MARGIN;
+  const maxY = Math.max(...ys) + FIT_MARGIN;
+  const width = clamp(Math.max(maxX - minX, (maxY - minY) / (1 - TOOLBAR_SHARE) / VIEW_RATIO), DEFAULT_VIEW.width, WIDEST_VIEW);
+  const height = width * VIEW_RATIO;
+  // Centred in the part of the view below the toolbar.
+  return { x: (minX + maxX) / 2 - width / 2, y: (minY + maxY) / 2 - height * (0.5 + TOOLBAR_SHARE / 2), width, height };
 }
 
 function edgeId(edge: SemanticMapEdge): string {
@@ -89,6 +120,12 @@ export default function ForceDirectedSemanticGraph({
   const panRef = useRef<{ pointerId: number; clientX: number; clientY: number; start: ViewBox } | null>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [viewBox, setViewBox] = useState<ViewBox>(DEFAULT_VIEW);
+  const viewBoxRef = useRef(viewBox);
+  viewBoxRef.current = viewBox;
+  const glideFrameRef = useRef<number | null>(null);
+  // Once a layout settles the view fits it, unless the reader has moved the view meanwhile.
+  const fitPendingRef = useRef(true);
+  const viewMovedRef = useRef(false);
   const latestPositions = useRef(positions);
   latestPositions.current = positions;
   useEffect(() => {
@@ -110,11 +147,48 @@ export default function ForceDirectedSemanticGraph({
 
   const publishPositions = useCallback(() => {
     const next = Object.fromEntries(nodesRef.current.map((node) => [node.id, {
-      x: clamp(Number.isFinite(node.x) ? Number(node.x) : 500, GRAPH_BOUNDS.minX, GRAPH_BOUNDS.maxX),
-      y: clamp(Number.isFinite(node.y) ? Number(node.y) : 400, GRAPH_BOUNDS.minY, GRAPH_BOUNDS.maxY),
+      x: Number.isFinite(node.x) ? Number(node.x) : 500,
+      y: Number.isFinite(node.y) ? Number(node.y) : 400,
     }]));
     setPositions(next);
   }, []);
+
+  const stopGlide = useCallback(() => {
+    if (glideFrameRef.current !== null) window.cancelAnimationFrame(glideFrameRef.current);
+    glideFrameRef.current = null;
+  }, []);
+
+  // The camera moves to a new view over GLIDE_MS (out-expo), or at once when
+  // the reader has asked for less motion.
+  const glideTo = useCallback((target: ViewBox) => {
+    stopGlide();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setViewBox(target);
+      return;
+    }
+    const start = viewBoxRef.current;
+    const began = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - began) / GLIDE_MS);
+      const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+      setViewBox({
+        x: start.x + (target.x - start.x) * eased,
+        y: start.y + (target.y - start.y) * eased,
+        width: start.width + (target.width - start.width) * eased,
+        height: start.height + (target.height - start.height) * eased,
+      });
+      glideFrameRef.current = t < 1 ? window.requestAnimationFrame(step) : null;
+    };
+    glideFrameRef.current = window.requestAnimationFrame(step);
+  }, [stopGlide]);
+
+  useEffect(() => stopGlide, [stopGlide]);
+
+  const fitWhenSettled = useCallback(() => {
+    if (!fitPendingRef.current) return;
+    fitPendingRef.current = false;
+    if (!viewMovedRef.current) glideTo(fittedView(nodesRef.current));
+  }, [glideTo]);
 
   useEffect(() => {
     publishRef.current = publishPositions;
@@ -129,7 +203,10 @@ export default function ForceDirectedSemanticGraph({
 
     const resetting = resetSeenRef.current !== resetVersion;
     resetSeenRef.current = resetVersion;
-    if (resetting) setViewBox(DEFAULT_VIEW);
+    if (resetting) {
+      viewMovedRef.current = false;
+      fitPendingRef.current = true;
+    }
     const existing = resetting ? {} : positions;
     const forceNodes: ForceNode[] = points.map((point) => ({
       id: point.paperId,
@@ -143,11 +220,17 @@ export default function ForceDirectedSemanticGraph({
     }));
     const normalizeDistance = (distance: number) =>
       (distance - distanceRange.minimum) / Math.max(distanceRange.maximum - distanceRange.minimum, 0.0001);
+    // No walls (2026-11-01, the owner's request): papers used to be clamped
+    // into a square and piled up along its edges. An even pull towards the
+    // middle gathers them into a round cloud instead, and a paper can still be
+    // dragged anywhere.
     const simulation = forceSimulation<ForceNode>(forceNodes)
       .alpha(1)
       .alphaDecay(0.025)
       .velocityDecay(0.3)
       .force("center", forceCenter<ForceNode>(500, 400).strength(0.045))
+      .force("pullX", forceX<ForceNode>(500).strength(0.08))
+      .force("pullY", forceY<ForceNode>(400).strength(0.08))
       .force("charge", forceManyBody<ForceNode>().strength(-640).distanceMin(34).distanceMax(720))
       .force("collision", forceCollide<ForceNode>(96).strength(1).iterations(6));
     if (forceLinks.length) {
@@ -161,16 +244,13 @@ export default function ForceDirectedSemanticGraph({
       );
     }
     simulation.on("tick", () => {
-      forceNodes.forEach((node) => {
-        node.x = clamp(Number(node.x ?? 500), GRAPH_BOUNDS.minX, GRAPH_BOUNDS.maxX);
-        node.y = clamp(Number(node.y ?? 400), GRAPH_BOUNDS.minY, GRAPH_BOUNDS.maxY);
-      });
       if (animationFrameRef.current !== null) return;
       animationFrameRef.current = window.requestAnimationFrame(() => {
         animationFrameRef.current = null;
         publishRef.current?.();
       });
     });
+    simulation.on("end", fitWhenSettled);
     nodesRef.current = forceNodes;
     simulationRef.current = simulation as Simulation<ForceNode, ForceLink>;
     publishPositions();
@@ -178,6 +258,7 @@ export default function ForceDirectedSemanticGraph({
       simulation.stop();
       simulation.tick(220);
       publishPositions();
+      fitWhenSettled();
     }
 
     return () => {
@@ -190,7 +271,7 @@ export default function ForceDirectedSemanticGraph({
     };
     // Positions intentionally seed a topology rebuild but do not restart it on every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [distanceRange.maximum, distanceRange.minimum, edges, points, publishPositions, resetVersion]);
+  }, [distanceRange.maximum, distanceRange.minimum, edges, fitWhenSettled, points, publishPositions, resetVersion]);
 
   useEffect(() => {
     const simulation = simulationRef.current;
@@ -239,8 +320,8 @@ export default function ForceDirectedSemanticGraph({
     drag.moved ||= Math.hypot(point.x - drag.startX, point.y - drag.startY) > 4;
     const node = nodesRef.current.find((candidate) => candidate.id === drag.id);
     if (!node) return;
-    node.fx = clamp(point.x, GRAPH_BOUNDS.minX, GRAPH_BOUNDS.maxX);
-    node.fy = clamp(point.y, GRAPH_BOUNDS.minY, GRAPH_BOUNDS.maxY);
+    node.fx = point.x;
+    node.fy = point.y;
     node.x = node.fx;
     node.y = node.fy;
     if (running) simulationRef.current?.alpha(0.8).restart();
@@ -265,6 +346,8 @@ export default function ForceDirectedSemanticGraph({
   function beginPan(event: ReactPointerEvent<SVGRectElement>) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    stopGlide();
+    viewMovedRef.current = true;
     panRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, start: viewBox };
   }
 
@@ -285,9 +368,11 @@ export default function ForceDirectedSemanticGraph({
   }
 
   const zoomAt = useCallback((factor: number, focusX = 500, focusY = 400) => {
+    stopGlide();
+    viewMovedRef.current = true;
     setViewBox((current) => {
-      const width = clamp(current.width * factor, 360, 1400);
-      const height = width * (670 / 890);
+      const width = clamp(current.width * factor, 360, WIDEST_VIEW);
+      const height = width * VIEW_RATIO;
       const ratioX = (focusX - current.x) / current.width;
       const ratioY = (focusY - current.y) / current.height;
       return {
@@ -297,7 +382,7 @@ export default function ForceDirectedSemanticGraph({
         height,
       };
     });
-  }, []);
+  }, [stopGlide]);
 
   // Over the map the wheel zooms and never scrolls the page (2026-10-24
   // review). React attaches its wheel listener as passive, so the old
@@ -390,7 +475,7 @@ export default function ForceDirectedSemanticGraph({
                 <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#707070"} stroke={selected ? "white" : colors[point.paperId] ?? "#707070"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
                 {showLabels ? (
                   <foreignObject x={-84} y={labelY} width={168} height={48} pointerEvents="none" overflow="visible">
-                    <div className="mx-auto w-fit max-w-[180px] rounded-md bg-white/92 px-2 py-1 text-center text-[10px] font-semibold leading-[14px] text-slate-800 shadow-sm backdrop-blur-sm dark:bg-black/92 dark:text-[#eee]">
+                    <div className="mx-auto w-fit max-w-[180px] rounded-md bg-surface/90 px-2 py-1 text-center text-[11px] font-semibold leading-[14px] text-ink shadow-raise backdrop-blur-sm">
                       {nodeLabel(point.title)}
                     </div>
                   </foreignObject>
@@ -401,10 +486,10 @@ export default function ForceDirectedSemanticGraph({
           })}
         </g>
       </svg>
-      <div className="absolute bottom-3 left-3 flex overflow-hidden rounded-md border border-slate-200 bg-white/95 shadow-sm dark:border-[#292929] dark:bg-[#080808]/95">
-        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomAt(0.82)} className="flex h-9 w-9 items-center justify-center border-r border-slate-200 text-lg font-medium text-slate-700 hover:bg-slate-50 dark:border-[#292929] dark:text-white dark:hover:bg-[#151515]">+</button>
-        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAt(1.2)} className="flex h-9 w-9 items-center justify-center border-r border-slate-200 text-lg font-medium text-slate-700 hover:bg-slate-50 dark:border-[#292929] dark:text-white dark:hover:bg-[#151515]">-</button>
-        <button type="button" title="Reset view" onClick={() => setViewBox(DEFAULT_VIEW)} className="h-9 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-white dark:hover:bg-[#151515]">Fit</button>
+      <div className="absolute bottom-3 left-3 flex overflow-hidden rounded-md border border-hairline bg-surface/95 shadow-raise">
+        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomAt(0.82)} className="flex h-9 w-9 items-center justify-center border-r border-hairline text-lg font-medium text-ink hover:bg-subtle">+</button>
+        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAt(1.2)} className="flex h-9 w-9 items-center justify-center border-r border-hairline text-lg font-medium text-ink hover:bg-subtle">-</button>
+        <button type="button" title="Reset view" onClick={() => glideTo(fittedView(nodesRef.current))} className="h-9 px-3 text-xs font-semibold text-ink hover:bg-subtle">Fit</button>
       </div>
     </div>
   );

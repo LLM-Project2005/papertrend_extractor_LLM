@@ -271,7 +271,7 @@ export function DocsArticle({ page }: { page: DocsPage }) {
   const minutes = readingMinutes(page);
 
   return (
-    <div className="mx-auto max-w-[1240px] px-4 pb-24 pt-24 sm:px-6 lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[232px_minmax(0,1fr)_196px]">
+    <div className="mx-auto max-w-[75rem] px-4 pb-24 pt-24 sm:px-6 lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[232px_minmax(0,1fr)_196px]">
       <aside className="hidden lg:block">
         <div className="sticky top-24 max-h-[calc(100dvh-7rem)] space-y-6 overflow-y-auto overscroll-contain pb-10 pr-1">
           <DocsSearchLink />

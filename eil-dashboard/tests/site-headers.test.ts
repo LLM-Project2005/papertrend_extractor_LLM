@@ -89,9 +89,9 @@ test("the PDF viewer's worker may compile WebAssembly, and nothing else is loose
   assert.equal(worker, site.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'"));
   assert.ok(!site.includes("wasm-unsafe-eval"), "pages keep the stricter policy");
   assert.ok(!/'unsafe-eval'/.test(worker ?? ""), "JavaScript eval stays blocked");
-  // The rule names the file the viewer actually loads.
-  const viewer = readFileSync(new URL("../src/components/workspace/PdfViewer.tsx", import.meta.url), "utf8");
-  assert.match(viewer, /const WORKER_SRC = "\/pdfjs\/pdf\.worker\.min\.mjs";/);
+  // The rule names the file pdf.js actually loads (one loader for the viewer and the Library's thumbnails).
+  const loader = readFileSync(new URL("../src/lib/pdfjs-loader.ts", import.meta.url), "utf8");
+  assert.match(loader, /const WORKER_SRC = "\/pdfjs\/pdf\.worker\.min\.mjs";/);
 });
 
 test("an unset or malformed address adds nothing to the policy", async () => {

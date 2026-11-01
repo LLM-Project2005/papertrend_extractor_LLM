@@ -6,9 +6,9 @@ import PlannerOps from "@/components/marketing/features/PlannerOps";
 import SplitCombine from "@/components/marketing/features/SplitCombine";
 import TopicStages from "@/components/marketing/features/TopicStages";
 import { ANALYSIS_STEP_COUNT } from "@/components/marketing/how-it-works-content";
-import { LiveBadge } from "@/components/marketing/pages/shared";
-import { arrowLinkClass, displayClass, leadClass, secondaryPillClass } from "@/components/marketing/styles";
-import { ArrowRightIcon, CheckCircleIcon, ClockIcon, LockIcon, RefreshIcon, SearchIcon, ShieldCheckIcon } from "@/components/ui/Icons";
+import { arrowLinkClass, displayClass, leadClass } from "@/components/marketing/styles";
+import { buttonClass } from "@/components/ui/controls";
+import { CheckCircleIcon, ClockIcon, LockIcon, RefreshIcon, SearchIcon, ShieldCheckIcon } from "@/components/ui/Icons";
 
 /*
  * Behind the scenes: how a paper becomes topics, and how a question becomes
@@ -16,12 +16,19 @@ import { ArrowRightIcon, CheckCircleIcon, ClockIcon, LockIcon, RefreshIcon, Sear
  * here as the product runs (facts: how-it-works-content.ts, docs/33). The
  * feature pages say what each part does for a reader; this page is the
  * machinery, for the reader who wants to know how.
+ *
+ * The page opens on a split hero over the whole system, then follows one
+ * paper and one question, and ends on its safeguards (2026-10-31, UI audit:
+ * no badge, no dotted field, no closing box; page.tsx adds the quiet end).
  */
 
 const FACTS = [
-  { figure: `${ANALYSIS_STEP_COUNT} steps`, detail: "For each paper, four at a time where they can run together" },
+  {
+    figure: `${ANALYSIS_STEP_COUNT} steps`,
+    detail: "For each paper, four at a time where they can run together. The progress tray groups them into ten.",
+  },
+  { figure: "2 of 3", detail: "Independent groupings that must agree before topics from different papers merge" },
   { figure: "2 searches", detail: "For each question, by words and by meaning, at the same time" },
-  { figure: "Every claim", detail: "Carries a numbered source that opens the paper" },
   { figure: "EN + TH", detail: "Thai papers translated for the analysis; ask and be answered in either" },
 ];
 
@@ -34,7 +41,7 @@ const SAFEGUARDS = [
   {
     Icon: CheckCircleIcon,
     title: "Cited, then checked",
-    copy: "Every claim carries a source, and code confirms each one is a paper that was read. What could not be checked is said in a limitation line.",
+    copy: "Code confirms that each cited source is a paper that was read. What could not be checked is said in a limitation line.",
   },
   {
     Icon: ShieldCheckIcon,
@@ -66,28 +73,26 @@ const MORE = [
   },
 ];
 
-function PartHeader({ index, kicker, title, children }: { index: string; kicker: string; title: string; children: ReactNode }) {
+/** A part's heading (about 40px) and what the part covers, side by side from lg. */
+const partTitleClass = "text-[2rem] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[2.5rem] [text-wrap:balance]";
+
+/** A heading inside a part (about 36px). */
+const subTitleClass = "text-[1.75rem] font-semibold leading-[1.15] tracking-[-0.03em] text-ink sm:text-[2.25rem] [text-wrap:balance]";
+
+function PartHeader({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col items-center text-center">
-      <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-accent-ink">
-        {index} — {kicker}
-      </p>
-      <h2 className="mt-4 max-w-3xl text-[2rem] font-semibold leading-[1.08] tracking-[-0.035em] text-ink sm:text-[2.9rem] [text-wrap:balance]">
-        {title}
-      </h2>
-      <p className={`mt-5 max-w-2xl ${leadClass}`}>{children}</p>
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-end lg:gap-12">
+      <h2 className={`lg:col-span-6 ${partTitleClass}`}>{title}</h2>
+      <p className={`max-w-[65ch] lg:col-span-6 ${leadClass}`}>{children}</p>
     </div>
   );
 }
 
-function SubHeader({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) {
+function SubHeader({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-1 items-end gap-x-12 gap-y-4 lg:grid-cols-2">
-      <div>
-        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-mute">{kicker}</p>
-        <h3 className="mt-2.5 text-[26px] font-semibold leading-[1.15] tracking-[-0.03em] text-ink sm:text-[28px]">{title}</h3>
-      </div>
-      <p className="text-[15px] leading-[26px] text-body">{children}</p>
+      <h3 className={subTitleClass}>{title}</h3>
+      <p className="max-w-[65ch] text-[15px] leading-[26px] text-body">{children}</p>
     </div>
   );
 }
@@ -95,32 +100,29 @@ function SubHeader({ kicker, title, children }: { kicker: string; title: string;
 export default function HowItWorks() {
   return (
     <>
-      {/* Hero */}
-      <section className="relative isolate overflow-hidden border-b border-hairline px-4 pb-24 pt-32 sm:px-6 sm:pt-40">
-        <div aria-hidden="true" className="dot-field pointer-events-none absolute inset-0 -z-10" />
-        <div className="mx-auto flex max-w-6xl flex-col items-center text-center">
-          <LiveBadge>Behind the scenes</LiveBadge>
-          <h1 className={`mt-7 max-w-4xl ${displayClass} text-[2.6rem] leading-[1.03] sm:text-[4.5rem] [text-wrap:balance]`}>
-            How Papertrend reads a whole field.
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-body">
-            Two systems run under every page. One reads each paper in narrow stages and keeps the sentence behind every topic it
-            finds. The other answers your questions from what was read: it plans, searches two ways, writes with a source on every
-            claim, and checks any draft whose support is in doubt.
-          </p>
-          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-            <a
-              href="#topics"
-              className="group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-ink px-6 text-[15px] font-medium text-canvas transition-opacity hover:opacity-90"
-            >
-              Follow one paper
-              <ArrowRightIcon className="h-4 w-4 rotate-90" />
-            </a>
-            <a href="#chat" className={secondaryPillClass}>
-              Follow one question
-            </a>
+      {/* Hero: the headline and one sentence beside it, the whole system beneath */}
+      <section className="border-b border-hairline px-4 pb-20 pt-28 sm:px-6 sm:pt-36">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-end">
+            <h1 className={`lg:col-span-7 ${displayClass} text-[2.6rem] leading-[1.04] sm:text-6xl lg:text-[4.25rem] [text-wrap:balance]`}>
+              How Papertrend reads a whole field.
+            </h1>
+            <div className="lg:col-span-5">
+              <p className="text-lg leading-8 text-body">
+                Two systems run under every page: one reads each paper in narrow stages, and the other answers your questions from
+                what was read.
+              </p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <a href="#topics" className={buttonClass("primary", "lg")}>
+                  Follow one paper
+                </a>
+                <a href="#chat" className={buttonClass("secondary", "lg")}>
+                  Follow one question
+                </a>
+              </div>
+            </div>
           </div>
-          <div className="mt-16 w-full pb-6 sm:mt-20">
+          <div className="mt-14 sm:mt-16">
             <BigPicture />
           </div>
         </div>
@@ -139,38 +141,37 @@ export default function HowItWorks() {
       </section>
 
       {/* Part 1: how a paper becomes topics */}
-      <section id="topics" className="px-4 pb-10 pt-28 sm:px-6 sm:pt-32">
+      <section id="topics" className="px-4 pb-10 pt-24 sm:px-6 sm:pt-28">
         <div className="mx-auto max-w-6xl">
-          <PartHeader index="01" kicker="How a paper becomes topics" title="Six stages. One job each. Topics you can trace.">
-            A classic topic model counts words and hands back clusters that are hard to explain. Papertrend gives each model call
-            one narrow job, keeps every phrase tied to a sentence in the paper, has plain code check the work, and merges topics
-            across papers only where independent passes agree.
+          <PartHeader title="How a paper becomes topics you can trace.">
+            A classic topic model counts words and hands back clusters that are hard to explain. Papertrend reads each paper in six
+            stages and gives each model call one narrow job. It keeps every phrase tied to a sentence in the paper, has plain code
+            check the work, and merges topics across papers only where independent passes agree.
           </PartHeader>
-          <div className="mt-14">
+          <div className="mt-12">
             <TopicStages />
           </div>
           <Link href="/features/paper-analysis" className={`mt-6 ${arrowLinkClass}`}>
-            All {ANALYSIS_STEP_COUNT} steps, as a timeline
-            <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+            All {ANALYSIS_STEP_COUNT} analysis steps, as a timeline
           </Link>
         </div>
       </section>
 
       {/* Part 2: how a question becomes an answer */}
-      <section id="chat" className="mt-20 border-t border-hairline px-4 pb-28 pt-28 sm:px-6 sm:pt-32">
+      <section id="chat" className="mt-16 border-t border-hairline px-4 pb-24 pt-24 sm:px-6 sm:pt-28">
         <div className="mx-auto max-w-6xl">
-          <PartHeader index="02" kicker="Research chat" title="Planned, searched, written, then checked.">
-            Chat answers about your papers from your papers: from what the analysis stored about each one, and a search index of
-            their passages. It puts a numbered source on every claim, and reads a draft again beside its sources whenever its
-            support is in doubt.
+          <PartHeader title="How research chat plans, searches, writes, then checks.">
+            Research chat answers about your papers from your papers: from what the analysis stored about each one, and a search
+            index of their passages, searched two ways at once. It reads a draft again beside its sources whenever its support is
+            in doubt.
           </PartHeader>
 
-          <div className="mt-14">
+          <div className="mt-12">
             <ChatRun />
           </div>
 
           <div className="mt-24">
-            <SubHeader kicker="The planner" title="The first call decides how to answer.">
+            <SubHeader title="The planner: the first call decides how to answer.">
               A short, structured plan picks one to four operations, the search phrases and the language to answer in. Listing and
               counting never touch a model: they come straight from the stored analysis.
             </SubHeader>
@@ -180,8 +181,8 @@ export default function HowItWorks() {
           </div>
 
           <div className="mt-24">
-            <SubHeader kicker="Whole-repository questions" title="Too big for one call, so it’s split, then combined.">
-              “Summarise the main findings across all the papers” needs every paper. Papers are summarised in groups of ten while
+            <SubHeader title="Whole-repository questions: too big for one call, so split, then combined.">
+              “Summarize the main findings across all the papers” needs every paper. Papers are summarized in groups of ten while
               code computes exact counts, so a “how many” in chat matches the dashboard. It runs in the background, usually for a
               minute or two.
             </SubHeader>
@@ -190,31 +191,38 @@ export default function HowItWorks() {
             </div>
           </div>
 
-          <ul className="mt-24 grid grid-cols-1 gap-3.5 md:grid-cols-3">
-            {MORE.map((item) => (
-              <li key={item.title} className="flex flex-col gap-2.5 rounded-2xl border border-hairline bg-surface p-6">
-                <item.Icon className="h-[22px] w-[22px] text-accent-ink" />
-                <p className="text-[16px] font-medium text-ink">{item.title}</p>
-                <p className="text-[14px] leading-[23px] text-body">{item.copy}</p>
-              </li>
-            ))}
-          </ul>
-
           <div className="mt-24">
-            <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-mute">Safeguards</p>
-            <h3 className="mt-2.5 text-[26px] font-semibold leading-[1.15] tracking-[-0.03em] text-ink sm:text-[28px]">
-              Built to be trusted with your research.
-            </h3>
-            <ul className="mt-7 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-hairline bg-hairline sm:grid-cols-2 lg:grid-cols-4">
-              {SAFEGUARDS.map((item) => (
-                <li key={item.title} className="flex flex-col gap-2.5 bg-surface p-6">
-                  <item.Icon className="h-5 w-5 text-ink" />
-                  <p className="font-medium text-ink">{item.title}</p>
-                  <p className="text-[13.5px] leading-[21px] text-body">{item.copy}</p>
-                </li>
+            <h3 className={subTitleClass}>What happens around an answer.</h3>
+            <dl className="mt-8 divide-y divide-hairline border-y border-hairline">
+              {MORE.map((item) => (
+                <div key={item.title} className="grid grid-cols-1 gap-x-12 gap-y-2 py-6 md:grid-cols-12">
+                  <dt className="flex items-center gap-2.5 text-[16px] font-medium text-ink md:col-span-4">
+                    <item.Icon className="h-5 w-5 flex-none text-accent-ink" />
+                    {item.title}
+                  </dt>
+                  <dd className="max-w-[65ch] text-[15px] leading-[26px] text-body md:col-span-8">{item.copy}</dd>
+                </div>
               ))}
-            </ul>
+            </dl>
           </div>
+        </div>
+      </section>
+
+      {/* Safeguards: the page's last section, before the shared quiet end (page.tsx) */}
+      <section className="border-t border-hairline px-4 pb-16 pt-24 sm:px-6 sm:pt-28">
+        <div className="mx-auto max-w-6xl">
+          <h2 className={`max-w-3xl ${partTitleClass}`}>Four safeguards around your repository and its answers.</h2>
+          <dl className="mt-10 grid grid-cols-1 gap-x-12 md:grid-cols-2">
+            {SAFEGUARDS.map((item) => (
+              <div key={item.title} className="border-t border-hairline py-6">
+                <dt className="flex items-center gap-2.5 text-[16px] font-medium text-ink">
+                  <item.Icon className="h-5 w-5 flex-none text-ink" />
+                  {item.title}
+                </dt>
+                <dd className="mt-2 max-w-[65ch] text-[15px] leading-[26px] text-body">{item.copy}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
     </>

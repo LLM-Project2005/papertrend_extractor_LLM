@@ -46,9 +46,12 @@ import {
   fieldClass,
   hintClass,
   labelClass,
+  menuItemClass,
   panelClass,
+  selectedClass,
   type ChipTone,
 } from "@/components/ui/controls";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { ACCESS_REQUEST_INVITE_DAYS, ACCESS_REQUEST_RETENTION_DAYS } from "@/lib/access-request-limits";
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
@@ -284,6 +287,9 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
   const dirty = name.trim() !== savedName.trim() || avatar.trim() !== savedAvatar.trim();
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const avatarInvalid = Boolean(avatar.trim()) && !/^https:\/\/\S+$/i.test(avatar.trim());
+  // Said only once the field has been left (UI audit C17): "h" is not a wrong link yet.
+  const [avatarTouched, setAvatarTouched] = useState(false);
+  const showAvatarError = avatarInvalid && avatarTouched;
 
   async function save() {
     setSaving(true);
@@ -370,12 +376,13 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
           maxLength={2000}
           inputMode="url"
           onChange={(event) => setAvatar(event.target.value)}
+          onBlur={() => setAvatarTouched(true)}
           placeholder="https://"
-          aria-invalid={avatarInvalid}
-          aria-describedby={avatarInvalid ? "settings-avatar-error" : undefined}
+          aria-invalid={showAvatarError}
+          aria-describedby={showAvatarError ? "settings-avatar-error" : undefined}
           className={`${fieldClass} aria-[invalid=true]:border-red-500`}
         />
-        {avatarInvalid ? (
+        {showAvatarError ? (
           <p id="settings-avatar-error" className="mt-1.5 text-[13px] text-red-700 dark:text-red-300">
             Use a full link that starts with https://.
           </p>
@@ -1044,6 +1051,7 @@ const INVITE_EXPIRY_CHOICES = [1, 3, 7, 14, 30, 60, 90];
  */
 function InviteCodesSection() {
   const { session } = useAuth();
+  const [confirm, confirmDialog] = useConfirm();
   const token = session?.access_token;
   const [invites, setInvites] = useState<InviteSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1106,7 +1114,15 @@ function InviteCodesSection() {
   async function revoke(invite: InviteSummary) {
     if (!token) return;
     const name = invite.label ? `“${invite.label}”` : "this invite code";
-    if (!window.confirm(`Revoke ${name}? It stops working at once. Accounts it already created keep working.`)) return;
+    if (
+      !(await confirm({
+        title: `Revoke ${name}?`,
+        body: "It stops working at once. Accounts it already created keep working.",
+        confirmLabel: "Revoke",
+        tone: "danger",
+      }))
+    )
+      return;
     setRevoking(invite.id);
     try {
       const response = await fetch(`/api/admin/invites/${encodeURIComponent(invite.id)}`, {
@@ -1258,11 +1274,13 @@ function InviteCodesSection() {
                       <span className="truncate">{invite.label || "No note"}</span>
                       <span className={chipClass(status.tone)}>{status.label}</span>
                     </p>
-                    <p className="mt-1 text-[13px] leading-5 text-body">
-                      Used {invite.useCount} of {invite.maxUses}
-                      {invite.boundEmail ? ` · only for ${invite.boundEmail}` : ""}
-                      {` · made ${formatDate(invite.createdAt)}`}
-                      {invite.status === "active" ? ` · expires ${formatDate(invite.expiresAt)}` : ""}
+                    <p className="mt-1 flex flex-wrap gap-x-3 text-[13px] leading-5 text-body">
+                      <span>
+                        Used {invite.useCount} of {invite.maxUses}
+                      </span>
+                      {invite.boundEmail ? <span>Only for {invite.boundEmail}</span> : null}
+                      <span>Made {formatDate(invite.createdAt)}</span>
+                      {invite.status === "active" ? <span>Expires {formatDate(invite.expiresAt)}</span> : null}
                     </p>
                     {invite.redeemedBy.length ? (
                       <p className="mt-0.5 break-all text-[13px] leading-5 text-mute">
@@ -1286,6 +1304,7 @@ function InviteCodesSection() {
           </ul>
         ) : null}
       </Section>
+      {confirmDialog}
     </div>
   );
 }
@@ -1340,6 +1359,7 @@ function inviteEmailHref(request: AccessRequestView, code: string, origin: strin
  */
 function AccessRequestsSection() {
   const { session } = useAuth();
+  const [confirm, confirmDialog] = useConfirm();
   const token = session?.access_token;
   const [requests, setRequests] = useState<AccessRequestView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1370,7 +1390,11 @@ function AccessRequestsSection() {
 
   async function answer(request: AccessRequestView, action: "invite" | "decline") {
     if (!token) return;
-    if (action === "decline" && !window.confirm(`Decline the request from ${request.name}? They are not told.`)) return;
+    if (
+      action === "decline" &&
+      !(await confirm({ title: `Decline the request from ${request.name}?`, body: "They are not told.", confirmLabel: "Decline", tone: "danger" }))
+    )
+      return;
     setBusy(request.id);
     setError(null);
     setSent(null);
@@ -1395,7 +1419,15 @@ function AccessRequestsSection() {
 
   async function remove(request: AccessRequestView) {
     if (!token) return;
-    if (!window.confirm(`Delete the request from ${request.name}? Their details are removed at once.`)) return;
+    if (
+      !(await confirm({
+        title: `Delete the request from ${request.name}?`,
+        body: "Their details are removed at once.",
+        confirmLabel: "Delete",
+        tone: "danger",
+      }))
+    )
+      return;
     setBusy(request.id);
     setError(null);
     try {
@@ -1467,8 +1499,9 @@ function AccessRequestsSection() {
         {requests && requests.length === 0 ? <p className="text-sm text-body">No requests yet.</p> : null}
         {requests && requests.length > 0 ? (
           <>
-            <p className="mb-3 text-[13px] text-mute">
-              {waiting} waiting · {requests.length} in all
+            <p className="mb-3 flex flex-wrap gap-x-3 text-[13px] text-mute">
+              <span>{waiting} waiting</span>
+              <span>{requests.length} in all</span>
             </p>
             <ul className="divide-y divide-hairline">
               {requests.map((request) => {
@@ -1481,15 +1514,18 @@ function AccessRequestsSection() {
                           <span className="break-words">{request.name}</span>
                           <span className={chipClass(status.tone)}>{status.label}</span>
                         </p>
-                        <p className="mt-1 break-all text-[13px] leading-5 text-body">
-                          {request.email} · {request.affiliation}
+                        <p className="mt-1 flex flex-wrap gap-x-3 break-all text-[13px] leading-5 text-body">
+                          <span>{request.email}</span>
+                          <span>{request.affiliation}</span>
                         </p>
-                        <p className="mt-0.5 text-[13px] leading-5 text-mute">
-                          Sent {formatDate(request.updatedAt)}
-                          {request.status === "invited" && request.inviteStatus
-                            ? ` · invited ${formatDate(request.reviewedAt)}, ${SENT_CODE_STATUS[request.inviteStatus]}`
-                            : ""}
-                          {request.status === "declined" ? ` · declined ${formatDate(request.reviewedAt)}` : ""}
+                        <p className="mt-0.5 flex flex-wrap gap-x-3 text-[13px] leading-5 text-mute">
+                          <span>Sent {formatDate(request.updatedAt)}</span>
+                          {request.status === "invited" && request.inviteStatus ? (
+                            <span>
+                              Invited {formatDate(request.reviewedAt)}, {SENT_CODE_STATUS[request.inviteStatus]}
+                            </span>
+                          ) : null}
+                          {request.status === "declined" ? <span>Declined {formatDate(request.reviewedAt)}</span> : null}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1534,6 +1570,7 @@ function AccessRequestsSection() {
           </>
         ) : null}
       </Section>
+      {confirmDialog}
     </div>
   );
 }
@@ -1552,6 +1589,8 @@ export default function WorkspaceSettingsClient() {
     () => (isAdmin ? VISIBLE_SECTIONS : VISIBLE_SECTIONS.filter((section) => section.group !== "Admin")),
     [isAdmin]
   );
+  const router = useRouter();
+  const [confirm, confirmDialog] = useConfirm();
   const [activeSection, setActiveSection] = useState<SectionId>(() => resolveSection(searchParams.get("section")));
   // Whichever section is open reports whether it holds unsaved edits, and
   // leaving it (another section, a link, closing the tab) asks first.
@@ -1564,12 +1603,22 @@ export default function WorkspaceSettingsClient() {
   useEffect(() => {
     if (!sectionDirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    // The shared confirm answers later, so the link is held and followed on "Discard".
     const warnLinkNavigation = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (target && !window.confirm(discardQuestion(activeSection))) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+      const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const href = target.href;
+      const newTab = target.target === "_blank" || event.ctrlKey || event.metaKey || event.shiftKey;
+      void confirm({ title: discardQuestion(activeSection), confirmLabel: "Discard", tone: "danger" }).then((leave) => {
+        if (!leave) return;
+        setSectionDirty(false);
+        const url = new URL(href, window.location.href);
+        if (newTab) window.open(url.href, "_blank", "noopener,noreferrer");
+        else if (url.origin === window.location.origin) router.push(`${url.pathname}${url.search}${url.hash}`);
+        else window.location.assign(url.href);
+      });
     };
     window.addEventListener("beforeunload", warn);
     document.addEventListener("click", warnLinkNavigation, true);
@@ -1577,11 +1626,11 @@ export default function WorkspaceSettingsClient() {
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", warnLinkNavigation, true);
     };
-  }, [activeSection, sectionDirty]);
+  }, [activeSection, confirm, router, sectionDirty]);
 
-  function selectSection(id: SectionId) {
+  async function selectSection(id: SectionId) {
     if (id === activeSection) return;
-    if (sectionDirty && !window.confirm(discardQuestion(activeSection))) {
+    if (sectionDirty && !(await confirm({ title: discardQuestion(activeSection), confirmLabel: "Discard", tone: "danger" }))) {
       return;
     }
     setActiveSection(id);
@@ -1600,7 +1649,8 @@ export default function WorkspaceSettingsClient() {
   const active = sections.find((section) => section.id === activeSection) ?? sections[0];
 
   return (
-    <div className="mx-auto max-w-[1080px] pb-16 pt-2 sm:pt-4">
+    <div className="mx-auto w-full max-w-[1500px] pb-16 pt-2 sm:pt-4">
+      <div className="max-w-[1080px]">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight text-ink">Settings</h1>
         <p className="mt-2 text-[15px] leading-7 text-body">
@@ -1624,16 +1674,24 @@ export default function WorkspaceSettingsClient() {
                 <button
                   key={section.id}
                   type="button"
-                  onClick={() => selectSection(section.id)}
+                  onClick={() => void selectSection(section.id)}
                   aria-current={selected ? "page" : undefined}
-                  className={`flex-none rounded-full px-3.5 py-2 text-sm transition-colors duration-150 ${
-                    selected ? "bg-ink font-medium text-canvas" : "text-body hover:bg-subtle hover:text-ink"
+                  className={`flex-none rounded-lg px-3.5 py-2 text-sm transition-colors duration-150 ${
+                    selected ? `${selectedClass} font-medium` : "text-body hover:bg-subtle hover:text-ink"
                   }`}
                 >
                   {section.label}
                 </button>
               );
             })}
+            {/* The guide was on the desktop list only (UI audit C18). */}
+            <Link
+              href="/docs/account-and-settings"
+              className="flex flex-none items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink"
+            >
+              <BookOpenIcon className="h-4 w-4 text-mute" />
+              Settings guide
+            </Link>
           </div>
           <div className="hidden space-y-6 lg:block">
             {groups.map(({ group, items }) => (
@@ -1654,11 +1712,9 @@ export default function WorkspaceSettingsClient() {
                       <li key={section.id}>
                         <button
                           type="button"
-                          onClick={() => selectSection(section.id)}
+                          onClick={() => void selectSection(section.id)}
                           aria-current={selected ? "page" : undefined}
-                          className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 ${
-                            selected ? "bg-subtle font-medium text-ink" : "text-body hover:bg-subtle/70 hover:text-ink"
-                          }`}
+                          className={menuItemClass(selected, selected ? "font-medium" : "")}
                         >
                           <Icon className={`h-4 w-4 flex-none ${selected ? "text-ink" : "text-mute"}`} />
                           {section.label}
@@ -1692,6 +1748,8 @@ export default function WorkspaceSettingsClient() {
           {active.id === "requests" && isAdmin ? <AccessRequestsSection /> : null}
         </div>
       </div>
+      </div>
+      {confirmDialog}
     </div>
   );
 }

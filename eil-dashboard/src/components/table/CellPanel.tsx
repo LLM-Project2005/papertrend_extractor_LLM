@@ -355,7 +355,7 @@ export default function CellPanel({
         event.preventDefault();
         void ask();
       }}
-      className="rounded-xl border border-hairline bg-surface p-2 focus-within:border-hairline-strong"
+      className="rounded-xl border border-field bg-surface p-2 has-[textarea:focus]:border-accent has-[textarea:focus]:ring-4 has-[textarea:focus]:ring-accent/15"
     >
       <textarea
         value={draft}
@@ -393,8 +393,8 @@ export default function CellPanel({
       data-cell-panel={docked ? "docked" : "card"}
       className={
         docked
-          ? "fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col border-t border-hairline bg-surface shadow-overlay sm:inset-x-auto sm:bottom-3 sm:right-3 sm:top-[4.75rem] sm:w-[420px] sm:rounded-xl sm:border"
-          : "fixed inset-x-3 bottom-3 z-40 rounded-xl border border-hairline bg-surface p-4 shadow-overlay sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[440px]"
+          ? "fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col border-t border-hairline bg-surface shadow-overlay sm:inset-x-auto sm:bottom-3 sm:right-3 sm:top-[4.75rem] sm:w-[420px] sm:rounded-xl sm:border motion-safe:animate-rise-in sm:motion-safe:animate-panel-in-right"
+          : "fixed inset-x-3 bottom-3 z-40 rounded-xl border border-hairline bg-surface p-4 shadow-overlay motion-safe:animate-rise-in sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[440px] sm:motion-safe:animate-panel-in-right"
       }
     >
       {docked ? (

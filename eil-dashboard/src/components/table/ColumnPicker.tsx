@@ -37,7 +37,7 @@ function Choice({
       <span className="min-w-0">
         <span className="flex items-baseline gap-2">
           <span className="text-sm font-medium text-ink">{name}</span>
-          <span className="text-[11px] uppercase tracking-wide text-mute">{KIND_LABEL[kind]}</span>
+          <span className="text-xs text-mute">{KIND_LABEL[kind]}</span>
         </span>
         {description ? <span className="mt-0.5 block text-[13px] leading-5 text-mute">{description}</span> : null}
       </span>
@@ -99,7 +99,7 @@ export default function ColumnPicker({
             if (shown.length === 0) return null;
             return (
               <section key={group.id} className="mb-3">
-                <h3 className="sticky top-0 z-10 bg-surface px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-mute">{group.label}</h3>
+                <h3 className="sticky top-0 z-10 bg-surface px-2.5 py-1.5 text-xs font-medium text-mute">{group.label}</h3>
                 <div className="grid gap-x-3 sm:grid-cols-2">
                   {shown.map((preset) => {
                     const key = `preset:${preset.key}`;
@@ -121,7 +121,7 @@ export default function ColumnPicker({
           })}
           {own.some((column) => matches(column.name, column.instruction)) ? (
             <section className="mb-3">
-              <h3 className="sticky top-0 z-10 bg-surface px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-mute">Your columns</h3>
+              <h3 className="sticky top-0 z-10 bg-surface px-2.5 py-1.5 text-xs font-medium text-mute">Your columns</h3>
               <div className="grid gap-x-3 sm:grid-cols-2">
                 {own
                   .filter((column) => matches(column.name, column.instruction))

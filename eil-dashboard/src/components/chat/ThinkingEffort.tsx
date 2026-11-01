@@ -227,7 +227,7 @@ export default function ThinkingEffort({
         <div
           role="dialog"
           aria-label={view === "effort" ? "Thinking effort" : "Select model"}
-          className="absolute bottom-full right-0 z-40 mb-2 w-[min(18.5rem,calc(100vw-2rem))] rounded-2xl border border-hairline bg-surface p-3 text-ink shadow-overlay"
+          className="absolute bottom-full right-0 z-40 mb-2 w-[min(18.5rem,calc(100vw-2rem))] origin-bottom-right rounded-2xl border border-hairline bg-surface p-3 text-ink shadow-overlay motion-safe:animate-scale-in"
         >
           {view === "effort" ? (
             <>
@@ -258,12 +258,16 @@ export default function ThinkingEffort({
                 </button>
               </div>
 
-              {/* The track people see; the range input over it is what pointer and keyboard use. */}
-              <div className="effort-track relative mt-3 h-9 rounded-full bg-hairline">
+              {/* The track people see; the range input over it is what pointer and keyboard use.
+                  The fill and the thumb move by transform, not width and left
+                  (UI audit #13): the fill is the track's full width slid left
+                  until its end sits under the thumb, and the track clips it. At
+                  Max it does not move, so the sheen and its stars are as before. */}
+              <div className="effort-track relative mt-3 h-9 overflow-hidden rounded-full bg-hairline has-[.effort-range:focus-visible]:outline has-[.effort-range:focus-visible]:outline-2 has-[.effort-range:focus-visible]:outline-offset-2 has-[.effort-range:focus-visible]:outline-[rgb(var(--focus))]">
                 <div className="absolute inset-y-0 left-[18px] right-[18px]">
                   <div
-                    className={`absolute inset-y-0 -left-[18px] overflow-hidden rounded-full transition-[width] duration-200 ease-out ${isMax ? "effort-fill-max" : "bg-accent"}`}
-                    style={{ width: `calc(${position}% + 36px)` }}
+                    className={`absolute inset-y-0 -left-[18px] -right-[18px] overflow-hidden rounded-full transition-transform duration-200 ease-out ${isMax ? "effort-fill-max" : "bg-accent"}`}
+                    style={{ transform: `translateX(calc(${position / 100 - 1} * (100% - 36px)))` }}
                     aria-hidden="true"
                   >
                     {isMax
@@ -290,9 +294,11 @@ export default function ThinkingEffort({
                   )}
                   <span
                     aria-hidden="true"
-                    className="absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-[left] duration-200 ease-out"
-                    style={{ left: `${position}%` }}
-                  />
+                    className="absolute inset-0 transition-transform duration-200 ease-out"
+                    style={{ transform: `translateX(${position}%)` }}
+                  >
+                    <span className="absolute left-0 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)]" />
+                  </span>
                 </div>
                 <input
                   ref={sliderRef}

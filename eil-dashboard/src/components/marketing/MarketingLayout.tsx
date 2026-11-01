@@ -8,9 +8,14 @@ import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 
 interface MarketingNavProps {
   activeSlug?: string;
-  /** Match the documentation's wider three-column layout. */
-  wide?: boolean;
 }
+
+/*
+ * One width for the whole public site (2026-10-31 audit): the header, every
+ * section (px-4 sm:px-6 around max-w-6xl), the docs and the footer share the
+ * same edges, so the wordmark does not move between a page and the docs.
+ */
+export const SITE_CONTAINER = "mx-auto w-full max-w-[75rem] px-4 sm:px-6";
 
 /** The pages about Papertrend itself, beside the features and the docs. */
 const ABOUT_LINKS = [
@@ -25,10 +30,10 @@ function navLinkClass(active: boolean) {
   }`;
 }
 
-export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
+export function MarketingNav({ activeSlug }: MarketingNavProps) {
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-hairline/70 bg-white/75 backdrop-blur-md backdrop-saturate-150 dark:bg-black/70">
-      <div className={`mx-auto flex h-16 items-center justify-between gap-4 px-4 sm:px-6 ${wide ? "max-w-[1240px]" : "max-w-6xl"}`}>
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-hairline/70 bg-canvas/80 backdrop-blur-md backdrop-saturate-150">
+      <div className={`${SITE_CONTAINER} flex h-16 items-center justify-between gap-4`}>
         <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="Papertrend home">
           <LogoMarkIcon className="h-6 w-6 flex-none text-ink" />
           <span className="text-[15px] font-semibold tracking-tight text-ink">Papertrend</span>
@@ -69,7 +74,8 @@ export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
         <div className="flex items-center gap-1.5">
           <ThemeToggle compact />
           <WorkspaceProfileMenu variant="marketing" />
-          <MarketingCTA className="hidden sm:inline-flex" />
+          {/* Its label is long, so it waits for a laptop width; below it, Sign in and the menu lead to the same place. */}
+          <MarketingCTA className="hidden lg:inline-flex" />
           {/* No JavaScript needed to open the menu on a phone. */}
           <details className="group relative md:hidden">
             <summary
@@ -134,7 +140,7 @@ const FOOTER_GROUPS: Array<{ title: string; links: Array<{ label: string; href: 
 export function MarketingFooter() {
   return (
     <footer data-site-footer className="border-t border-hairline bg-canvas">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 py-16 sm:px-6 md:grid-cols-[1.1fr_2fr]">
+      <div className={`${SITE_CONTAINER} grid gap-12 py-16 md:grid-cols-[1.1fr_2fr]`}>
         <div>
           <Link href="/" className="inline-flex items-center gap-2.5">
             <LogoMarkIcon className="h-6 w-6 text-ink" />
@@ -172,7 +178,7 @@ export function MarketingFooter() {
         </nav>
       </div>
       <div className="border-t border-hairline">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-[13px] text-mute sm:px-6">
+        <div className={`${SITE_CONTAINER} flex flex-wrap items-center justify-between gap-3 py-6 text-[13px] text-mute`}>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>© {new Date().getFullYear()} Papertrend</span>
             <Link href="/privacy" className="-mx-1 rounded px-1 py-1 transition-colors hover:text-ink">
@@ -182,7 +188,6 @@ export function MarketingFooter() {
               Terms
             </Link>
           </p>
-          <p>Made for researchers who want to check the answer.</p>
         </div>
       </div>
     </footer>
@@ -204,7 +209,7 @@ export function MarketingShell({
       >
         Skip to content
       </a>
-      <MarketingNav activeSlug={activeSlug} wide={activeSlug === "docs"} />
+      <MarketingNav activeSlug={activeSlug} />
       <main id="main" tabIndex={-1} className="outline-none">
         {children}
       </main>

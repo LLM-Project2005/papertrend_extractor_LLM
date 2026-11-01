@@ -58,17 +58,10 @@ export default function CorpusFunnel() {
     <div ref={ref} className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
       {/* 1. The papers */}
       <figure data-stage="0" className="rounded-2xl border border-hairline bg-surface p-5">
-        <motion.div {...appear(0)} className="grid grid-cols-9 gap-1.5" aria-hidden="true">
-          {Array.from({ length: DEMO_PAPER_COUNT }, (_, index) => (
-            <motion.span
-              key={index}
-              className="aspect-[3/4] rounded-[3px] bg-ink/15 dark:bg-white/20"
-              initial={motionOK ? { opacity: 0, scale: 0.6 } : false}
-              animate={shown ? { opacity: 1, scale: 1 } : {}}
-              transition={{ duration: 0.3, delay: motionOK ? index * 0.012 : 0 }}
-            />
-          ))}
-        </motion.div>
+        {/* The count in type, not a page drawn per paper (2026-10-31 audit). */}
+        <motion.p {...appear(0)} className="text-[64px] font-semibold leading-none tracking-[-0.04em] text-ink tabular-nums" aria-hidden="true">
+          {DEMO_PAPER_COUNT}
+        </motion.p>
         <figcaption className="mt-5">
           <span className="block text-[15px] font-medium text-ink">{STAGES[0].title}</span>
           <span className="mt-1 block text-[13.5px] leading-6 text-body">{STAGES[0].note}</span>
@@ -82,15 +75,13 @@ export default function CorpusFunnel() {
         <motion.div {...appear(1)} className="space-y-2" aria-hidden="true">
           {GROUPS.map((size, index) => (
             <div key={index} className="flex items-center gap-2">
-              <span className="flex h-6 flex-1 items-center gap-[3px] rounded-md bg-subtle px-1.5">
-                {Array.from({ length: size }, (_, dot) => (
-                  <span key={dot} className="h-3 w-[7px] rounded-[2px] bg-ink/25 dark:bg-white/25" />
-                ))}
-              </span>
+              <span className="flex h-6 flex-1 items-center rounded-md bg-subtle px-2 text-[13px] tabular-nums text-body">{size} papers</span>
+              {/* Grown with scaleX from its left edge: width is never animated. */}
               <motion.span
-                className="h-1.5 rounded-full bg-ink/70"
+                className="h-1.5 origin-left rounded-full bg-ink/70"
+                style={{ width: `${18 + size * 2.2}%` }}
                 initial={false}
-                animate={{ width: shown ? `${18 + size * 2.2}%` : "0%" }}
+                animate={{ scaleX: shown ? 1 : 0 }}
                 transition={{ duration: 0.6, delay: at(1) + 0.3 + index * 0.12, ease: EASE }}
               />
             </div>
@@ -131,9 +122,9 @@ export default function CorpusFunnel() {
       <figure data-stage="3" className="rounded-2xl border border-hairline-strong bg-surface p-5 shadow-float">
         <motion.div {...appear(3)} className="space-y-2" aria-hidden="true">
           <span className="block h-2.5 w-11/12 rounded-full bg-ink/70" />
-          <span className="block h-2 w-full rounded-full bg-ink/15 dark:bg-white/15" />
-          <span className="block h-2 w-10/12 rounded-full bg-ink/15 dark:bg-white/15" />
-          <span className="block h-2 w-9/12 rounded-full bg-ink/15 dark:bg-white/15" />
+          <span className="block h-2 w-full rounded-full bg-ink/15" />
+          <span className="block h-2 w-10/12 rounded-full bg-ink/15" />
+          <span className="block h-2 w-9/12 rounded-full bg-ink/15" />
           <span className="mt-3 flex items-center gap-1.5 text-[12px] text-body">
             <CheckCircleIcon className="h-3.5 w-3.5" /> Covered all {DEMO_PAPER_COUNT} papers
           </span>

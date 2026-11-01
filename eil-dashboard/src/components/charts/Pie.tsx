@@ -58,7 +58,7 @@ export default function Pie({ slices, unit = "papers" }: { slices: PieSlice[]; u
               <span className="truncate" title={slice.label}>{slice.label}</span>
             </span>
             <span className="flex-none text-xs tabular-nums text-body">
-              {formatNumber(slice.value)} · {formatPercent(sharePercent(slice.value, total))}
+              {formatNumber(slice.value)} ({formatPercent(sharePercent(slice.value, total))})
             </span>
           </li>
         ))}

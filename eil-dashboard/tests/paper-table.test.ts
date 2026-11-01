@@ -963,3 +963,17 @@ test("a cell's own Read again reads that one cell from the whole paper, whatever
   assert.deepEqual(await none.json(), { done: true, found: 0, usd: 0 }, "a cell not in the table reads nothing");
   assert.equal(requests.length, 1);
 });
+
+test("the Table shows the day's AI allowance beside Fill table, and filling counts against it", () => {
+  // 2026-11-01, the owner: filling a table is not unlimited, and the reader should see that.
+  const client = readFileSync(new URL("../src/components/table/PaperTableClient.tsx", import.meta.url), "utf8");
+  const meter = client.indexOf("<UsageMeter");
+  assert.ok(meter > 0, "the usage meter is on the Table");
+  assert.ok(meter < client.indexOf("Fill table", meter), "beside the Fill table button");
+  assert.match(client.slice(meter, meter + 400), /placement="below"/, "its panel opens downward from the toolbar");
+  assert.match(client.slice(meter, meter + 400), /note="[^"]*allowance[^"]*"/, "it says what on the page uses the allowance");
+  // The meter adds up the same token rows the fill route writes and checks.
+  const fill = readFileSync(new URL("../src/app/api/workspace/tables/[id]/fill/route.ts", import.meta.url), "utf8");
+  assert.match(fill, /await assertAiTokenBudget\(user\.id\)/, "a fill starts only with allowance left");
+  assert.match(fill, /persistAiTokenUsage\([^)]*"paper-table"\)/, "its tokens are counted in the day's use");
+});

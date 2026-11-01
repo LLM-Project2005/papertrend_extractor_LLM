@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default function RequestAccessPage() {
   return (
     <MarketingShell>
-      <section className="mx-auto max-w-xl px-4 pb-24 pt-16 sm:px-6 sm:pt-20">
+      <section className="mx-auto max-w-xl px-4 pb-24 pt-28 sm:px-6 sm:pt-32">
         <h1 className="text-4xl font-semibold tracking-tight text-ink">Request access</h1>
         <p className="mt-4 text-base leading-7 text-body">
           Papertrend is invite-only while it is in beta: a new account needs an invite code. Tell us who you are and how

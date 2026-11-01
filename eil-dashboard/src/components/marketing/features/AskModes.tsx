@@ -41,7 +41,7 @@ function AnswerVisual() {
     <div className="rounded-2xl border border-hairline bg-surface p-5 text-[14px] leading-6">
       <p className="text-ink">
         Restored mangroves cut flood damage most where there was room to plant them
-        <sup className="ml-0.5 font-mono text-[10px] text-accent-ink">1</sup>.
+        <sup className="ml-0.5 font-mono text-[11px] text-accent-ink">1</sup>.
       </p>
       <div className="mt-4 border-t border-dashed border-hairline-strong pt-4">
         <p className="flex items-center gap-2 text-[13px] font-medium text-ink">
@@ -102,12 +102,16 @@ function ResearchVisual({ play }: { play: boolean }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: EASE }}
           >
-            <p className="text-[12.5px] text-mute">Thought for 41s · 3 parts · 22 sources</p>
+            <p className="flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] text-mute">
+              <span>Thought for 41s</span>
+              <span>3 parts</span>
+              <span>22 sources</span>
+            </p>
             <div className="mt-3 space-y-3 text-[14px]">
               {["The answer, in a few sentences", "Where each defence works", "What changed in policy", "What the papers searched don’t cover"].map((heading, index) => (
                 <div key={heading}>
                   <p className="font-medium text-ink">{heading}</p>
-                  <span className="mt-1.5 block h-1.5 rounded-full bg-ink/10 dark:bg-white/15" style={{ width: `${92 - index * 9}%` }} />
+                  <span className="mt-1.5 block h-1.5 rounded-full bg-ink/10" style={{ width: `${92 - index * 9}%` }} />
                 </div>
               ))}
             </div>
@@ -132,7 +136,7 @@ function ChartVisual({ play }: { play: boolean }) {
         {DEMO_YEARS.map((item, index) => (
           <div key={item.year} className="flex h-full flex-1 flex-col justify-end">
             <motion.span
-              className={`block rounded-t-[4px] ${item.year === 2022 ? "bg-ink" : "bg-ink/25 dark:bg-white/30"}`}
+              className={`block rounded-t-[4px] ${item.year === 2022 ? "bg-ink" : "bg-ink/25"}`}
               initial={false}
               animate={{ height: drawn ? `${(item.papers / max) * 100}%` : "0%" }}
               transition={{ duration: 0.7, delay: motionOK ? 0.15 + index * 0.04 : 0, ease: EASE }}

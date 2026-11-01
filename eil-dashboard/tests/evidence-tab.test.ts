@@ -103,5 +103,5 @@ test("the viewer marks every passage, steps through them, and turns pages", () =
   // The page in focus is drawn at once; the others as they come into view.
   assert.match(viewer, /useEffect\(\(\) => \{\n\s+if \(hasActive\) setNear\(true\);\n\s+\}, \[hasActive\]\);/);
   const css = read("src/app/globals.css");
-  assert.match(css, /\.pdf-evidence-mark-soft \{\n\s+background: rgb\(250 204 21 \/ 0\.14\);/);
+  assert.match(css, /\.pdf-evidence-mark-soft \{\n\s+background: rgb\(var\(--highlight\) \/ 0\.14\);/); // the highlighter yellow is a token since 2026-10-31
 });

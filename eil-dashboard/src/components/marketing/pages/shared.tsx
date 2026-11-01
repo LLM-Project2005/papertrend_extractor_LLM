@@ -1,10 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
-import { marketingFeatures, type FeatureSlug } from "@/components/marketing/marketing-content";
-import { arrowLinkClass, leadClass, sectionTitleClass } from "@/components/marketing/styles";
-import { ArrowRightIcon } from "@/components/ui/Icons";
-import Mascot from "@/components/ui/Mascot";
+import type { FeatureSlug } from "@/components/marketing/marketing-content";
 
 /** The way back to the overview, above a feature page's headline. */
 export function Crumb({ label }: { label: string }) {
@@ -21,64 +18,38 @@ export function Crumb({ label }: { label: string }) {
   );
 }
 
-/** A small pill above a centred headline, with a dot that breathes. */
+/**
+ * A short line of context above a headline, in the body face and sentence
+ * case. It once wore a breathing "live" dot and mono capitals (2026-10-31
+ * audit): nothing it labels is live.
+ */
 export function LiveBadge({ children }: { children: ReactNode }) {
-  return (
-    <p className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-3.5 py-1.5 font-mono text-[12px] uppercase tracking-[0.04em] text-body">
-      <span className="live-dot" aria-hidden="true" />
-      {children}
-    </p>
-  );
+  return <p className="text-sm font-medium text-body">{children}</p>;
 }
 
 /**
- * The end of every feature page: one invitation, then the other parts of the
- * product, each with the line that says what its page holds. Pages that are
- * not a feature list all four.
+ * The quiet end of a public page, after its own last section: one line on
+ * what to do next, one way to start, and how to get an invite. It replaced a
+ * closing box with the mascot, "More of Papertrend" and "Back to the
+ * overview", which ended every page the same way (2026-10-31 audit); the
+ * other pages are in the header and the footer.
  */
-export function FeatureEnd({ slug, title, copy }: { slug?: FeatureSlug; title: string; copy: string }) {
-  const others = marketingFeatures.filter((item) => item.slug !== slug);
+export function FeatureEnd({ title, copy }: { slug?: FeatureSlug; title: string; copy: string }) {
   return (
-    <>
-      <section className="px-4 pb-24 sm:px-6">
-        <div className="mx-auto max-w-6xl rounded-[28px] border border-hairline bg-canvas px-6 py-16 text-center dark:bg-surface sm:px-12 sm:py-20">
-          <Mascot size={48} className="mx-auto mb-7 text-ink" />
-          <h2 className={`mx-auto max-w-2xl ${sectionTitleClass} [text-wrap:balance]`}>{title}</h2>
-          <p className={`mx-auto mt-5 max-w-xl ${leadClass}`}>{copy}</p>
-          <div className="mt-9 flex justify-center">
-            <MarketingCTA size="lg" />
-          </div>
-          <p className="mt-6 text-[13px] text-mute">
+    <section className="px-4 pb-24 sm:px-6">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 border-t border-hairline pt-10 md:flex-row md:items-center md:justify-between md:gap-12">
+        <div className="max-w-2xl">
+          <p className="text-[19px] font-semibold tracking-[-0.02em] text-ink [text-wrap:balance]">{title}</p>
+          <p className="mt-2 text-[15px] leading-7 text-body">{copy}</p>
+          <p className="mt-2 text-[13px] leading-6 text-mute">
             New accounts need an invite code during the beta.{" "}
             <Link href="/request-access" className="font-medium text-ink underline underline-offset-2">
               Request access
             </Link>
           </p>
         </div>
-      </section>
-
-      <section className="border-t border-hairline px-4 py-20 sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-lg font-medium text-ink">More of Papertrend</h2>
-          <ul className={`mt-6 grid grid-cols-1 gap-x-10 gap-y-2 ${others.length > 3 ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
-            {others.map((item) => (
-              <li key={item.slug}>
-                <Link href={`/features/${item.slug}`} className="group block border-t border-hairline py-5">
-                  <span className="flex items-center justify-between gap-3 text-[15px] font-medium text-ink">
-                    {item.navLabel}
-                    <ArrowRightIcon className="h-4 w-4 text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
-                  </span>
-                  <span className="mt-1.5 block text-sm leading-6 text-body">{item.inside}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <Link href="/" className={`mt-10 ${arrowLinkClass}`}>
-            Back to the overview
-            <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Link>
-        </div>
-      </section>
-    </>
+        <MarketingCTA variant="secondary" size="lg" className="self-start md:self-center" />
+      </div>
+    </section>
   );
 }

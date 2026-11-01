@@ -43,8 +43,8 @@ export default function MarkdownActions({
   }, [copy]);
 
   const buttonClass = compact
-    ? "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 dark:text-[#a3a3a3] dark:hover:bg-[#141414] dark:hover:text-white"
-    : "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#262626] dark:text-[#d4d4d4] dark:hover:border-[#3a3a3a] dark:hover:text-white";
+    ? "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70"
+    : "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-hairline px-3 text-xs font-medium text-ink transition-colors hover:border-hairline-strong hover:text-ink";
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={label}>

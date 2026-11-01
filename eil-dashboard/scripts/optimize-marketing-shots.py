@@ -29,28 +29,39 @@ CROPS: dict[str, tuple[int, int, int, int]] = {
 MAX_WIDTH = 2000
 QUALITY = 84
 
+# A phone shows a whole 1440px screen at about 360px wide, where its text is
+# about 3px tall. So each shot also gets a phone crop: the part of the screen
+# that carries its story (the chart, the answer with its sources), as fractions
+# (left, top, right, bottom) of the shot after CROPS. ProductShot serves it
+# below 640px as <name>-phone-<theme>.webp; its size goes in the manifest as
+# "<name>-phone", so that box is reserved too.
+PHONE_CROPS: dict[str, tuple[float, float, float, float]] = {
+    "chat": (0.25, 0.27, 0.765, 0.93),  # the answer and its numbered sources
+    "dashboard": (0.52, 0.40, 0.98, 1.0),  # one neighbourhood and its legend
+    "dashboard-categories": (0.55, 0.37, 0.97, 0.79),  # the recent years' bars
+    "dashboard-keywords": (0.06, 0.655, 0.69, 1.0),  # the keyword bars with their labels
+    "dashboard-trends": (0.52, 0.585, 0.96, 0.995),  # themes by year, 2020 to 2025
+    "home": (0.10, 0.09, 0.56, 0.99),  # the repository's name, counts and topics
+    "library": (0.05, 0.09, 0.42, 0.50),  # the first repository
+    "library-papers": (0.05, 0.11, 0.52, 1.0),  # paper names and their years
+    "paper": (0.0, 0.29, 0.475, 0.74),  # research focus, the year with its line, keywords
+    "settings-analysis": (0.34, 0.30, 0.885, 0.62),  # the three analysis profiles
+}
+PHONE_MAX_WIDTH = 1100
 
-def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: optimize-marketing-shots.py <png-dir>")
-    source = Path(sys.argv[1])
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    sizes: dict[str, dict[str, int]] = {}
-    for png in sorted(source.glob("*.png")):
-        name, _, theme = png.stem.rpartition("-")
-        if theme not in {"light", "dark"} or not name:
-            continue
-        image = Image.open(png).convert("RGB")
-        if name in CROPS:
-            image = image.crop(CROPS[name])
-        if image.width > MAX_WIDTH:
-            height = round(image.height * MAX_WIDTH / image.width)
-            image = image.resize((MAX_WIDTH, height), Image.LANCZOS)
-        target = OUT_DIR / f"{name}-{theme}.webp"
-        image.save(target, "WEBP", quality=QUALITY, method=6)
-        sizes[name] = {"width": image.width, "height": image.height}
-        print(f"{target.name}: {image.width}x{image.height}, {target.stat().st_size // 1024} KB")
 
+def phone_crop(image: Image.Image, name: str) -> Image.Image | None:
+    box = PHONE_CROPS.get(name)
+    if box is None:
+        return None
+    left, top, right, bottom = box
+    crop = image.crop((round(left * image.width), round(top * image.height), round(right * image.width), round(bottom * image.height)))
+    if crop.width > PHONE_MAX_WIDTH:
+        crop = crop.resize((PHONE_MAX_WIDTH, round(crop.height * PHONE_MAX_WIDTH / crop.width)), Image.LANCZOS)
+    return crop
+
+
+def write_manifest(sizes: dict[str, dict[str, int]]) -> None:
     existing: dict[str, dict[str, int]] = {}
     if MANIFEST.exists():
         text = MANIFEST.read_text(encoding="utf-8")
@@ -67,6 +78,60 @@ def main() -> None:
         f"export const SHOT_SIZES: Record<string, {{ width: number; height: number }}> = {body};\n",
         encoding="utf-8",
     )
+
+
+def phones_from_published() -> None:
+    """Cut the phone crops from the published WebP files, when the PNGs are gone.
+
+    Writes only <name>-phone-<theme>.webp files (never a published shot) and
+    their manifest entries.
+    """
+    sizes: dict[str, dict[str, int]] = {}
+    for webp in sorted(OUT_DIR.glob("*.webp")):
+        name, _, theme = webp.stem.rpartition("-")
+        if theme not in {"light", "dark"} or not name or name.endswith("-phone"):
+            continue
+        crop = phone_crop(Image.open(webp).convert("RGB"), name)
+        if crop is None:
+            continue
+        target = OUT_DIR / f"{name}-phone-{theme}.webp"
+        crop.save(target, "WEBP", quality=QUALITY, method=6)
+        sizes[f"{name}-phone"] = {"width": crop.width, "height": crop.height}
+        print(f"{target.name}: {crop.width}x{crop.height}, {target.stat().st_size // 1024} KB")
+    write_manifest(sizes)
+
+
+def main() -> None:
+    if len(sys.argv) == 2 and sys.argv[1] == "--phones-from-published":
+        phones_from_published()
+        return
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: optimize-marketing-shots.py <png-dir> | --phones-from-published")
+    source = Path(sys.argv[1])
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    sizes: dict[str, dict[str, int]] = {}
+    for png in sorted(source.glob("*.png")):
+        name, _, theme = png.stem.rpartition("-")
+        if theme not in {"light", "dark"} or not name:
+            continue
+        image = Image.open(png).convert("RGB")
+        if name in CROPS:
+            image = image.crop(CROPS[name])
+        phone = phone_crop(image, name)
+        if phone is not None:
+            phone_target = OUT_DIR / f"{name}-phone-{theme}.webp"
+            phone.save(phone_target, "WEBP", quality=QUALITY, method=6)
+            sizes[f"{name}-phone"] = {"width": phone.width, "height": phone.height}
+            print(f"{phone_target.name}: {phone.width}x{phone.height}, {phone_target.stat().st_size // 1024} KB")
+        if image.width > MAX_WIDTH:
+            height = round(image.height * MAX_WIDTH / image.width)
+            image = image.resize((MAX_WIDTH, height), Image.LANCZOS)
+        target = OUT_DIR / f"{name}-{theme}.webp"
+        image.save(target, "WEBP", quality=QUALITY, method=6)
+        sizes[name] = {"width": image.width, "height": image.height}
+        print(f"{target.name}: {image.width}x{image.height}, {target.stat().st_size // 1024} KB")
+
+    write_manifest(sizes)
 
 
 if __name__ == "__main__":

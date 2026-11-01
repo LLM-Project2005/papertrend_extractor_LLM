@@ -14,8 +14,8 @@ export const FILM_EMBED_ORIGIN = "https://www.youtube-nocookie.com";
  * from this site. Then the player loads in privacy-enhanced mode, starts at
  * once, and at the end suggests only the same channel's videos (rel=0).
  *
- * The frame is ProductShot's: a tinted tray with the screen inside it, with
- * its box reserved so nothing below moves when the poster or player arrives.
+ * The frame is ProductShot's: one surface with a hairline, with its box
+ * reserved so nothing below moves when the poster or player arrives.
  */
 export default function FilmPlayer({
   youtubeId,
@@ -32,8 +32,8 @@ export default function FilmPlayer({
 }) {
   const [playing, setPlaying] = useState(false);
   return (
-    <figure className="rounded-[18px] bg-ink/[0.03] p-1.5 shadow-float ring-1 ring-inset ring-hairline dark:bg-white/[0.03]">
-      <div className="relative aspect-video overflow-hidden rounded-xl border border-hairline bg-surface">
+    <figure className="relative aspect-video overflow-hidden rounded-xl border border-hairline bg-surface shadow-float">
+      <div className="absolute inset-0">
         {playing ? (
           <iframe
             src={`${FILM_EMBED_ORIGIN}/embed/${encodeURIComponent(youtubeId)}?autoplay=1&rel=0&playsinline=1`}
@@ -57,7 +57,7 @@ export default function FilmPlayer({
                 <PlayIcon weight="fill" className="ml-1 h-7 w-7 sm:h-8 sm:w-8" />
               </span>
             </span>
-            <span aria-hidden="true" className="absolute bottom-3 right-3 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium tabular-nums text-white">
+            <span aria-hidden="true" className="absolute bottom-3 right-3 rounded-full bg-ink/75 px-2.5 py-1 text-xs font-medium tabular-nums text-canvas">
               {length}
             </span>
           </button>

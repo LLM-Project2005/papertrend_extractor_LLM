@@ -17,7 +17,7 @@ import { CheckIcon } from "@/components/ui/Icons";
 
 function Tile({ className = "", view, question, body, children }: { className?: string; view: string; question: string; body: string; children: ReactNode }) {
   return (
-    <article className={`group flex flex-col rounded-[22px] border border-hairline bg-surface p-6 transition-[border-color,box-shadow,transform] duration-300 ease-out-expo hover:-translate-y-0.5 hover:border-hairline-strong hover:shadow-float ${className}`}>
+    <article className={`group flex flex-col rounded-xl border border-hairline bg-surface p-6 ${className}`}>
       <p className="text-[12.5px] text-mute">{view}</p>
       <h3 className="mt-1 text-[20px] font-semibold tracking-[-0.02em] text-ink">{question}</h3>
       <div className="my-6 flex-1" aria-hidden="true">
@@ -159,7 +159,7 @@ export default function ViewsBento() {
           initial={motionOK ? { opacity: 0, y: 8 } : false}
           animate={on ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6, delay: motionOK ? 0.3 : 0, ease: EASE }}
-          className="rounded-2xl border border-hairline bg-canvas/70 p-4 dark:bg-black/30"
+          className="rounded-2xl border border-hairline bg-canvas/70 p-4"
         >
           <p className="text-[12px] text-mute">Studied together</p>
           <p className="mt-1.5 text-[15px] leading-6 text-ink">
