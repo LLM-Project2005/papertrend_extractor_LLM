@@ -2172,7 +2172,7 @@ export default function AdminImportClient() {
         {!listReady ? (
           loadFailed ? null : <LibrarySkeleton view={viewMode} />
         ) : visibleEntries.length === 0 ? (
-          <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
+          <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center motion-safe:animate-fade-in">
             <div>
               <Mascot
                 state={showTrash ? "sleeping" : fileEntries.length === 0 ? "idle" : "surprised"}
@@ -2212,7 +2212,8 @@ export default function AdminImportClient() {
             </div>
           </div>
         ) : viewMode === "list" ? (
-          <div className="px-4 py-4 sm:px-6">
+          // The list fades in where its skeleton was (2026-11-01).
+          <div className="px-4 py-4 motion-safe:animate-fade-in sm:px-6">
             <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_96px] items-center gap-4 border-b border-hairline px-3 py-3 text-sm font-medium text-body md:grid">
               <div className="flex items-center gap-3">
                 <input
@@ -2367,7 +2368,7 @@ export default function AdminImportClient() {
             </div>
           </div>
         ) : (
-          <div className="space-y-8 px-4 py-5 sm:px-6">
+          <div className="space-y-8 px-4 py-5 motion-safe:animate-fade-in sm:px-6">
             {rootGridFiles.length > 0 ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">

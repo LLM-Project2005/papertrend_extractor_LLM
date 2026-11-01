@@ -171,7 +171,7 @@ export default function UsageMeter({
           id={`${id}-usage`}
           role="region"
           aria-label="Today's AI allowance"
-          className={`absolute ${placement === "below" ? "top-11" : "bottom-11"} right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-overlay`}
+          className={`absolute ${placement === "below" ? "top-11 origin-top-right" : "bottom-11 origin-bottom-right"} right-0 z-30 w-64 rounded-xl border border-hairline bg-surface p-4 text-left shadow-overlay motion-safe:animate-scale-in`}
         >
           <UsagePanel usage={usage} resets={resets} note={note} />
         </div>

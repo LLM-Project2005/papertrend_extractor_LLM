@@ -101,6 +101,14 @@ const config: Config = {
           from: { transform: "translateX(-100%)" },
           to: { transform: "translateX(0)" },
         },
+        "drawer-in-right": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "panel-in-right": {
+          from: { opacity: "0", transform: "translateX(24px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both",
@@ -109,6 +117,8 @@ const config: Config = {
         shimmer: "shimmer 1.6s linear infinite",
         "progress-sweep": "progress-sweep 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite",
         "drawer-in": "drawer-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "drawer-in-right": "drawer-in-right 280ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "panel-in-right": "panel-in-right 280ms cubic-bezier(0.16, 1, 0.3, 1) both",
       },
     },
   },

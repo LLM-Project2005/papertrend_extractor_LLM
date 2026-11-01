@@ -227,7 +227,7 @@ export default function ThinkingEffort({
         <div
           role="dialog"
           aria-label={view === "effort" ? "Thinking effort" : "Select model"}
-          className="absolute bottom-full right-0 z-40 mb-2 w-[min(18.5rem,calc(100vw-2rem))] rounded-2xl border border-hairline bg-surface p-3 text-ink shadow-overlay"
+          className="absolute bottom-full right-0 z-40 mb-2 w-[min(18.5rem,calc(100vw-2rem))] origin-bottom-right rounded-2xl border border-hairline bg-surface p-3 text-ink shadow-overlay motion-safe:animate-scale-in"
         >
           {view === "effort" ? (
             <>

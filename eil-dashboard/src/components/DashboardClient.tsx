@@ -812,7 +812,8 @@ export default function DashboardClient({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-6 pt-2 sm:pt-4">
+    // Fades in where the loading skeleton was (2026-11-01).
+    <div className="mx-auto w-full max-w-[1500px] space-y-6 pt-2 motion-safe:animate-fade-in sm:pt-4">
       <div className="space-y-5">
         {/*
           This page had no h1 at all - it opened straight onto a search field.

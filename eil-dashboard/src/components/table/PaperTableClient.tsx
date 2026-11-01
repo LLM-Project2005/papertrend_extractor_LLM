@@ -27,7 +27,7 @@
  * Chat conversation about that paper.
  */
 // React in scope: the test runner compiles JSX the classic way.
-import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import UsageMeter from "@/components/chat/UsageMeter";
 import CellPanel from "@/components/table/CellPanel";
@@ -150,6 +150,17 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
+/*
+ * A cell's button. One that first appears while the table is filling, its
+ * value just read, fades in over a wash that clears (.cell-arrive, 2026-11-01),
+ * so the reader sees where the table is filling. Cells already on screen when
+ * a fill starts do not move.
+ */
+function CellButton({ filling, className, ...props }: { filling: boolean } & ButtonHTMLAttributes<HTMLButtonElement>) {
+  const [arrived] = useState(filling);
+  return <button type="button" {...props} className={arrived ? `${className ?? ""} cell-arrive` : className} />;
+}
+
 function CellView({
   cell,
   reading,
@@ -179,25 +190,25 @@ function CellView({
   const open = "text-left underline-offset-4 hover:underline focus-visible:underline";
   if (cell?.status === "found") {
     return (
-      <button type="button" onClick={onOpen} className={`line-clamp-4 leading-6 text-ink decoration-hairline-strong decoration-dotted ${open}`}>
+      <CellButton filling={reading} onClick={onOpen} className={`line-clamp-4 leading-6 text-ink decoration-hairline-strong decoration-dotted ${open}`}>
         {cell.value}
         {cell.note ? <span className="text-mute"> ({cell.note})</span> : null}
         {chat}
-      </button>
+      </CellButton>
     );
   }
   // A cell not read yet says so in words; a lone dash read as a control (UI audit #25).
   const words = !cell ? "Not read yet" : cell.status === "not_stated" ? "Not stated" : cell.status === "unverified" ? "Not confirmed" : "Not read yet";
   return (
-    <button
-      type="button"
+    <CellButton
+      filling={reading}
       onClick={onOpen}
       title={cell?.status === "unverified" ? "An answer was given, but its sentence is not in the paper; select to see it" : undefined}
       className={`text-[13px] text-mute ${open}`}
     >
       {words}
       {chat}
-    </button>
+    </CellButton>
   );
 }
 

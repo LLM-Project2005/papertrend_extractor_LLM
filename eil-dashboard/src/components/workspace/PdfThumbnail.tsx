@@ -152,7 +152,7 @@ export default function PdfThumbnail({
           src={src}
           alt=""
           draggable={false}
-          className="h-full w-full rounded-t-md bg-white object-cover object-top shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+          className="h-full w-full rounded-t-md bg-white object-cover object-top shadow-sm ring-1 ring-black/5 motion-safe:animate-fade-in dark:ring-white/10"
         />
       ) : failed ? (
         fallback
