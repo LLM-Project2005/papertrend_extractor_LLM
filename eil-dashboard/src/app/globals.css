@@ -716,6 +716,59 @@ html:focus-within {
   animation: status-swap 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/*
+ * A chat answer that has just arrived (2026-11-01): after the wait, its blocks
+ * rise in a few hundredths of a second apart, then whatever follows the text
+ * (sources, charts, actions), so the answer settles in about half a second
+ * instead of appearing in one frame. Answers already in a conversation that is
+ * opened do not move (ChatClient's shownBeforeAskRef).
+ */
+.answer-arrive > :not([data-testid="assistant-message"]),
+.answer-arrive [data-testid="assistant-message"] > div > * {
+  animation: answer-rise 320ms var(--ease-out-expo) both;
+}
+
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(2) { animation-delay: 35ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(3) { animation-delay: 70ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(4) { animation-delay: 105ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(5) { animation-delay: 140ms; }
+.answer-arrive [data-testid="assistant-message"] > div > :nth-child(n + 6) { animation-delay: 175ms; }
+.answer-arrive > :not([data-testid="assistant-message"]) { animation-delay: 200ms; }
+
+@keyframes answer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * A table cell the reading has just filled (2026-11-01): the value fades in
+ * over a faint wash that clears in about a second, so the reader sees where
+ * the table is filling.
+ */
+.cell-arrive {
+  animation: cell-arrive 1100ms var(--ease-out-expo) both;
+}
+
+@keyframes cell-arrive {
+  from {
+    opacity: 0;
+    background-color: rgb(var(--ink) / 0.07);
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    background-color: transparent;
+  }
+}
+
 @keyframes status-swap {
   from {
     opacity: 0;

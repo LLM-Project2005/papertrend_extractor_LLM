@@ -1898,6 +1898,15 @@ export default function ChatClient() {
   // "" announces the next answer; null (set when a conversation is opened)
   // skips the transcript that arrives with it.
   const announcedAnswerRef = useRef<string | null>("");
+  // The messages already on screen when a question was sent (2026-11-01): an
+  // answer that is not among them has just arrived, and rises in. Cleared when
+  // another conversation is opened, so a transcript never animates as it loads.
+  const shownBeforeAskRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (loading) shownBeforeAskRef.current = new Set(messages.map((message) => message.id));
+    // Only the moment a question goes out; the transcript is read as it was then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
   useEffect(() => {
     const last = messages[messages.length - 1];
     if (loading || !last || last.role !== "assistant" || last.id.startsWith("local-")) return;
@@ -1929,6 +1938,7 @@ export default function ChatClient() {
       setActiveThreadId(null);
       setActiveThread(null);
       loadedThreadIdRef.current = null;
+      shownBeforeAskRef.current = null;
       setMessages([]);
       setHasEarlierMessages(false);
       oldestMessageAtRef.current = null;
@@ -2027,6 +2037,7 @@ export default function ChatClient() {
         announcedAnswerRef.current = null;
         deepSessionSignatureRef.current = "";
         setMessages([]);
+        shownBeforeAskRef.current = null;
         setDeepSession(null);
       }
       // A progress poll refreshes quietly: it used to flash the loading
@@ -3139,7 +3150,7 @@ export default function ChatClient() {
           {...(chatListDrawer ? { role: "dialog", "aria-modal": true, "aria-label": "Your chats" } : {})}
           className={
             chatListDrawer
-              ? "fixed inset-y-0 left-0 z-50 flex h-full w-[min(320px,86vw)] flex-col overscroll-contain border-r border-hairline bg-surface p-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-overlay"
+              ? "fixed inset-y-0 left-0 z-50 flex h-full w-[min(320px,86vw)] flex-col overscroll-contain border-r border-hairline bg-surface p-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-overlay motion-safe:animate-drawer-in"
               : `hidden h-full min-h-0 flex-none border-r border-hairline bg-surface lg:flex lg:flex-col ${
                   sidebarCompact ? "w-[60px] p-2" : "w-[288px] p-3"
                 }`
@@ -3250,7 +3261,8 @@ export default function ChatClient() {
                     // The open chat wears the one "you are here" look, whose ink
                     // bar shows in dark mode; its fill was the sidebar's own
                     // colour there (UI audit #3).
-                    className={`group relative rounded-lg px-2 ${
+                    // Rows fade in where the loading rows were (2026-11-01).
+                    className={`group relative rounded-lg px-2 motion-safe:animate-fade-in ${
                       active
                         ? selectedClass
                         : "hover:bg-subtle"
@@ -3572,7 +3584,7 @@ export default function ChatClient() {
                           </div>
                         </div>
                       ) : (
-                        <div className="space-y-4">
+                        <div className={`space-y-4 ${shownBeforeAskRef.current && !shownBeforeAskRef.current.has(message.id) ? "answer-arrive" : ""}`}>
                           {/* A stable hook for the layout-shift measurement, which has to
                               tell an answer arriving from the intro disappearing. */}
                           {message.kind === "deep_research_report" ? (
@@ -4568,7 +4580,7 @@ export default function ChatClient() {
               ref={sourcesPanelRef}
               aria-label="Conversation sources"
               {...(sourcesDrawer ? { role: "dialog", "aria-modal": true } : {})}
-              className="fixed inset-y-0 right-0 z-50 flex w-[min(90vw,360px)] flex-col border-l border-hairline bg-surface shadow-overlay lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none"
+              className="fixed inset-y-0 right-0 z-50 flex w-[min(90vw,360px)] flex-col border-l border-hairline bg-surface shadow-overlay max-lg:motion-safe:animate-drawer-in-right lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none"
             >
               <div className="flex h-14 flex-none items-center justify-between border-b border-hairline px-4">
                 <div className="min-w-0">
