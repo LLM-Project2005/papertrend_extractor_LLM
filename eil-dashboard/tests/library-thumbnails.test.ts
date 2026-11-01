@@ -96,6 +96,15 @@ test("the grid looks for a kept thumbnail before queueing, and shares one pdf.js
   assert.match(source, /navigator\.hardwareConcurrency >= 4 \? 4 : 2/);
 });
 
+test("a card still drawing shimmers; one that cannot be drawn shows the plain badge", () => {
+  const source = readFileSync(new URL("../src/components/workspace/PdfThumbnail.tsx", import.meta.url), "utf8");
+  assert.match(source, /else gaveUp\.add\(key\);/);
+  assert.match(source, /else setFailed\(true\);/);
+  assert.match(source, /\) : failed \? \(\s*fallback\s*\) : \(/);
+  assert.match(source, /className="skeleton absolute inset-0/);
+  assert.match(source, /aria-busy=\{!src && !failed\}/);
+});
+
 test("signing out forgets the thumbnails", () => {
   const source = readFileSync(new URL("../src/components/auth/AuthProvider.tsx", import.meta.url), "utf8");
   assert.match(source, /signOut: async \(\) => \{\s*\/\/[^\n]*\n\s*await forgetPdfThumbnails\(\);/);

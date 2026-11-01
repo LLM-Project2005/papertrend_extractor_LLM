@@ -21,6 +21,7 @@ const RENDER_WIDTH = 480;
 
 const pictures = new Map<string, Promise<string | null>>();
 const ready = new Map<string, string>();
+const gaveUp = new Set<string>();
 let running = 0;
 const waiting: Array<() => void> = [];
 let sharedWorker: InstanceType<PdfJs["PDFWorker"]> | null = null;
@@ -82,11 +83,12 @@ function pictureFor(key: string, getUrl: () => Promise<string | null>): Promise<
         void keepThumbnail(key, drawn);
         return URL.createObjectURL(drawn);
       })
+      .catch(() => null)
       .then((src) => {
         if (src) ready.set(key, src);
+        else gaveUp.add(key);
         return src;
-      })
-      .catch(() => null);
+      });
     pictures.set(key, picture);
   }
   return picture;
@@ -101,13 +103,14 @@ export default function PdfThumbnail({
   cacheKey: string;
   /** A link the browser can read the PDF from (the Library's signed "open" link). */
   getUrl: () => Promise<string | null>;
-  /** Shown until the page is drawn, and for good if it cannot be. */
+  /** Shown over a shimmer while the page is drawn, and alone for good if it cannot be. */
   fallback: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const getUrlRef = useRef(getUrl);
   getUrlRef.current = getUrl;
   const [src, setSrc] = useState<string | null>(() => ready.get(cacheKey) ?? null);
+  const [failed, setFailed] = useState(() => gaveUp.has(cacheKey));
 
   useEffect(() => {
     const known = ready.get(cacheKey);
@@ -116,6 +119,8 @@ export default function PdfThumbnail({
       return;
     }
     setSrc(null);
+    setFailed(gaveUp.has(cacheKey));
+    if (gaveUp.has(cacheKey)) return;
     const node = box.current;
     if (!node) return;
     let current = true;
@@ -124,7 +129,9 @@ export default function PdfThumbnail({
         if (!entries.some((entry) => entry.isIntersecting)) return;
         observer.disconnect();
         void pictureFor(cacheKey, () => getUrlRef.current()).then((picture) => {
-          if (current && picture) setSrc(picture);
+          if (!current) return;
+          if (picture) setSrc(picture);
+          else setFailed(true);
         });
       },
       { rootMargin: "300px" }
@@ -137,7 +144,7 @@ export default function PdfThumbnail({
   }, [cacheKey]);
 
   return (
-    <div ref={box} className="h-full w-full">
+    <div ref={box} aria-busy={!src && !failed} className="h-full w-full">
       {src ? (
         // A blob drawn in this browser: next/image has nothing to optimise.
         // eslint-disable-next-line @next/next/no-img-element
@@ -147,8 +154,15 @@ export default function PdfThumbnail({
           draggable={false}
           className="h-full w-full rounded-t-md bg-white object-cover object-top shadow-sm ring-1 ring-black/5 dark:ring-white/10"
         />
-      ) : (
+      ) : failed ? (
         fallback
+      ) : (
+        // Still drawing: a page-shaped shimmer behind the badge, so a card
+        // that is loading never looks like one that has given up.
+        <div className="relative h-full w-full">
+          <span aria-hidden="true" className="skeleton absolute inset-0 rounded-b-none rounded-t-md" />
+          <div className="relative h-full">{fallback}</div>
+        </div>
       )}
     </div>
   );
