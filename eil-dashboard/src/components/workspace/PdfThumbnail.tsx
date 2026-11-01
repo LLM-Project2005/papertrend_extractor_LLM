@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { loadPdfJs } from "@/lib/pdfjs-loader";
+import { loadPdfJs, type PdfJs } from "@/lib/pdfjs-loader";
+import { keepThumbnail, readThumbnail } from "@/lib/pdf-thumbnail-cache";
 
 /*
  * A paper's first page as a picture, for the Library's grid (2026-10-31, the
@@ -9,21 +10,27 @@ import { loadPdfJs } from "@/lib/pdfjs-loader";
  *
  * pdf.js draws the page in the browser from the stored PDF, as the paper
  * viewer does, reading only the parts of the file page 1 needs. A card starts
- * when it comes near the view, two at a time, so a long grid does not fetch
- * every paper at once. Each picture is kept for the session; a paper whose
- * page cannot be drawn keeps the caller's fallback and is not tried again.
+ * when it comes near the view, a few at a time (two on a small device), so a
+ * long grid does not fetch every paper at once. All cards share one pdf.js
+ * worker. Each picture is kept in this browser between visits
+ * (pdf-thumbnail-cache.ts); a paper whose page cannot be drawn keeps the
+ * caller's fallback and is not tried again this session.
  */
 
 const RENDER_WIDTH = 480;
-const AT_ONCE = 2;
 
 const pictures = new Map<string, Promise<string | null>>();
 const ready = new Map<string, string>();
 let running = 0;
 const waiting: Array<() => void> = [];
+let sharedWorker: InstanceType<PdfJs["PDFWorker"]> | null = null;
+
+function atOnce(): number {
+  return typeof navigator !== "undefined" && navigator.hardwareConcurrency >= 4 ? 4 : 2;
+}
 
 async function inTurn<T>(work: () => Promise<T>): Promise<T> {
-  if (running >= AT_ONCE) await new Promise<void>((resolve) => waiting.push(resolve));
+  if (running >= atOnce()) await new Promise<void>((resolve) => waiting.push(resolve));
   running += 1;
   try {
     return await work();
@@ -33,10 +40,12 @@ async function inTurn<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-async function drawFirstPage(url: string): Promise<string | null> {
+async function drawFirstPage(url: string): Promise<Blob | null> {
   const pdfjs = await loadPdfJs();
+  // A worker passed in outlives each document, so it starts only once.
+  if (!sharedWorker || sharedWorker.destroyed) sharedWorker = new pdfjs.PDFWorker();
   // Ranges only: a streamed read would go on to fetch the whole file.
-  const task = pdfjs.getDocument({ url, disableAutoFetch: true, disableStream: true, isEvalSupported: false });
+  const task = pdfjs.getDocument({ url, worker: sharedWorker, disableAutoFetch: true, disableStream: true, isEvalSupported: false });
   try {
     const document_ = await task.promise;
     const page = await document_.getPage(1);
@@ -50,8 +59,7 @@ async function drawFirstPage(url: string): Promise<string | null> {
     context.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: context, viewport }).promise;
     // A browser without WebP encoding hands back a PNG, which is fine too.
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
-    return blob ? URL.createObjectURL(blob) : null;
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
   } finally {
     void task.destroy();
   }
@@ -60,12 +68,20 @@ async function drawFirstPage(url: string): Promise<string | null> {
 function pictureFor(key: string, getUrl: () => Promise<string | null>): Promise<string | null> {
   let picture = pictures.get(key);
   if (!picture) {
-    picture = inTurn(async () => {
-      const url = await getUrl();
-      // A paper linked from Google Drive opens in Drive; there is no PDF here to draw.
-      if (!url || /^https:\/\/(drive|docs)\.google\.com\//.test(url)) return null;
-      return drawFirstPage(url);
-    })
+    // A picture kept from an earlier visit skips the queue and the PDF.
+    picture = readThumbnail(key)
+      .then(async (kept) => {
+        if (kept) return URL.createObjectURL(kept);
+        const drawn = await inTurn(async () => {
+          const url = await getUrl();
+          // A paper linked from Google Drive opens in Drive; there is no PDF here to draw.
+          if (!url || /^https:\/\/(drive|docs)\.google\.com\//.test(url)) return null;
+          return drawFirstPage(url);
+        });
+        if (!drawn) return null;
+        void keepThumbnail(key, drawn);
+        return URL.createObjectURL(drawn);
+      })
       .then((src) => {
         if (src) ready.set(key, src);
         return src;

@@ -37,6 +37,7 @@ import {
   PROFILE_UNREACHABLE_MESSAGE,
   refusalMessage,
 } from "@/lib/auth/profile-failure";
+import { forgetPdfThumbnails } from "@/lib/pdf-thumbnail-cache";
 import type { WorkspaceProfile } from "@/types/workspace";
 import { safeReturnPath } from "@/lib/safe-return-path";
 
@@ -746,6 +747,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       },
       signOut: async () => {
+        // The Library's thumbnails show papers' first pages; they leave with the account.
+        await forgetPdfThumbnails();
         if (configuredAuthProvider === "firebase") {
           const firebaseAuth = await getFirebaseAuth();
           if (!firebaseAuth) {
