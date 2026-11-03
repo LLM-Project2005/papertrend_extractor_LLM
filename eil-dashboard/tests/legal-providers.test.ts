@@ -92,21 +92,22 @@ test("every web search engine is named, with what it receives", () => {
   assert.match(policy, /Exa receives (?:the search query|web search queries)/);
 });
 
-test("every way to sign in is named, Facebook with what Meta shares", async () => {
+test("every way to sign in is named: Google, and email and password", async () => {
   const providers = new Set([...code.matchAll(/new (\w+)AuthProvider\(/g)].map((match) => match[1]));
-  assert.deepEqual([...providers].sort(), ["Facebook", "Google"], "a new sign-in provider must be added to the policy");
+  assert.deepEqual([...providers].sort(), ["Google"], "a new sign-in provider must be added to the policy");
   // The sign-in page offers exactly these, and email and password.
   globalThis.__auditfixAuth = undefined;
   const { default: AuthPanel } = await import("../src/components/auth/AuthPanel");
   const panel = renderToStaticMarkup(createElement(AuthPanel));
   const offered = [...panel.matchAll(/>(Continue with [A-Za-z]+)</g)].map((match) => match[1]);
-  assert.deepEqual(offered, ["Continue with Google", "Continue with Facebook"]);
+  assert.deepEqual(offered, ["Continue with Google"]);
   assert.match(panel, /<input[^>]*type="email"/);
   assert.match(panel, /<input[^>]*type="password"/);
-  assert.match(policy, /how you sign in \(Google, Facebook, or email and password\)/);
-  const facebook = privacyPolicy.sections.find((section) => section.id === "facebook-sign-in");
-  assert.ok(facebook, "a Facebook sign-in section");
-  assert.match((facebook.bullets ?? []).join(" "), /Meta[\s\S]*name, email address and profile picture/);
+  assert.match(policy, /how you sign in \(Google, or email and password\)/);
+  // Facebook sign-in was removed on 2026-11-04: nothing offers it or speaks of it.
+  assert.ok(!privacyPolicy.sections.some((section) => section.id === "facebook-sign-in"));
+  assert.doesNotMatch(panel, /Facebook/);
+  assert.doesNotMatch(policy, /Facebook|Meta/);
 });
 
 test("the policy says deep research can search the web on its own, and the terms name the spending limits", async () => {

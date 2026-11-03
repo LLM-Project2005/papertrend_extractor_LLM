@@ -8,7 +8,8 @@
 
 export const LEGAL_CONTACT_EMAIL = "p.chantarusorn@gmail.com";
 // 29 October 2026: the film on the front page, played from YouTube.
-export const LEGAL_EFFECTIVE_DATE = "29 October 2026";
+// 4 November 2026: Facebook sign-in removed; Google and email remain.
+export const LEGAL_EFFECTIVE_DATE = "4 November 2026";
 
 export interface LegalSection {
   id: string;
@@ -39,7 +40,7 @@ export const privacyPolicy: LegalDocument = {
       id: "what-we-collect",
       heading: "What we collect",
       bullets: [
-        "Your account: your email address, your name and profile picture (from Google or Facebook sign-in, or as you enter them), how you sign in (Google, Facebook, or email and password), the invite code you joined with, and the settings you save, such as your organisation, research domain and analysis categories.",
+        "Your account: your email address, your name and profile picture (from Google sign-in, or as you enter them), how you sign in (Google, or email and password), the invite code you joined with, and the settings you save, such as your organisation, research domain and analysis categories.",
         "What you add: the PDF files you upload or choose from Google Drive, the text extracted from them, the analysis results (titles, years, keywords, topics, categories), your repository and folder names, and your chat questions, answers and research sessions.",
         "Usage and security records: how many times a day your account uses each AI feature, and the tokens and model fees each AI request used (to apply fair-use and daily spending limits), a one-way hash of your IP address and email address when you sign in (to limit repeated failed attempts), and server request logs kept by Google Cloud (IP address, browser type, the address requested and the time).",
         "If you request access without an account: the name, email address, affiliation and intended use you enter, and whether we sent you an invite code.",
@@ -81,20 +82,10 @@ export const privacyPolicy: LegalDocument = {
       ],
     },
     {
-      id: "facebook-sign-in",
-      heading: "Facebook sign-in",
-      bullets: [
-        "If you sign in with Facebook, Meta (the company behind Facebook) shares your name, email address and profile picture with Papertrend through Firebase Authentication. Papertrend uses them only for your account.",
-        "Papertrend asks only for your public profile and email address. It does not post to Facebook or read your friends, pages or anything else in your Facebook account.",
-        "You can remove Papertrend's access in your Facebook settings, under Apps and Websites. To have the account data Papertrend holds deleted, see Your rights below.",
-      ],
-    },
-    {
       id: "where-it-is-stored",
       heading: "Where data is stored and who processes it",
       bullets: [
-        "Google Cloud hosts the service, the database and the stored files, in Singapore (asia-southeast1). Firebase Authentication, a Google service, handles sign-in with Google, Facebook, or email and password, and sends the emails that confirm an address or reset a password.",
-        "Meta handles sign-in with Facebook for those who choose it.",
+        "Google Cloud hosts the service, the database and the stored files, in Singapore (asia-southeast1). Firebase Authentication, a Google service, handles sign-in with Google, or email and password, and sends the emails that confirm an address or reset a password.",
         "OpenRouter and the AI model providers it routes to, such as OpenAI and Google, process paper text and questions, and may do so in other countries, including the United States.",
         "Exa receives web search queries, when chat web search is on or deep research searches the web.",
         "Crossref and OpenAlex receive paper titles or DOIs only.",

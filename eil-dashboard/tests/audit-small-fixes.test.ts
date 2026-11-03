@@ -49,7 +49,7 @@ test("the sign-in panel keeps the invite code only through the stored copy", () 
   assert.doesNotMatch(panel, /sessionStorage/);
 });
 
-// AUTH-2: an app's built-in browser blocks the Google and Facebook window; the reader is told why.
+// AUTH-2: an app's built-in browser blocks the Google sign-in window; the reader is told why.
 test("in-app browsers are recognised, ordinary browsers are not", () => {
   const inApp = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Line/14.8.0",
