@@ -51,7 +51,7 @@ export const startCategory: DocsCategoryBase = {
           id: "sign-in",
           title: "Sign in",
           body: [
-            "Open the sign-in page and choose **Continue with Google**, **Continue with Facebook**, or your email and password. Google and Facebook open in a small pop-up window, so allow pop-ups for the site if nothing happens when you click.",
+            "Open the sign-in page and choose **Continue with Google**, or your email and password. Google opens in a small pop-up window, so allow pop-ups for the site if nothing happens when you click.",
             "After signing in you land on the page you were trying to open, or on the list of your repositories. [Account and settings](/docs/account-and-settings) covers sign-in, passwords and the theme in detail.",
           ],
         },

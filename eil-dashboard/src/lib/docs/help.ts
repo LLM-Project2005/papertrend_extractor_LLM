@@ -33,9 +33,8 @@ export const helpCategory: DocsCategoryBase = {
             columns: ["You see", "What to do"],
             rows: [
               ["Confirm your email address", "Open the confirmation link we emailed you (check spam too), then choose **I’ve confirmed it**. **Send the link again** if it has not arrived."],
-              ["A Papertrend account already uses this email address.", "You signed in with Facebook, and an account already has that email. Sign in with Google, or with your email and password, instead."],
               ["Too many attempts for now.", "Sign-in attempts are limited after several failures. Wait a few minutes, or reset your password to sign in straight away."],
-              ["Sign-in timed out while contacting the authentication service.", "The Google or Facebook window did not finish in time. Allow pop-ups for the site and try again."],
+              ["Sign-in timed out while contacting the authentication service.", "The Google window did not finish in time. Allow pop-ups for the site and try again."],
               ["Wrong password, pop-up closed or blocked, too many requests", "Check the password or use **Reset password**, allow pop-ups, or wait a few minutes if there were many attempts."],
               ["Enter your email first, then request a reset link.", "Type your email address, then choose **Reset password**."],
               ["Papertrend can't be reached right now. Trying again…", "Your connection or the server had a brief problem. Papertrend keeps trying on its own; if it gives up, check your connection and reload the page. You stay signed in."],

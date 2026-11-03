@@ -108,12 +108,11 @@ export async function subscribeToFirebaseTokens(
 
 export async function signInWithFirebaseProvider(
   auth: Auth,
-  provider: "google" | "facebook"
+  provider: "google"
 ): Promise<void> {
-  const { FacebookAuthProvider, GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
-  const authProvider =
-    provider === "google" ? new GoogleAuthProvider() : new FacebookAuthProvider();
-  await signInWithPopup(auth, authProvider);
+  const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
+  if (provider !== "google") throw new Error("Unsupported sign-in provider.");
+  await signInWithPopup(auth, new GoogleAuthProvider());
 }
 
 export async function signInWithFirebasePassword(

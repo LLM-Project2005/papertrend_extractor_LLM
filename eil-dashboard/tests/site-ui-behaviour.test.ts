@@ -846,17 +846,13 @@ test("documentation contents links are padded, and the list's gap shrinks to mat
   for (const link of links) for (const name of ["block", "py-1", "text-sm", "leading-5"]) assert.ok(link.includes(name), name);
 });
 
-test("the Google and Facebook marks are drawn as filled logos in their own colours", async () => {
+test("the Google mark is drawn as a filled logo in its own colours", async () => {
   // The stroke-based icon base drew the Google mark as four stroke fragments.
-  const { GoogleIcon, FacebookIcon } = await import("../src/components/ui/Icons");
+  const { GoogleIcon } = await import("../src/components/ui/Icons");
   const google = draw(GoogleIcon, { className: "h-4 w-4" });
-  const facebook = draw(FacebookIcon, { className: "h-4 w-4" });
   const fills = (html: string) => [...html.matchAll(/<path\b[^>]*fill="([^"]+)"/g)].map((match) => match[1].toUpperCase());
   assert.deepEqual(fills(google).sort(), ["#34A853", "#4285F4", "#EA4335", "#FBBC05"]);
-  assert.deepEqual(fills(facebook), ["#1877F2"]);
-  for (const html of [google, facebook]) {
-    assert.doesNotMatch(html, /stroke="currentColor"|fill="none"/, "not drawn through the stroke base");
-  }
+  assert.doesNotMatch(google, /stroke="currentColor"|fill="none"/, "not drawn through the stroke base");
 });
 
 test("each documentation tag links to a search for it", async () => {

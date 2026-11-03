@@ -9,7 +9,7 @@
  * Sizing comes from the caller's classes (h-4 w-4 and so on); CSS width and
  * height override the 1em attributes Phosphor writes. Colour is currentColor.
  *
- * Brand marks (Papertrend's own logo, Google, Facebook, Microsoft) are drawn
+ * Brand marks (Papertrend's own logo, Google, Microsoft) are drawn
  * here as authored logos, not glyphs: a person scanning for the Google "G" is
  * looking for that exact object.
  *
@@ -335,17 +335,6 @@ export function GoogleIcon({ className }: { className?: string }) {
       <path
         fill="#EA4335"
         d="M12 4.75c1.76 0 3.34.61 4.59 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.61l4.01 3.1C6.23 6.86 8.88 4.75 12 4.75z"
-      />
-    </svg>
-  );
-}
-
-export function FacebookIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
-      <path
-        fill="#1877F2"
-        d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.96h-1.5c-1.48 0-1.94.92-1.94 1.87v2.24h3.3l-.53 3.49h-2.77V24C19.61 23.1 24 18.1 24 12.07z"
       />
     </svg>
   );
