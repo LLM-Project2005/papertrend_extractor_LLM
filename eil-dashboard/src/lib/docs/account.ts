@@ -17,7 +17,7 @@ export const accountCategory: DocsCategoryBase = {
           id: "signing-in",
           title: "Signing in",
           body: [
-            "The sign-in page offers three ways in: **Continue with Google**, **Continue with Facebook**, and email with password. Google and Facebook open a small pop-up window; if your browser blocks pop-ups, allow them for this site.",
+            "The sign-in page offers two ways in: **Continue with Google**, and email with password. Google opens a small pop-up window; if your browser blocks pop-ups, allow them for this site.",
             "If you opened a workspace page while signed out, you return to it after signing in. Otherwise you arrive at the last page you had open, or at your list of repositories.",
             "You stay signed in on this device until you sign out.",
           ],
@@ -27,7 +27,7 @@ export const accountCategory: DocsCategoryBase = {
               body: [
                 "Papertrend is invite-only for now. A new account needs an invite code from an admin: sign in the usual way, and Papertrend asks for the code before your account is created. An invite link fills the code in for you. No code? Ask for one on the [Request access](/request-access) page. People who already have an account are never asked.",
                 "Signing in with Google creates your account the first time. For email and password, choose **Create password account**, add your name, and **Create account**; a confirmation link is emailed to you, and your account is created once you open it and choose **I’ve confirmed it** (or come back through the link). **Send the link again** sends a new one.",
-                "If an account with the same email already exists, a verified sign-in (Google, or a confirmed email) is attached to it rather than creating a second account. Facebook does not confirm email addresses to Papertrend, so a Facebook sign-in starts a new account only when no account uses that email; otherwise sign in with Google or your email and password.",
+                "If an account with the same email already exists, a verified sign-in (Google, or a confirmed email) is attached to it rather than creating a second account.",
                 "If Papertrend then asks for an invite code, the new account needs one to join while Papertrend is invite-only; see [Troubleshooting](/docs/troubleshooting#signing-in).",
               ],
             },
@@ -38,7 +38,7 @@ export const accountCategory: DocsCategoryBase = {
           title: "Passwords",
           body: [
             "To reset a forgotten password, type your email on the sign-in page and choose **Reset password**; if that address has an account, a reset link is emailed to it. When you are signed in, **Settings > Sign-in & security > Email me a reset link** does the same.",
-            "A new password needs at least 10 characters (an existing, shorter one still signs in until you change it). There is no form to change a password or your sign-in email inside the app; a reset link is how you choose a new password. Accounts that sign in with Google or Facebook have no Papertrend password.",
+            "A new password needs at least 10 characters (an existing, shorter one still signs in until you change it). There is no form to change a password or your sign-in email inside the app; a reset link is how you choose a new password. Accounts that sign in with Google have no Papertrend password.",
           ],
         },
         {
@@ -77,7 +77,7 @@ export const accountCategory: DocsCategoryBase = {
             columns: ["Row", "What it shows or does"],
             rows: [
               ["**Signed in as**", "Your email, with **Verified** when the address is confirmed."],
-              ["**Sign-in method**", "Email and password, Google or Facebook."],
+              ["**Sign-in method**", "Email and password, or Google."],
               ["**Password**", "**Email me a reset link** for password accounts."],
               ["**Account**", "When you joined, your last sign-in, and your role (Member or Admin)."],
               ["**This device**", "**Sign out** of this browser."],

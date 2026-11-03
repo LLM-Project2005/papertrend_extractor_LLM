@@ -40,7 +40,7 @@ export interface AuthContextValue {
   /** Checks again after the reader confirmed their email; true once confirmed. */
   confirmEmailVerified: () => Promise<boolean>;
   signInWithProvider: (
-    provider: "google" | "facebook"
+    provider: "google"
   ) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (

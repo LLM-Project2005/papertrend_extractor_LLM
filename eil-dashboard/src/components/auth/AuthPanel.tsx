@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MIN_NEW_PASSWORD_LENGTH, friendlyAuthError } from "@/lib/auth/auth-errors";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { GoogleIcon, FacebookIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
+import { GoogleIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
 import { clearPendingInvite, readPendingInvite, savePendingInvite } from "@/lib/pending-invite";
 import { IN_APP_BROWSER_NOTICE, isInAppBrowser } from "@/lib/auth/in-app-browser";
@@ -14,11 +14,6 @@ const OAUTH_OPTIONS = [
     provider: "google" as const,
     label: "Continue with Google",
     icon: GoogleIcon,
-  },
-  {
-    provider: "facebook" as const,
-    label: "Continue with Facebook",
-    icon: FacebookIcon,
   },
 ] as const;
 
@@ -32,7 +27,7 @@ interface AuthPanelProps {
 
 export default function AuthPanel({
   title = "Sign in",
-  description = "Use Google, Facebook, or your email and password.",
+  description = "Use Google, or your email and password.",
 }: AuthPanelProps) {
   const {
     hydrated,
@@ -51,7 +46,7 @@ export default function AuthPanel({
     redeemInviteCode,
   } = useAuth();
   const [busy, setBusy] = useState(false);
-  // Back from the Google or Facebook consent screen can restore this page from
+  // Back from the Google consent screen can restore this page from
   // the browser's cache with the buttons still disabled; a restored page is
   // ready again.
   useEffect(() => {
@@ -73,8 +68,8 @@ export default function AuthPanel({
   useEffect(() => setInAppBrowser(isInAppBrowser(window.navigator.userAgent)), []);
 
   // An invite link carries its code after "#", which never reaches a server
-  // or its logs. Keep it on this device for a week - through a Google or
-  // Facebook sign-in, and into the tab the confirmation email opens - and take
+  // or its logs. Keep it on this device for a week - through a Google
+  // sign-in, and into the tab the confirmation email opens - and take
   // it off the address bar.
   useEffect(() => {
     const match = window.location.hash.match(/^#invite=([A-Za-z0-9-]{1,40})$/);
