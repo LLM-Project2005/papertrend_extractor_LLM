@@ -121,6 +121,12 @@ test("deleting an account removes everything it owns and its sign-in, and nothin
   const auth = await signIn(OWNER, { email: "Owner@Papertrend.test" });
   await signIn(OTHER, { email: "other@papertrend.test" });
   await seed(db);
+  // As on Cloud SQL: the app may not delete invite redemptions itself; they go with the profile.
+  await db.exec(`
+    INSERT INTO invite_codes (id, code_hash, max_uses, use_count, expires_at) VALUES ('60000000-0000-4000-8000-0000000000c1', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 1, now() + interval '1 day');
+    INSERT INTO invite_code_redemptions (invite_code_id, owner_user_id) VALUES ('60000000-0000-4000-8000-0000000000c1', '${OWNER}');
+    REVOKE DELETE ON invite_code_redemptions, invite_codes FROM papertrend_app;
+  `);
   const { DELETE } = await import("../src/app/api/account/route");
   const call = (body: unknown, headers = auth) => DELETE(request("/api/account", { method: "DELETE", headers, body }));
 
@@ -144,6 +150,7 @@ test("deleting an account removes everything it owns and its sign-in, and nothin
     "workspace_threads WHERE owner_user_id",
     "workspace_messages WHERE owner_user_id",
     "ai_usage_events WHERE owner_user_id",
+    "invite_code_redemptions WHERE owner_user_id",
   ]) {
     assert.equal(await count(db, `${table} = '${OWNER}'`), 0, table);
   }

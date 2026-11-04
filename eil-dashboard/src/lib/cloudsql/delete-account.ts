@@ -42,7 +42,9 @@ async function ownedTables(client: PoolClient): Promise<Array<{ table: string; c
        ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
      WHERE c.table_schema = 'public'
        AND (c.column_name = 'owner_user_id' OR (c.table_name = 'google_drive_connections' AND c.column_name = 'user_id'))
-       AND c.table_name <> 'user_profiles'
+       -- The profile goes last; these go with it by ON DELETE CASCADE, and
+       -- the app's role may not delete from invite_code_redemptions directly.
+       AND c.table_name NOT IN ('user_profiles', 'invite_code_redemptions', 'auth_identity_mappings')
      ORDER BY c.table_name`
   );
   return result.rows.map((row) => ({ table: row.table_name, column: row.column_name }));
