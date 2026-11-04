@@ -9,7 +9,9 @@
 export const LEGAL_CONTACT_EMAIL = "p.chantarusorn@gmail.com";
 // 29 October 2026: the film on the front page, played from YouTube.
 // 4 November 2026: Facebook sign-in removed; Google and email remain.
-export const LEGAL_EFFECTIVE_DATE = "4 November 2026";
+// 5 November 2026: you can delete a repository or your whole account yourself,
+// in Settings, and upload a profile picture.
+export const LEGAL_EFFECTIVE_DATE = "5 November 2026";
 
 export interface LegalSection {
   id: string;
@@ -40,7 +42,7 @@ export const privacyPolicy: LegalDocument = {
       id: "what-we-collect",
       heading: "What we collect",
       bullets: [
-        "Your account: your email address, your name and profile picture (from Google sign-in, or as you enter them), how you sign in (Google, or email and password), the invite code you joined with, and the settings you save, such as your organisation, research domain and analysis categories.",
+        "Your account: your email address, your name and profile picture (from Google sign-in, or as you enter or upload them), how you sign in (Google, or email and password), the invite code you joined with, and the settings you save, such as your organisation, research domain and analysis categories.",
         "What you add: the PDF files you upload or choose from Google Drive, the text extracted from them, the analysis results (titles, years, keywords, topics, categories), your repository and folder names, and your chat questions, answers and research sessions.",
         "Usage and security records: how many times a day your account uses each AI feature, and the tokens and model fees each AI request used (to apply fair-use and daily spending limits), a one-way hash of your IP address and email address when you sign in (to limit repeated failed attempts), and server request logs kept by Google Cloud (IP address, browser type, the address requested and the time).",
         "If you request access without an account: the name, email address, affiliation and intended use you enter, and whether we sent you an invite code.",
@@ -104,7 +106,7 @@ export const privacyPolicy: LegalDocument = {
         "Server request logs: 30 days.",
         "Usage counts, AI spending records and sign-in rate-limit hashes: for as long as they are needed to apply limits and prevent abuse.",
         "Access requests: 180 days from when you send one, whether or not you were invited; sooner if you ask us to delete it.",
-        "Your account: until you ask us to delete it.",
+        "Your account: until you delete it in Settings (Sign-in & security), or ask us to. Deleting it removes every repository, paper, PDF, analysis and chat in it, then the account and its sign-in.",
       ],
     },
     {
@@ -112,7 +114,7 @@ export const privacyPolicy: LegalDocument = {
       heading: "Your rights",
       paragraphs: [
         "Under the PDPA you have the right to access your personal data and get a copy, to have it corrected, to have it deleted, to object to or restrict its processing, to receive it in a portable format, and to withdraw consent you have given. You can also complain to the Office of the Personal Data Protection Committee (PDPC).",
-        `You can edit your profile in Settings and delete papers and chats yourself. To delete your account, or to exercise any other right, email ${LEGAL_CONTACT_EMAIL} from the address you sign in with. We aim to respond within 30 days.`,
+        `You can edit your profile in Settings, and delete papers, chats, repositories and your whole account yourself. To exercise any other right, or if you cannot delete something yourself, email ${LEGAL_CONTACT_EMAIL} from the address you sign in with. We aim to respond within 30 days.`,
       ],
     },
     {
@@ -235,7 +237,7 @@ export const termsOfService: LegalDocument = {
       id: "ending",
       heading: "Suspension and ending",
       paragraphs: [
-        "We may suspend or close an account that breaks these terms. You can stop using Papertrend at any time and ask us to delete your account.",
+        "We may suspend or close an account that breaks these terms. You can stop using Papertrend at any time and delete your account in Settings, or ask us to.",
       ],
     },
     {

@@ -64,7 +64,7 @@ export const accountCategory: DocsCategoryBase = {
             columns: ["Setting", "Details"],
             rows: [
               ["**Display name**", "Up to 120 characters."],
-              ["**Picture**", "A link to a square image that starts with `https://`. Leave it empty to show your initials. There is no file upload."],
+              ["**Picture**", "**Upload picture** takes a JPEG, PNG, WebP or GIF up to 10 MB, cropped to a square from the middle. **Remove** shows your initials instead. A Google account starts with its Google picture. Choose **Save profile** to keep the change."],
               ["**Email**", "Your sign-in address, shown for reference. It cannot be changed here."],
             ],
           },
@@ -190,10 +190,10 @@ export const accountCategory: DocsCategoryBase = {
               ["Move a paper to Trash, or restore it", "Yes", "The paper's **...** menu in the Library, or tick several papers and use the bar above the list"],
               ["Delete a paper or its PDF permanently", "Yes", "In Trash, the paper's **...** menu, **Delete permanently...**, or tick several papers; type `delete` to confirm more than one"],
               ["Empty Trash", "Yes", "**Empty Trash...** in Trash; type `delete` to confirm"],
-              ["Delete a repository", "No", ""],
+              ["Delete a repository", "Yes", "**Settings > General**, **Danger zone**, **Delete repository...**; type the repository's name to confirm. Its papers, PDFs, analysis, Tables and maps go; your chats stay. Not while a paper in it is still being analysed"],
               ["Delete a chat conversation", "Yes", "In Chat (see [Research chat](/docs/chat))"],
-              ["Remove your name or picture", "Yes", "Clear the fields in **Settings > Profile**"],
-              ["Delete your account", "No", "Ask whoever runs your Papertrend"],
+              ["Remove your name or picture", "Yes", "Clear the name, or choose **Remove** under the picture, in **Settings > Profile**"],
+              ["Delete your account", "Yes", "**Settings > Sign-in & security**, **Danger zone**, **Delete account...**; type your email to confirm. Everything in the account goes, then the account and its sign-in. An admin account must lose its admin role first"],
             ],
           },
           callout: {

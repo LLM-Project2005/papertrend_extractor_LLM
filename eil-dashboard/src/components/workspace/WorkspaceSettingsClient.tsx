@@ -16,7 +16,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type JSX, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type JSX, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme, type ThemePreference } from "@/components/theme/ThemeProvider";
 import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
@@ -38,6 +38,7 @@ import {
   ShieldCheckIcon,
   SunIcon,
   TrashIcon,
+  UploadIcon,
   UserCircleIcon,
 } from "@/components/ui/Icons";
 import {
@@ -52,6 +53,8 @@ import {
   type ChipTone,
 } from "@/components/ui/controls";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import TypeToConfirmDialog from "@/components/ui/TypeToConfirmDialog";
+import { AVATAR_DATA_URL_MAX, AVATAR_SIZE, AVATAR_SOURCE_MAX_BYTES, isDisplayableAvatar } from "@/lib/avatar";
 import { ACCESS_REQUEST_INVITE_DAYS, ACCESS_REQUEST_RETENTION_DAYS } from "@/lib/access-request-limits";
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
@@ -220,6 +223,19 @@ function Row({
   );
 }
 
+/** Actions that remove something for good, apart from everything else and in red. */
+function DangerZone({ children }: { children: ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-red-200 bg-surface dark:border-red-900/60">
+      <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+        <h2 className="text-base font-semibold text-red-700 dark:text-red-300">Danger zone</h2>
+        <p className="mt-1 text-sm leading-6 text-body">These cannot be undone.</p>
+      </div>
+      <div className="px-5 pb-5 sm:px-6 sm:pb-6">{children}</div>
+    </section>
+  );
+}
+
 /** "Saved" that appears beside the button and fades on its own. */
 function SavedNote({ show, text = "Saved" }: { show: boolean; text?: string }) {
   return (
@@ -252,7 +268,7 @@ function useFlash(duration = 2600) {
 function Avatar({ name, email, url, size = 56 }: { name: string; email: string; url: string; size?: number }) {
   const [broken, setBroken] = useState(false);
   useEffect(() => setBroken(false), [url]);
-  const showImage = Boolean(url) && !broken && /^https:\/\//i.test(url);
+  const showImage = !broken && isDisplayableAvatar(url);
   return (
     <span
       className="flex flex-none items-center justify-center overflow-hidden rounded-full bg-subtle text-body ring-1 ring-hairline"
@@ -266,6 +282,35 @@ function Avatar({ name, email, url, size = 56 }: { name: string; email: string; 
       )}
     </span>
   );
+}
+
+/**
+ * The chosen image, cropped to a square from its middle and scaled to
+ * AVATAR_SIZE pixels, as a JPEG data URL small enough for the profile (avatar.ts).
+ */
+async function squarePicture(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const side = Math.min(bitmap.width, bitmap.height);
+    if (!side) throw new Error("empty image");
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_SIZE;
+    canvas.height = AVATAR_SIZE;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no canvas");
+    // A transparent PNG gets a white ground rather than JPEG's black.
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+    context.imageSmoothingQuality = "high";
+    context.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+    for (const quality of [0.85, 0.7, 0.5]) {
+      const url = canvas.toDataURL("image/jpeg", quality);
+      if (url.length <= AVATAR_DATA_URL_MAX) return url;
+    }
+    throw new Error("too large");
+  } finally {
+    bitmap.close();
+  }
 }
 
 /* ------------------------------------------------------------- the sections */
@@ -286,10 +331,30 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
 
   const dirty = name.trim() !== savedName.trim() || avatar.trim() !== savedAvatar.trim();
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
-  const avatarInvalid = Boolean(avatar.trim()) && !/^https:\/\/\S+$/i.test(avatar.trim());
-  // Said only once the field has been left (UI audit C17): "h" is not a wrong link yet.
-  const [avatarTouched, setAvatarTouched] = useState(false);
-  const showAvatarError = avatarInvalid && avatarTouched;
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [pictureBusy, setPictureBusy] = useState(false);
+  const [pictureError, setPictureError] = useState<string | null>(null);
+
+  async function choosePicture(file: File | undefined) {
+    if (!file) return;
+    setPictureError(null);
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      setPictureError("Choose a JPEG, PNG, WebP or GIF image.");
+      return;
+    }
+    if (file.size > AVATAR_SOURCE_MAX_BYTES) {
+      setPictureError("That image is over 10 MB. Choose a smaller one.");
+      return;
+    }
+    setPictureBusy(true);
+    try {
+      setAvatar(await squarePicture(file));
+    } catch {
+      setPictureError("That image couldn't be read. Try another file.");
+    } finally {
+      setPictureBusy(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -329,6 +394,7 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
                 setName(savedName);
                 setAvatar(savedAvatar);
                 setError(null);
+                setPictureError(null);
               }}
               className={buttonClass("ghost", "sm")}
             >
@@ -336,7 +402,7 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
             </button>
             <button
               type="button"
-              disabled={!dirty || saving || avatarInvalid}
+              disabled={!dirty || saving || pictureBusy}
               onClick={() => void save()}
               className={buttonClass("primary", "sm")}
             >
@@ -367,25 +433,51 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
       </Row>
       <Row
         label="Picture"
-        htmlFor="settings-avatar"
-        hint="A link to a square image that starts with https://. Leave it empty to show your initials."
+        hint="A JPEG, PNG, WebP or GIF up to 10 MB. It is cropped to a square from the middle. Without one, your initials are shown."
       >
-        <input
-          id="settings-avatar"
-          value={avatar}
-          maxLength={2000}
-          inputMode="url"
-          onChange={(event) => setAvatar(event.target.value)}
-          onBlur={() => setAvatarTouched(true)}
-          placeholder="https://"
-          aria-invalid={showAvatarError}
-          aria-describedby={showAvatarError ? "settings-avatar-error" : undefined}
-          className={`${fieldClass} aria-[invalid=true]:border-red-500`}
-        />
-        {showAvatarError ? (
-          <p id="settings-avatar-error" className="mt-1.5 text-[13px] text-red-700 dark:text-red-300">
-            Use a full link that starts with https://.
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileInput}
+            id="settings-avatar"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(event) => {
+              void choosePicture(event.target.files?.[0]);
+              // The same file can be chosen again after a Discard.
+              event.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            disabled={pictureBusy || saving}
+            onClick={() => fileInput.current?.click()}
+            className={buttonClass("secondary", "sm")}
+          >
+            <UploadIcon className="h-4 w-4" />
+            {pictureBusy ? "Preparing…" : avatar.trim() ? "Replace picture" : "Upload picture"}
+          </button>
+          {avatar.trim() ? (
+            <button
+              type="button"
+              disabled={pictureBusy || saving}
+              onClick={() => {
+                setAvatar("");
+                setPictureError(null);
+              }}
+              className={buttonClass("ghost", "sm")}
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+        {pictureError ? (
+          <p className="mt-1.5 text-[13px] text-red-700 dark:text-red-300" role="alert">
+            {pictureError}
           </p>
+        ) : avatar.trim() !== savedAvatar.trim() ? (
+          <p className={hintClass}>Save profile to keep it.</p>
         ) : null}
       </Row>
       <Row label="Email" hint="Your sign-in address. It cannot be changed here.">
@@ -397,7 +489,10 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
 
 function SecuritySection() {
   const router = useRouter();
-  const { user, profile, isAdmin, resetPassword, signOut } = useAuth();
+  const { user, profile, isAdmin, resetPassword, signOut, session } = useAuth();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resetError, setResetError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -427,6 +522,27 @@ function SecuritySection() {
     }
   }
 
+  async function deleteAccount() {
+    if (!session?.access_token) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ confirmEmail: email }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Your account could not be deleted. Try again.");
+      // The account is gone; the sign-in on this device goes with it.
+      await signOut().catch(() => undefined);
+      router.replace("/");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Your account could not be deleted. Try again.");
+      setDeleteBusy(false);
+    }
+  }
+
   async function handleSignOut() {
     setSigningOut(true);
     try {
@@ -438,6 +554,7 @@ function SecuritySection() {
   }
 
   return (
+    <>
     <Section title="Sign-in & security" description="How you get into Papertrend, and the session on this device.">
       <Row label="Signed in as">
         <div className="flex min-h-9 flex-wrap items-center gap-2">
@@ -508,6 +625,51 @@ function SecuritySection() {
         </button>
       </Row>
     </Section>
+    <DangerZone>
+      <Row
+        label="Delete account"
+        hint={
+          isAdmin
+            ? "An admin account can't be deleted here. Ask another admin to remove your admin role first."
+            : "Deletes every repository, paper, PDF, analysis and chat in this account, then the account itself."
+        }
+      >
+        <button
+          type="button"
+          disabled={isAdmin || !email}
+          onClick={() => {
+            setDeleteError(null);
+            setDeleting(true);
+          }}
+          className={buttonClass("danger", "sm")}
+        >
+          <TrashIcon className="h-4 w-4" />
+          Delete account…
+        </button>
+      </Row>
+    </DangerZone>
+    {deleting ? (
+      <TypeToConfirmDialog
+        title="Delete your account?"
+        body={
+          <>
+            Every repository, paper, PDF, analysis and chat in <span className="font-medium text-ink">{email}</span> is
+            deleted for good, then the account. Database backups keep a copy for up to 7 days. You would need a new invite
+            code to come back.
+          </>
+        }
+        phrase={email}
+        phraseLabel="your email"
+        caseInsensitive
+        confirmLabel="Delete my account"
+        busyLabel="Deleting…"
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => setDeleting(false)}
+        onConfirm={() => void deleteAccount()}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -596,7 +758,34 @@ function AppearanceSection() {
 }
 
 function RepositorySection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
-  const { currentProject, renameProject } = useWorkspaceProfile();
+  const router = useRouter();
+  const { session } = useAuth();
+  const { currentProject, renameProject, refreshAllProjects, setSelectedProjectId } = useWorkspaceProfile();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function deleteRepository() {
+    if (!currentProject || !session?.access_token) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const response = await fetch(`/api/workspace/projects/${encodeURIComponent(currentProject.id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ confirmName: currentProject.name }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The repository could not be deleted. Try again.");
+      onDirtyChange(false);
+      setSelectedProjectId(null);
+      await refreshAllProjects().catch(() => undefined);
+      router.replace("/workspaces");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "The repository could not be deleted. Try again.");
+      setDeleteBusy(false);
+    }
+  }
   const savedName = currentProject?.name ?? "";
   const savedDescription = currentProject?.description ?? "";
   const [name, setName] = useState(savedName);
@@ -649,6 +838,7 @@ function RepositorySection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) 
   }
 
   return (
+    <>
     <Section
       title="General"
       description="How this repository is named and described wherever it appears."
@@ -741,6 +931,44 @@ function RepositorySection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) 
         </Link>
       </Row>
     </Section>
+    <DangerZone>
+      <Row
+        label="Delete repository"
+        hint="Deletes this repository with all its papers, PDFs, analysis, Tables and maps. Chats stay in your account."
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setDeleteError(null);
+            setDeleting(true);
+          }}
+          className={buttonClass("danger", "sm")}
+        >
+          <TrashIcon className="h-4 w-4" />
+          Delete repository…
+        </button>
+      </Row>
+    </DangerZone>
+    {deleting ? (
+      <TypeToConfirmDialog
+        title={`Delete ${currentProject.name}?`}
+        body={
+          <>
+            Its papers, their PDFs and analysis, its Tables, maps and research areas are deleted for good. A paper copied
+            into another repository stays there. Database backups keep a copy for up to 7 days.
+          </>
+        }
+        phrase={currentProject.name}
+        phraseLabel="the repository's name"
+        confirmLabel="Delete repository"
+        busyLabel="Deleting…"
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => setDeleting(false)}
+        onConfirm={() => void deleteRepository()}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -1049,6 +1277,8 @@ const INVITE_EXPIRY_CHOICES = [1, 3, 7, 14, 30, 60, 90];
  * merely hidden from others). A new code is shown once: the server keeps only
  * its hash, so it cannot be listed again.
  */
+const INVITES_PER_PAGE = 10;
+
 function InviteCodesSection() {
   const { session } = useAuth();
   const [confirm, confirmDialog] = useConfirm();
@@ -1064,6 +1294,13 @@ function InviteCodesSection() {
   const [newCode, setNewCode] = useState<string | null>(null);
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  // The codes, ten to a page, newest first.
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil((invites?.length ?? 0) / INVITES_PER_PAGE));
+  useEffect(() => {
+    if (page > pageCount - 1) setPage(pageCount - 1);
+  }, [page, pageCount]);
+  const pageInvites = (invites ?? []).slice(page * INVITES_PER_PAGE, (page + 1) * INVITES_PER_PAGE);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -1102,6 +1339,8 @@ function InviteCodesSection() {
       const created = payload.invite;
       setNewCode(payload.code);
       setInvites((current) => [created, ...(current ?? [])]);
+      // Back to the first page, where the new code is.
+      setPage(0);
       setLabel("");
       setEmail("");
     } catch (error) {
@@ -1265,7 +1504,7 @@ function InviteCodesSection() {
         {invites && invites.length === 0 ? <p className="text-sm text-body">No invite codes yet.</p> : null}
         {invites && invites.length > 0 ? (
           <ul className="divide-y divide-hairline">
-            {invites.map((invite) => {
+            {pageInvites.map((invite) => {
               const status = INVITE_STATUS[invite.status];
               return (
                 <li key={invite.id} className="flex flex-wrap items-start justify-between gap-3 py-3.5 first:pt-0">
@@ -1302,6 +1541,37 @@ function InviteCodesSection() {
               );
             })}
           </ul>
+        ) : null}
+        {invites && invites.length > INVITES_PER_PAGE ? (
+          <nav
+            aria-label="Invite code pages"
+            className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3.5"
+          >
+            <p className="text-[13px] tabular-nums text-mute">
+              {page * INVITES_PER_PAGE + 1}–{Math.min((page + 1) * INVITES_PER_PAGE, invites.length)} of {invites.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page === 0}
+                onClick={() => setPage((current) => Math.max(0, current - 1))}
+                className={buttonClass("secondary", "sm")}
+              >
+                Newer
+              </button>
+              <span className="text-[13px] tabular-nums text-body" aria-live="polite">
+                Page {page + 1} of {pageCount}
+              </span>
+              <button
+                type="button"
+                disabled={page >= pageCount - 1}
+                onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+                className={buttonClass("secondary", "sm")}
+              >
+                Older
+              </button>
+            </div>
+          </nav>
         ) : null}
       </Section>
       {confirmDialog}

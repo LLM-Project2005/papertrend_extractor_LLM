@@ -291,7 +291,21 @@ function rememberIdentity(key: string, identity: AuthIdentity): void {
   verifiedIdentities.set(key, { identity, expiresAt });
 }
 
-/** Forgets every kept identity (tests; and nothing else needs it). */
+/**
+ * Removes a Firebase sign-in for good, after its Papertrend account was
+ * deleted (delete-account.ts). A sign-in already gone counts as done.
+ */
+export async function deleteFirebaseSignIn(uid: string): Promise<void> {
+  const { getAuth } = await import("firebase-admin/auth");
+  try {
+    await getAuth(await getFirebaseApp()).deleteUser(uid);
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code === "auth/user-not-found") return;
+    throw error;
+  }
+}
+
+/** Forgets every kept identity (tests, and an account that was just deleted). */
 export function clearVerifiedIdentities(): void {
   verifiedIdentities.clear();
 }

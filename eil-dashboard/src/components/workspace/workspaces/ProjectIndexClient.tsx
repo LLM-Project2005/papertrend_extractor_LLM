@@ -42,6 +42,13 @@ export default function ProjectIndexClient() {
   const [error, setError] = useState<string | null>(null);
   const [analysisProfileError, setAnalysisProfileError] = useState<string | null>(null);
   const [analysisProfile, setAnalysisProfile] = useState(createGeneralAnalysisProfile);
+  // Rename asks in the page, in the same dialog as New repository: the
+  // browser's prompt() looked like nothing else here and is ignored by some
+  // in-app browsers.
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -138,17 +145,33 @@ export default function ProjectIndexClient() {
     }
   }
 
-  async function handleRenameProject(projectId: string, currentName: string) {
-    const nextName = window.prompt("Rename repository", currentName);
-    if (!nextName?.trim() || nextName.trim() === currentName) return;
+  function openRename(projectId: string, currentName: string) {
+    setRenaming({ id: projectId, name: currentName });
+    setRenameDraft(currentName);
+    setRenameError(null);
+  }
 
+  async function handleRenameSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renaming) return;
+    const nextName = renameDraft.trim();
+    if (!nextName) {
+      setRenameError("Repository name is required.");
+      return;
+    }
+    if (nextName === renaming.name) {
+      setRenaming(null);
+      return;
+    }
+    setRenameBusy(true);
+    setRenameError(null);
     try {
-      await renameProject(projectId, nextName.trim());
-      setError(null);
-    } catch (renameError) {
-      setError(
-        renameError instanceof Error ? renameError.message : "Failed to rename repository."
-      );
+      await renameProject(renaming.id, nextName);
+      setRenaming(null);
+    } catch (renameFailure) {
+      setRenameError(renameFailure instanceof Error ? renameFailure.message : "Failed to rename repository.");
+    } finally {
+      setRenameBusy(false);
     }
   }
 
@@ -311,7 +334,7 @@ export default function ProjectIndexClient() {
               </button>
               <button
                 type="button"
-                onClick={() => void handleRenameProject(project.id, project.name)}
+                onClick={() => openRename(project.id, project.name)}
                 className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute opacity-100 transition-[opacity,background-color,color] duration-150 hover:bg-subtle hover:text-ink sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                 aria-label={`Rename ${project.name}`}
                 title="Rename repository"
@@ -380,6 +403,26 @@ export default function ProjectIndexClient() {
           />
         ) : null}
       </CreateEntityModal>
+
+      <CreateEntityModal
+        open={renaming !== null}
+        title="Rename repository"
+        description="Its papers, dashboard and chats stay as they are."
+        value={renameDraft}
+        fieldLabel="Repository name"
+        fieldPlaceholder="Repository name"
+        submitLabel="Rename"
+        busyLabel="Renaming..."
+        busy={renameBusy}
+        error={renameError}
+        onValueChange={setRenameDraft}
+        onClose={() => {
+          if (renameBusy) return;
+          setRenaming(null);
+          setRenameError(null);
+        }}
+        onSubmit={handleRenameSubmit}
+      />
     </main>
   );
 }

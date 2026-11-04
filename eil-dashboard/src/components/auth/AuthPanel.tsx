@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MIN_NEW_PASSWORD_LENGTH, friendlyAuthError } from "@/lib/auth/auth-errors";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { GoogleIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
+import { EyeIcon, EyeSlashIcon, GoogleIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
 import { clearPendingInvite, readPendingInvite, savePendingInvite } from "@/lib/pending-invite";
 import { IN_APP_BROWSER_NOTICE, isInAppBrowser } from "@/lib/auth/in-app-browser";
@@ -61,6 +61,7 @@ export default function AuthPanel({
   const [passwordMode, setPasswordMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   // Read after the first render: the server cannot know the browser.
@@ -457,10 +458,11 @@ export default function AuthPanel({
               </button>
             ) : null}
           </div>
+          <div className="relative mt-1.5">
           <input
             id="auth-password"
             name="password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete={passwordMode === "signup" ? "new-password" : "current-password"}
@@ -469,9 +471,22 @@ export default function AuthPanel({
             minLength={passwordMode === "signup" ? MIN_NEW_PASSWORD_LENGTH : undefined}
             maxLength={256}
             required
-            className={`${fieldClass} mt-1.5 h-11`}
+            className={`${fieldClass} h-11 pr-11`}
             placeholder={passwordMode === "signup" ? `At least ${MIN_NEW_PASSWORD_LENGTH} characters` : "Your password"}
           />
+          {/* Shows what was typed, so a mistyped password can be seen before sending. */}
+          <button
+            type="button"
+            onClick={() => setShowPassword((shown) => !shown)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            aria-pressed={showPassword}
+            aria-controls="auth-password"
+            title={showPassword ? "Hide password" : "Show password"}
+            className="absolute right-1.5 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-mute transition-colors hover:bg-subtle hover:text-ink"
+          >
+            {showPassword ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+          </button>
+          </div>
         </div>
 
         <button type="submit" disabled={busy} className={buttonClass("primary", "lg", "w-full")}>

@@ -51,6 +51,7 @@ import {
   DownloadSimpleGlyph as DownloadSimpleIcon,
   EnvelopeSimpleGlyph as EnvelopeSimpleIcon,
   EyeGlyph as PhEye,
+  EyeSlashGlyph as PhEyeSlash,
   FileGlyph as PhFile,
   FilePdfGlyph as PhFilePdf,
   FileTextGlyph as FileTextIcon,
@@ -203,6 +204,7 @@ export const GridViewIcon = /*#__PURE__*/ glyph(SquaresFourIcon, "GridViewIcon")
 export const TableIcon = /*#__PURE__*/ glyph(PhTable, "TableIcon");
 export const SortIcon = /*#__PURE__*/ glyph(ArrowsDownUpIcon, "SortIcon");
 export const EyeIcon = /*#__PURE__*/ glyph(PhEye, "EyeIcon");
+export const EyeSlashIcon = /*#__PURE__*/ glyph(PhEyeSlash, "EyeSlashIcon");
 
 /* ------------------------------------------------------ objects, sources */
 
