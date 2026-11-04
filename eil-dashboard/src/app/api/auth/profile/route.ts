@@ -4,12 +4,20 @@ import { getAuthenticatedIdentityFromRequest, identityToLegacyUser } from "@/lib
 import { getProfileRepository } from "@/lib/profile-repository";
 import { unlinkedReason } from "@/lib/auth/account-linking";
 import { PILOT_RESTRICTED_MESSAGE } from "@/lib/deployment";
+import { AVATAR_DATA_URL_MAX, isAllowedAvatarUrl } from "@/lib/avatar";
 
 export const runtime = "nodejs";
 
 const ProfileUpdateSchema = z.object({
   full_name: z.string().trim().max(120).nullable().optional(),
-  avatar_url: z.string().trim().max(2_000).nullable().optional(),
+  // An https link, or a picture uploaded in Settings (a small data URL; see avatar.ts).
+  avatar_url: z
+    .string()
+    .trim()
+    .max(AVATAR_DATA_URL_MAX)
+    .refine(isAllowedAvatarUrl, "Use a JPEG, PNG or WebP picture, or an https link.")
+    .nullable()
+    .optional(),
   workspace_profile: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -91,7 +99,11 @@ export async function PATCH(request: Request) {
 
   const parsed = ProfileUpdateSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success || Object.keys(parsed.data).length === 0) {
-    return NextResponse.json({ error: "No valid profile changes were provided." }, { status: 400 });
+    const pictureProblem = parsed.success ? null : parsed.error.issues.find((issue) => issue.path[0] === "avatar_url");
+    return NextResponse.json(
+      { error: pictureProblem ? "That picture can't be used. Choose a JPEG, PNG or WebP image." : "No valid profile changes were provided." },
+      { status: 400 }
+    );
   }
 
   let result;

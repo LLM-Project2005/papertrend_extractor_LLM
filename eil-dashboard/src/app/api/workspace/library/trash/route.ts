@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { permanentlyDeleteTrashedRuns } from "@/lib/cloudsql/permanent-delete";
-import { deleteGcsObject } from "@/lib/gcs-signed-urls";
+import { removeStoredFiles } from "@/lib/stored-file-cleanup";
 import { getDatabaseProvider } from "@/lib/server-env";
 
 export const runtime = "nodejs";
@@ -33,18 +33,7 @@ export async function DELETE(request: Request) {
 
   try {
     const result = await permanentlyDeleteTrashedRuns(user.id, "all" in parsed.data ? "all" : parsed.data.runIds);
-    // Storage is not part of the transaction: a file that will not delete is
-    // logged and left, rather than undoing the deletion the reader asked for.
-    await Promise.all(
-      result.orphanedObjects.map((path) =>
-        deleteGcsObject(path).catch((error) => {
-          console.error("[library] stored file was not removed after permanent delete", {
-            path,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        })
-      )
-    );
+    await removeStoredFiles(result.orphanedObjects, "permanent delete");
     return NextResponse.json({ deleted: result.deletedRunIds.length, runIds: result.deletedRunIds });
   } catch (error) {
     console.error("[library] permanent delete failed", {
