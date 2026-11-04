@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { paperIdFromRunId } from "@/lib/paper-id";
 import { markProjectSemanticMapsStale } from "@/lib/semantic-map-invalidation";
@@ -38,7 +39,6 @@ export async function permanentlyDeleteTrashedRuns(
   runIds: string[] | "all"
 ): Promise<PermanentDeleteResult> {
   return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-    type SelectedRun = { id: string; source_path: string | null; project_id: string | null };
     const selected =
       runIds === "all"
         ? await client.query<SelectedRun>(
@@ -57,7 +57,23 @@ export async function permanentlyDeleteTrashedRuns(
              FOR UPDATE OF r`,
             [ownerUserId, runIds]
           );
-    const rows = selected.rows;
+    return deleteSelectedRuns(client, ownerUserId, selected.rows);
+  });
+}
+
+type SelectedRun = { id: string; source_path: string | null; project_id: string | null };
+
+/**
+ * The deletion itself, inside the caller's owner transaction: Trash uses it
+ * for runs in Trash, and deleting a repository or an account for every run
+ * they hold (delete-repository.ts, delete-account.ts).
+ */
+export async function deleteSelectedRuns(
+  client: PoolClient,
+  ownerUserId: string,
+  rows: SelectedRun[]
+): Promise<PermanentDeleteResult> {
+  {
     if (rows.length === 0) return { deletedRunIds: [], orphanedObjects: [] };
 
     const ids = rows.map((row) => row.id);
@@ -144,5 +160,5 @@ export async function permanentlyDeleteTrashedRuns(
     }
 
     return { deletedRunIds: ids, orphanedObjects };
-  });
+  }
 }

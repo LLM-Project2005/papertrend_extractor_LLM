@@ -257,6 +257,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             signedInUidRef.current = null;
             firebaseProfileRequestRef.current = null;
             firebaseProfileAttemptRef.current = null;
+            // Signed out: the invite and confirm-your-email steps end too, or
+            // their Sign out / Start again buttons would leave the panel where it was.
+            setAuthErrorCode(null);
             setAuthError(null);
             setSession(null);
             setUser(null);
@@ -534,9 +537,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Firebase authentication is not ready.");
         }
         if (updates.full_name !== undefined) {
+          // Firebase keeps a link, not an uploaded picture: an uploaded one
+          // lives on the Papertrend profile only, and Firebase keeps its own.
           await updateFirebaseUserProfile(firebaseAuth.currentUser, {
             displayName: payload.full_name,
-            photoURL: payload.avatar_url,
+            ...(payload.avatar_url?.startsWith("data:") ? {} : { photoURL: payload.avatar_url }),
           });
         }
         const response = await fetch("/api/auth/profile", {

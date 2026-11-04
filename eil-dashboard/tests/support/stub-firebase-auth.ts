@@ -12,5 +12,12 @@ export function getAuth() {
       }
       return { uid: session.uid, sub: session.uid, email: session.email, email_verified: true, aud: "papertrend-route-tests" };
     },
+    /** Deleting an account removes its sign-in: the uid is noted, and its tokens stop working. */
+    async deleteUser(uid: string) {
+      const state = globalThis.__papertrendRouteHarness as (typeof globalThis.__papertrendRouteHarness & { deletedFirebaseUids?: string[] }) | undefined;
+      if (!state) return;
+      (state.deletedFirebaseUids ??= []).push(uid);
+      for (const [token, session] of state.sessions) if (session.uid === uid) state.sessions.delete(token);
+    },
   };
 }
