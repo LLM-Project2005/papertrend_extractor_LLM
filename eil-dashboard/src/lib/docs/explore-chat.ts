@@ -134,7 +134,7 @@ export const chatPage: DocsPageBase = {
       id: "background-answers",
       title: "Long answers in the background",
       body: [
-        "Some requests take longer than a page can wait: web search, an overview of the whole repository, analyzing each of more than 80 papers, or a search across every paper in scope. These run as a background job. The conversation shows `Analyzing the selected Papertrend knowledge scope in the background...`, and the answer replaces that message when it is ready.",
+        "Some requests take longer than a page can wait: web search, an overview of the whole repository, analyzing each of more than 80 papers, or a search across every paper in scope. These run as a background job. While it works, the conversation shows each step it has reached (such as searching your papers or reading the relevant passages) and how long it has been running. You can leave the page; the answer replaces the steps when it is ready.",
       ],
       bullets: [
         "You can leave the conversation and come back; the answer stays attached to it. The page stops checking after about 38 minutes, but the job continues.",

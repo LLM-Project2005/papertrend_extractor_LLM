@@ -19,6 +19,37 @@ export interface RepositoryChatJob {
   executionPlan: Record<string, unknown>;
   threadId: string | null;
   folderId: string | null;
+  createdAt: string | null;
+  /** The steps a running job has reported so far, newest last; empty once it ends. */
+  liveSteps: RepositoryChatJobStep[];
+}
+
+export interface RepositoryChatJobStep {
+  stage: string;
+  label: string;
+  detail?: string;
+  at: number;
+}
+
+const MAX_LIVE_STEPS = 24;
+
+function readLiveSteps(row: Record<string, unknown>): RepositoryChatJobStep[] {
+  if (row.status !== "queued" && row.status !== "processing") return [];
+  const coverage = row.coverage as { live?: { steps?: unknown } } | null | undefined;
+  const steps = coverage?.live?.steps;
+  if (!Array.isArray(steps)) return [];
+  return steps
+    .filter((step): step is RepositoryChatJobStep =>
+      Boolean(step && typeof step === "object" &&
+        typeof (step as { stage?: unknown }).stage === "string" &&
+        typeof (step as { label?: unknown }).label === "string"))
+    .map((step) => ({
+      stage: step.stage,
+      label: step.label,
+      ...(typeof step.detail === "string" && step.detail ? { detail: step.detail } : {}),
+      at: Number(step.at) || 0,
+    }))
+    .slice(-MAX_LIVE_STEPS);
 }
 
 function mapJob(row: Record<string, unknown>): RepositoryChatJob {
@@ -33,6 +64,10 @@ function mapJob(row: Record<string, unknown>): RepositoryChatJob {
     executionPlan: row.execution_plan && typeof row.execution_plan === "object" ? row.execution_plan as Record<string, unknown> : {},
     threadId: typeof row.thread_id === "string" ? row.thread_id : null,
     folderId: typeof row.folder_id === "string" ? row.folder_id : null,
+    createdAt: row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : typeof row.created_at === "string" ? row.created_at : null,
+    liveSteps: readLiveSteps(row),
   };
 }
 
@@ -163,6 +198,28 @@ export async function heartbeatRepositoryChatJob(ownerUserId: string, id: string
   ).then(() => undefined));
 }
 
+/**
+ * Adds one step to a running job, so the conversation can show what it is
+ * doing. The steps live under `coverage.live` until the job ends: the finished
+ * job writes its real coverage over them, so nothing stale is left behind and
+ * no new column is needed.
+ */
+export async function recordRepositoryChatJobStep(ownerUserId: string, id: string, step: RepositoryChatJobStep): Promise<void> {
+  await withCloudSqlOwnerTransaction(ownerUserId, (client) => client.query(
+    `UPDATE repository_chat_jobs
+     SET coverage = jsonb_build_object('live', jsonb_build_object('steps',
+           (SELECT coalesce(jsonb_agg(s ORDER BY n), '[]'::jsonb) FROM (
+              SELECT s, n FROM jsonb_array_elements(
+                coalesce(coverage->'live'->'steps', '[]'::jsonb) || jsonb_build_array($3::jsonb)
+              ) WITH ORDINALITY AS t(s, n)
+              ORDER BY n DESC LIMIT $4
+            ) last_steps))),
+         updated_at = now()
+     WHERE id=$1 AND owner_user_id=$2 AND status='processing'`,
+    [id, ownerUserId, JSON.stringify(step), MAX_LIVE_STEPS]
+  ).then(() => undefined));
+}
+
 export async function completeRepositoryChatJob(ownerUserId: string, id: string, result: RepositoryChatResult): Promise<void> {
   await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
     const updated = await client.query<Record<string, unknown>>(
@@ -213,7 +270,8 @@ export const CHAT_JOB_FAILED_MESSAGE = "This answer could not be finished. Ask a
 /** Hands a failed attempt back to the queue, for Cloud Tasks to run it again. */
 export async function releaseRepositoryChatJob(ownerUserId: string, id: string): Promise<void> {
   await withCloudSqlOwnerTransaction(ownerUserId, (client) => client.query(
-    `UPDATE repository_chat_jobs SET status='queued', updated_at=now()
+    // The next attempt starts its steps again from the beginning.
+    `UPDATE repository_chat_jobs SET status='queued', coverage='{}'::jsonb, updated_at=now()
      WHERE id=$1 AND owner_user_id=$2 AND status='processing'`,
     [id, ownerUserId]
   ));

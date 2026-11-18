@@ -8,8 +8,10 @@ import {
   failRepositoryChatJob,
   heartbeatRepositoryChatJob,
   MAX_CHAT_JOB_ATTEMPTS,
+  recordRepositoryChatJobStep,
   releaseRepositoryChatJob,
 } from "@/lib/repository-chat-jobs";
+import { reportChatProgress, runWithChatProgress, type ChatProgressEvent } from "@/lib/chat-progress";
 import { addWebContext, webStepApplies } from "@/lib/repository-chat-web";
 import type { RepositoryExecutionPlan } from "@/lib/repository-chat";
 import { isVerifiedTaskCaller } from "@/lib/cloud-tasks-oidc";
@@ -37,7 +39,20 @@ export async function POST(request: Request) {
   }, 20_000);
   // A background answer spends the same credit as one written while the reader
   // waits, so it is metered the same way; it used to be recorded nowhere.
-  return withAiTokenUsageTracking(async (usage) => {
+  // Each step the answer reports is saved on the job, in order, so the
+  // conversation can show what it is doing instead of one fixed sentence.
+  let lastStep = "";
+  let stepWrites: Promise<void> = Promise.resolve();
+  const saveStep = (event: ChatProgressEvent) => {
+    const key = `${event.stage}|${event.detail ?? ""}`;
+    if (key === lastStep) return;
+    lastStep = key;
+    const step = { stage: event.stage, label: event.label, ...(event.detail ? { detail: event.detail } : {}), at: event.at };
+    stepWrites = stepWrites
+      .then(() => recordRepositoryChatJobStep(job.ownerUserId, job.id, step))
+      .catch(() => undefined);
+  };
+  return withAiTokenUsageTracking(async (usage) => runWithChatProgress(saveStep, async () => {
     let searched = false;
     try {
       const plan = job.executionPlan;
@@ -66,6 +81,7 @@ export async function POST(request: Request) {
         bypassAsyncJob: true,
       });
       if (Boolean(plan.allowWeb) && webStepApplies(result.execution?.operation)) {
+        reportChatProgress("searching_web");
         // Never throws: a failed web step keeps the finished repository answer.
         const web = await addWebContext({
           ownerUserId: job.ownerUserId,
@@ -84,6 +100,8 @@ export async function POST(request: Request) {
           diagnostics: { ...result.diagnostics, webAugmentation: web.status },
         };
       }
+      // A step still being written must not land on top of the answer.
+      await stepWrites;
       await completeRepositoryChatJob(job.ownerUserId, job.id, result);
       return NextResponse.json({ ok: true });
     } catch (error) {
@@ -120,5 +138,5 @@ export async function POST(request: Request) {
         await persistAiTokenUsage(job.ownerUserId, usage, "chat-job").catch(() => undefined);
       }
     }
-  });
+  }));
 }
