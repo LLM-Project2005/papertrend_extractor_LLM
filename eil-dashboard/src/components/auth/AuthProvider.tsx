@@ -18,6 +18,7 @@ import {
   getFirebaseAuth,
   getFirebaseAuthConfigurationError,
   sendFirebasePasswordReset,
+  addFirebasePassword,
   signInWithFirebasePassword,
   signInWithFirebaseProvider,
   signOutFirebase,
@@ -750,6 +751,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email,
           returnTo: "/login",
         });
+      },
+      addPassword: async (password) => {
+        if (configuredAuthProvider !== "firebase") throw new Error("Adding a password is not available here.");
+        const firebaseAuth = await getFirebaseAuth();
+        if (!firebaseAuth) {
+          throw new Error(getFirebaseAuthConfigurationError() ?? "Firebase authentication is not configured.");
+        }
+        await addFirebasePassword(firebaseAuth, password);
+        // The new sign-in method shows once the user is read again.
+        firebaseProfileAttemptRef.current = null;
+        const current = firebaseAuth.currentUser;
+        if (current) setUser(firebaseUserToPapertrendUser(current, user?.id ?? current.uid));
       },
       signOut: async () => {
         // The Library's thumbnails show papers' first pages; they leave with the account.

@@ -24,6 +24,7 @@ const signedOut = {
   signInWithPassword: idle,
   signUpWithPassword: idle,
   resetPassword: idle,
+  addPassword: idle,
   signOut: idle,
   resendVerificationEmail: idle,
   confirmEmailVerified: async () => false,

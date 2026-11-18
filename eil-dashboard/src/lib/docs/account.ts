@@ -38,7 +38,7 @@ export const accountCategory: DocsCategoryBase = {
           title: "Passwords",
           body: [
             "To reset a forgotten password, type your email on the sign-in page and choose **Reset password**; if that address has an account, a reset link is emailed to it. When you are signed in, **Settings > Sign-in & security > Email me a reset link** does the same.",
-            "A new password needs at least 10 characters (an existing, shorter one still signs in until you change it). There is no form to change a password or your sign-in email inside the app; a reset link is how you choose a new password. Accounts that sign in with Google have no Papertrend password.",
+            "A new password needs at least 10 characters (an existing, shorter one still signs in until you change it). There is no form to change a password or your sign-in email inside the app; a reset link is how you choose a new password. An account that signs in with Google can also have a password: **Settings > Sign-in & security > Add a password**. Google may ask you to confirm it is you; after that, Google and your email with that password both open the same account.",
           ],
         },
         {
@@ -78,7 +78,7 @@ export const accountCategory: DocsCategoryBase = {
             rows: [
               ["**Signed in as**", "Your email, with **Verified** when the address is confirmed."],
               ["**Sign-in method**", "Email and password, or Google."],
-              ["**Password**", "**Email me a reset link** for password accounts."],
+              ["**Password**", "**Email me a reset link** for password accounts; **Add a password** for accounts that sign in with Google."],
               ["**Account**", "When you joined, your last sign-in, and your role (Member or Admin)."],
               ["**This device**", "**Sign out** of this browser."],
             ],
