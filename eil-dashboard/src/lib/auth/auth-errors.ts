@@ -39,6 +39,10 @@ const MESSAGES: Record<string, string> = {
     "This email already signs in another way. Use Google, or your email and password, instead.",
   "auth/user-disabled": "This account has been switched off. Contact the Papertrend team.",
   "auth/requires-recent-login": "For your security, sign in again before doing that.",
+  // Adding a password to a Google account (Settings, Sign-in & security).
+  "auth/provider-already-linked": "This account already has a password. Use \"Email me a reset link\" to change it.",
+  "auth/credential-already-in-use": "Another sign-in already uses this email with a password. Contact the Papertrend team.",
+  "auth/user-mismatch": "Confirm with the Google account you are signed in with.",
 };
 
 export function authErrorCode(error: unknown): string | null {

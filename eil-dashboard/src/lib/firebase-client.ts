@@ -185,6 +185,31 @@ export async function sendFirebasePasswordReset(auth: Auth, email: string): Prom
   }
 }
 
+/**
+ * Gives an account that signs in with Google a password as well, on the same
+ * Firebase user, so either way in opens the same Papertrend account. Firebase
+ * asks for a recent sign-in first; when it does, the Google window confirms it
+ * and the password is added straight after.
+ */
+export async function addFirebasePassword(auth: Auth, password: string): Promise<void> {
+  const { EmailAuthProvider, GoogleAuthProvider, linkWithCredential, reauthenticateWithPopup } = await import("firebase/auth");
+  const user = auth.currentUser;
+  if (!user?.email) throw new Error("Sign in again, then add a password.");
+  const credential = () => EmailAuthProvider.credential(user.email as string, password);
+  try {
+    await linkWithCredential(user, credential());
+  } catch (error) {
+    const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+    if (code !== "auth/requires-recent-login") throw error;
+    const google = new GoogleAuthProvider();
+    google.setCustomParameters({ login_hint: user.email });
+    await reauthenticateWithPopup(user, google);
+    await linkWithCredential(user, credential());
+  }
+  await user.reload();
+  await user.getIdToken(true);
+}
+
 export async function signOutFirebase(auth: Auth): Promise<void> {
   const { signOut } = await import("firebase/auth");
   await signOut(auth);
