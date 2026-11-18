@@ -280,6 +280,54 @@ test("a job's progress is its owner's to read", async () => {
   assert.equal((await poll({})).status, 401);
 });
 
+test("a running job keeps the steps it reaches, its owner reads them, and they go when it ends", async () => {
+  const { db, request, owner, createRepositoryChatJob, claimRepositoryChatJob, recordRepositoryChatJobStep,
+    releaseRepositoryChatJob, completeRepositoryChatJob, getRepositoryChatJob, input } = await workspace();
+  const id = await createRepositoryChatJob(input, PLAN, 3);
+  const step = (stage: string, label: string, detail?: string) => ({ stage, label, ...(detail ? { detail } : {}), at: Date.now() });
+
+  await recordRepositoryChatJobStep(OWNER, id, step("planning", "Understanding your question"));
+  assert.deepEqual((await getRepositoryChatJob(OWNER, id))?.liveSteps, [], "nothing is kept before the job runs");
+
+  assert.ok(await claimRepositoryChatJob(OWNER, id));
+  await recordRepositoryChatJobStep(OWNER, id, step("planning", "Understanding your question"));
+  await recordRepositoryChatJobStep(OWNER, id, step("reading_evidence", "Reading the relevant passages", "96 papers"));
+  await recordRepositoryChatJobStep(OTHER, id, step("synthesizing", "Someone else's step"));
+  const running = await getRepositoryChatJob(OWNER, id);
+  assert.deepEqual(running?.liveSteps.map((s) => [s.stage, s.detail ?? null]), [["planning", null], ["reading_evidence", "96 papers"]]);
+  assert.ok(running?.createdAt, "the conversation can count time from when it was asked");
+
+  const { GET } = await import("../src/app/api/chat/jobs/[jobId]/route");
+  const polled = await (await GET(request(`/api/chat/jobs/${id}`, { headers: owner }), params({ jobId: id }))).json();
+  assert.deepEqual(polled.job.liveSteps.map((s: { label: string }) => s.label), ["Understanding your question", "Reading the relevant passages"]);
+
+  for (let n = 0; n < 30; n += 1) await recordRepositoryChatJobStep(OWNER, id, step("retrieving", "Searching your papers", `pass ${n}`));
+  const capped = (await getRepositoryChatJob(OWNER, id))?.liveSteps ?? [];
+  assert.equal(capped.length, 24, "only the latest steps are kept");
+  assert.equal(capped.at(-1)?.detail, "pass 29");
+
+  await releaseRepositoryChatJob(OWNER, id);
+  assert.deepEqual((await getRepositoryChatJob(OWNER, id))?.liveSteps, [], "a retry starts its steps again");
+
+  assert.ok(await claimRepositoryChatJob(OWNER, id));
+  await recordRepositoryChatJobStep(OWNER, id, step("synthesizing", "Writing the answer"));
+  await completeRepositoryChatJob(OWNER, id, result("Done."));
+  await recordRepositoryChatJobStep(OWNER, id, step("formatting", "A late step"));
+  const coverage = await db.query<{ coverage: Record<string, unknown> }>(`SELECT coverage FROM repository_chat_jobs WHERE id = $1`, [id]);
+  assert.equal(coverage.rows[0].coverage.live, undefined, "the answer's coverage replaces the steps, and a late step cannot return");
+  assert.equal(coverage.rows[0].coverage.eligiblePapers, 3);
+  assert.deepEqual((await getRepositoryChatJob(OWNER, id))?.liveSteps, []);
+});
+
+test("the background task reports its steps, and the conversation shows them in place of the placeholder", () => {
+  const route = read("src/app/api/chat/jobs/process/route.ts");
+  assert.match(route, /runWithChatProgress\(saveStep/);
+  assert.match(route, /await stepWrites;\s*\n\s*await completeRepositoryChatJob/);
+  const client = read("src/components/chat/ChatClient.tsx");
+  assert.match(client, /<BackgroundAnswerStatus/);
+  assert.match(client, /setBackgroundJobs\(/);
+});
+
 test("repository tasks get thirty minutes from the web service's own deadline", () => {
   // Deploy configuration, read as data.
   assert.match(read("../cloudbuild.web.production.yaml"), /--timeout[\s\S]{0,30}"1800"/);

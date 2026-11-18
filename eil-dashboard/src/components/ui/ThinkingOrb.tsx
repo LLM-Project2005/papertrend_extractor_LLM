@@ -27,6 +27,8 @@ const STAGE_STATES: Record<string, OrbState> = {
   synthesizing: "composing",
   checking: "connecting",
   formatting: "composing",
+  charting: "shaping",
+  searching_web: "searching",
   queued: "working",
 };
 

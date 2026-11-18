@@ -29,6 +29,8 @@ import {
   CopyIcon,
   EmailIcon,
   EqualizerIcon,
+  EyeIcon,
+  EyeSlashIcon,
   FolderIcon,
   KeyIcon,
   LogoutIcon,
@@ -54,6 +56,7 @@ import {
 } from "@/components/ui/controls";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import TypeToConfirmDialog from "@/components/ui/TypeToConfirmDialog";
+import { friendlyAuthError, MIN_NEW_PASSWORD_LENGTH } from "@/lib/auth/auth-errors";
 import { AVATAR_DATA_URL_MAX, AVATAR_SIZE, AVATAR_SOURCE_MAX_BYTES, isDisplayableAvatar } from "@/lib/avatar";
 import { ACCESS_REQUEST_INVITE_DAYS, ACCESS_REQUEST_RETENTION_DAYS } from "@/lib/access-request-limits";
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
@@ -487,6 +490,121 @@ function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => 
   );
 }
 
+/**
+ * A password for an account that signs in with Google. It is added to the
+ * same sign-in, so the email and password open this account, not a new one.
+ */
+function AddPasswordForm({ email }: { email: string }) {
+  const { addPassword } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  if (done) {
+    return (
+      <p className="flex min-h-9 items-center gap-2 text-sm text-ink" role="status">
+        <CheckIcon className="h-4 w-4 flex-none" />
+        Password added. You can now sign in with Google or with {email} and this password.
+      </p>
+    );
+  }
+  if (!open) {
+    return (
+      <button type="button" disabled={!email} onClick={() => setOpen(true)} className={buttonClass("secondary", "sm")}>
+        <KeyIcon className="h-4 w-4" />
+        Add a password
+      </button>
+    );
+  }
+
+  const tooShort = password.length > 0 && password.length < MIN_NEW_PASSWORD_LENGTH;
+  const mismatch = again.length > 0 && again !== password;
+  const ready = password.length >= MIN_NEW_PASSWORD_LENGTH && again === password;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addPassword(password);
+      setPassword("");
+      setAgain("");
+      setDone(true);
+    } catch (caught) {
+      setError(friendlyAuthError(caught, "The password could not be added. Try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="grid max-w-sm gap-3" noValidate>
+      {/* Lets a password manager save it against this address. */}
+      <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
+      <div>
+        <label htmlFor="settings-new-password" className={labelClass}>New password</label>
+        <div className="relative mt-1.5">
+          <input
+            id="settings-new-password"
+            type={show ? "text" : "password"}
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            aria-invalid={tooShort}
+            aria-describedby="settings-new-password-hint"
+            className={`${fieldClass} pr-11 aria-[invalid=true]:border-red-500`}
+          />
+          <button
+            type="button"
+            onClick={() => setShow((value) => !value)}
+            aria-label={show ? "Hide password" : "Show password"}
+            aria-pressed={show}
+            className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-body transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70"
+          >
+            {show ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+          </button>
+        </div>
+        <p id="settings-new-password-hint" className={`mt-1.5 ${hintClass}`}>
+          At least {MIN_NEW_PASSWORD_LENGTH} characters. Use one you don&apos;t use anywhere else.
+        </p>
+      </div>
+      <div>
+        <label htmlFor="settings-new-password-again" className={labelClass}>Type it again</label>
+        <input
+          id="settings-new-password-again"
+          type={show ? "text" : "password"}
+          autoComplete="new-password"
+          value={again}
+          onChange={(event) => setAgain(event.target.value)}
+          aria-invalid={mismatch}
+          className={`mt-1.5 ${fieldClass} aria-[invalid=true]:border-red-500`}
+        />
+        {mismatch ? <p className="mt-1.5 text-[13px] text-red-700 dark:text-red-300">The two passwords differ.</p> : null}
+      </div>
+      <p className={hintClass}>Google may ask you to confirm it&apos;s you first.</p>
+      {error ? <p className="text-[13px] text-red-700 dark:text-red-300" role="alert">{error}</p> : null}
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" disabled={!ready || busy} className={buttonClass("primary", "sm")}>
+          {busy ? "Adding…" : "Add password"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => { setOpen(false); setPassword(""); setAgain(""); setError(null); }}
+          className={buttonClass("secondary", "sm")}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function SecuritySection() {
   const router = useRouter();
   const { user, profile, isAdmin, resetPassword, signOut, session } = useAuth();
@@ -570,7 +688,7 @@ function SecuritySection() {
         hint={
           hasPassword
             ? "We email you a link to choose a new password. The current one keeps working until you do."
-            : "You sign in with a provider, so there is no Papertrend password to change."
+            : "You sign in with Google. Add a password to also sign in with your email; it opens this same account."
         }
       >
         {hasPassword ? (
@@ -594,7 +712,7 @@ function SecuritySection() {
             ) : null}
           </div>
         ) : (
-          <p className="flex min-h-9 items-center text-sm text-mute">Not applicable</p>
+          <AddPasswordForm email={email} />
         )}
       </Row>
       <Row label="Account">

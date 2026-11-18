@@ -14,6 +14,7 @@ export const CHAT_PROGRESS_STAGES = [
   "checking",
   "formatting",
   "charting",
+  "searching_web",
   "queued",
 ] as const;
 
@@ -37,6 +38,7 @@ const STAGE_LABELS: Record<ChatProgressStage, string> = {
   checking: "Checking it against the evidence",
   formatting: "Formatting citations",
   charting: "Working out the chart",
+  searching_web: "Searching the web",
   queued: "Handing off to a background job",
 };
 

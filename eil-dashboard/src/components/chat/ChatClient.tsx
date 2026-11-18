@@ -137,6 +137,7 @@ import { hasUsableAnalysis } from "@/lib/usable-analysis";
 import { mergeLatestMessages, NEAR_BOTTOM_PX } from "@/lib/chat-transcript";
 import ThinkingEffort, { readStoredEffort, storeEffort, type ThinkingEffortLevel } from "@/components/chat/ThinkingEffort";
 import { ThinkingLive, ThoughtSummary, thinkingIsRunning } from "@/components/chat/ThinkingTrace";
+import BackgroundAnswerStatus, { type BackgroundAnswerStep } from "@/components/chat/BackgroundAnswerStatus";
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
@@ -1420,6 +1421,10 @@ export default function ChatClient() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<ChatProgressUpdate | null>(null);
+  // What each background answer reported at its last poll, by job id.
+  const [backgroundJobs, setBackgroundJobs] = useState<Record<string, {
+    status: string; steps: BackgroundAnswerStep[]; createdAt: string | null;
+  }>>({});
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<"root" | "scope">("root");
@@ -2420,8 +2425,17 @@ export default function ChatClient() {
           transientFailures = 0;
           const payload = await response.json() as { job?: {
             status?: string; errorMessage?: string | null;
+            createdAt?: string | null; liveSteps?: BackgroundAnswerStep[];
           } };
           const job = payload.job;
+          if (job && (job.status === "queued" || job.status === "processing")) {
+            const live = {
+              status: job.status,
+              steps: Array.isArray(job.liveSteps) ? job.liveSteps : [],
+              createdAt: job.createdAt ?? null,
+            };
+            setBackgroundJobs((current) => ({ ...current, [jobId]: live }));
+          }
           if (job?.status === "succeeded") {
             await loadThreadDetail(threadId);
             await refreshThreads(threadId);
@@ -3498,6 +3512,12 @@ export default function ChatClient() {
                   const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
                   const groundingMode = groundingModeFromMetadata(message.metadata);
                   const citationPreview = previewConversationSources(numberAnswerSources(message.content, message.citations), 5);
+                  // A background answer still running shows its steps, not its placeholder text.
+                  const pendingJob = !isUser &&
+                    typeof message.metadata?.repositoryJobId === "string" &&
+                    (message.metadata.repositoryJobStatus === "queued" || message.metadata.repositoryJobStatus === "processing")
+                    ? message.metadata.repositoryJobId
+                    : null;
                   return (
                     <section key={message.id}>
                       {isUser ? (
@@ -3583,6 +3603,12 @@ export default function ChatClient() {
                             )}
                           </div>
                         </div>
+                      ) : pendingJob ? (
+                        <BackgroundAnswerStatus
+                          status={backgroundJobs[pendingJob]?.status ?? String(message.metadata?.repositoryJobStatus ?? "")}
+                          steps={backgroundJobs[pendingJob]?.steps ?? []}
+                          startedAt={backgroundJobs[pendingJob]?.createdAt}
+                        />
                       ) : (
                         <div className={`space-y-4 ${shownBeforeAskRef.current && !shownBeforeAskRef.current.has(message.id) ? "answer-arrive" : ""}`}>
                           {/* A stable hook for the layout-shift measurement, which has to
